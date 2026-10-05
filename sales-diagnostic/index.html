@@ -1198,8 +1198,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     return `${r.title}
 
 Почему:
-${r.why.map(x=>'• '+x).join('
-')}
+${r.why.map(x=>'• '+x).join('\\n')}
 
 Что сделать:
 ${r.action}
