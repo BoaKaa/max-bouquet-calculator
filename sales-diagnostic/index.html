@@ -351,7 +351,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
 
   const app = document.getElementById('app');
   const resetButton = document.getElementById('resetButton');
@@ -946,18 +946,21 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function collectCandidates() {
     const a = state.answers;
     const list = [];
-    pushCandidate(list, 'F', Math.max(severity(a.gate_fulfillment, { regular:4, sometimes:2, unknown:1 }), severity(a.core_fulfillment, { no:4, regular_problem:3 })), 95);
-    pushCandidate(list, 'V', severity(a.core_value, { no:4, issues:3, unknown:1 }), 90);
-    pushCandidate(list, 'E', Math.max(severity(a.gate_economics, { negative:4, low:3, mixed:2, unknown:1 }), severity(a.core_economics, { many:3, some:2, unknown:1 })), 88);
-    pushCandidate(list, 'CAP', Math.max(severity(a.gate_capacity, { overload:4, limit:3, unknown:1 }), severity(a.core_capacity, { quality:4, rush:3 })), 86);
-    pushCandidate(list, 'S', severity(a.core_start, { problem:4, losses:3, unknown:1 }), 82);
-    pushCandidate(list, 'C', severity(a.core_conversion, { breaks:4, hard:3, unknown:1 }), 78);
-    pushCandidate(list, 'T', severity(a.core_trust, { almost_always:4, often:3, unknown:1 }), 74);
-    pushCandidate(list, 'FIT', severity(a.core_fit, { bad:4, half:3, unknown:1 }), 72);
-    pushCandidate(list, 'O', severity(a.core_offer, { no:4, mostly_no:3, unknown:1 }), 70);
-    pushCandidate(list, 'A', severity(a.core_access, { none:4, unstable:3, unknown:1 }), 68);
-    pushCandidate(list, 'D', severity(a.core_demand, { rare:4, sometimes:2, new:2, unknown:1 }), 66);
-    pushCandidate(list, 'R', severity(a.core_repeat, { rare:3, unknown:1 }), 45);
+    const fulfillmentSev = meaningful(a.deep_f1).includes('none') && a.deep_f2 === 'no'
+      ? 0
+      : Math.max(severity(a.gate_fulfillment, { regular:4, sometimes:2 }), severity(a.core_fulfillment, { no:4, regular_problem:3 }));
+    pushCandidate(list, 'F', fulfillmentSev, 95);
+    pushCandidate(list, 'V', severity(a.core_value, { no:4, issues:3 }), 90);
+    pushCandidate(list, 'E', Math.max(severity(a.gate_economics, { negative:4, low:3, mixed:2 }), severity(a.core_economics, { many:3, some:2 })), 88);
+    pushCandidate(list, 'CAP', Math.max(severity(a.gate_capacity, { overload:4, limit:3 }), severity(a.core_capacity, { quality:4, rush:3 })), 86);
+    pushCandidate(list, 'S', severity(a.core_start, { problem:4, losses:3 }), 82);
+    pushCandidate(list, 'C', severity(a.core_conversion, { breaks:4, hard:3 }), 78);
+    pushCandidate(list, 'T', severity(a.core_trust, { almost_always:4, often:3 }), 74);
+    pushCandidate(list, 'FIT', severity(a.core_fit, { bad:4, half:3 }), 72);
+    pushCandidate(list, 'O', severity(a.core_offer, { no:4, mostly_no:3 }), 70);
+    pushCandidate(list, 'A', severity(a.core_access, { none:4, unstable:3 }), 68);
+    pushCandidate(list, 'D', severity(a.core_demand, { rare:4, sometimes:2, new:2 }), 66);
+    pushCandidate(list, 'R', severity(a.core_repeat, { rare:3 }), 45);
 
     const goalBoost = { new_sales:['A','D','O','FIT','T','C'], stable:['A','R','CAP'], income:['E','CAP','O'], overload:['CAP','F','E'], repeat:['R','V'], unknown:[] };
     const boost = goalBoost[a.scope_goal] || [];
@@ -1037,6 +1040,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   function diagnoseAccess() {
     const a = state.answers;
+    if (a.core_access === 'unstable' && a.deep_a1 && a.deep_a1 !== 'yes') return 'DATA_GAP';
     if (a.deep_a2 === 'views_down') return 'DISTRIBUTION';
     if (a.deep_a2 === 'responses_down') return a.core_offer === 'no' || a.core_offer === 'mostly_no' ? 'OFFER' : 'DECISION_GAP';
     if (a.deep_a2 === 'buy_down') return a.core_conversion === 'hard' || a.core_conversion === 'breaks' ? 'PURCHASE_FRICTION' : 'DECISION_GAP';
@@ -1074,9 +1078,17 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function decisionCriticalUnknown() {
     const a = state.answers;
     const unknownCount = ['core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_fulfillment','core_value','core_repeat','core_economics'].filter(id => a[id] === 'unknown').length;
+    if (['new_sales','stable'].includes(a.scope_goal) && a.period_integrity && a.period_integrity !== 'normal' && a.period_integrity !== 'unknown') {
+      return 'Выбранный период искажён отпуском, закрытием или ограниченной доступностью. По нему нельзя честно решать, нужно ли усиливать привлечение.';
+    }
     if (a.core_data === 'feelings' && unknownCount >= 3) return 'Слишком много ключевых ответов сейчас основано на ощущениях. Сначала нужен один факт, который отделит разные причины.';
     if (a.core_access === 'unknown' && a.core_demand === 'unknown') return 'Непонятно одновременно, есть ли реальный спрос и есть ли у вас доступ к нему. Эти две причины требуют разных действий.';
-    if (a.gate_economics === 'unknown' && ['new_sales','income'].includes(a.scope_goal) && ['reserve','small_reserve'].includes(a.gate_capacity)) return 'Перед увеличением объёма нужно хотя бы грубо понимать, оставляет ли типичная продажа деньги после расходов и вашего времени.';
+    if (a.scope_goal === 'new_sales' && (a.gate_capacity === 'unknown' || a.gate_economics === 'unknown')) {
+      return 'Перед увеличением потока нужно понять две вещи: сколько дополнительного объёма вы реально выдержите и оставляет ли типичная продажа деньги после расходов и вашего времени.';
+    }
+    if (a.scope_goal === 'income' && a.gate_economics === 'unknown') {
+      return 'Перед изменениями для роста дохода нужно хотя бы грубо понимать, сколько оставляет типичная продажа после прямых расходов и вашего времени.';
+    }
     return '';
   }
 
@@ -1134,7 +1146,37 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const scope = a.scope_name ? `«${a.scope_name}»` : 'этого предложения';
 
     if (code === 'DATA_GAP') {
-      if (a.gate_economics === 'unknown' && ['new_sales','income'].includes(a.scope_goal)) {
+      if (['new_sales','stable'].includes(a.scope_goal) && a.period_integrity && a.period_integrity !== 'normal' && a.period_integrity !== 'unknown') {
+        out.title = 'Сначала сравните продажи в нормальном рабочем периоде';
+        out.summary = 'Отпуск, закрытая запись или ограниченная доступность искажают текущий период. По нему нельзя честно решать, что вам не хватает новых покупателей.';
+        out.action = numbered(
+          'Возьмите ближайший сопоставимый период, когда вы действительно принимали заказы в обычном режиме.',
+          'Для него запишите: сколько было обращений, сколько заказов и откуда пришло каждое новое обращение.',
+          'Сравнивайте не календарные месяцы сами по себе, а периоды с похожим числом рабочих дней и доступностью.'
+        );
+        out.metric = 'Обращения и заказы за сопоставимый рабочий период + источник каждого нового обращения.';
+        out.dont = 'Пока не увеличивайте рекламу и не открывайте новый канал только потому, что искажённый месяц выглядит слабым.';
+      } else if (a.scope_goal === 'new_sales' && (a.gate_capacity === 'unknown' || a.gate_economics === 'unknown')) {
+        out.title = 'Сначала проверьте, можно ли безопасно наращивать продажи';
+        out.summary = 'Спрос можно усиливать только когда понятно, что вы выдержите дополнительный объём и он действительно принесёт деньги.';
+        const steps = [];
+        if (a.gate_capacity === 'unknown') steps.push('Запишите свой нормальный устойчивый объём: сколько заказов/клиентов вы можете выполнить без ночных авралов, переносов и падения качества.');
+        if (a.gate_economics === 'unknown') steps.push('Возьмите несколько типичных последних продаж и для каждой посчитайте: сумма от клиента − прямые расходы; рядом запишите затраченное время.');
+        steps.push('После этого для новых заказов отмечайте источник и новый это клиент или повторный — тогда станет понятно, какой именно поток имеет смысл усиливать.');
+        out.action = numbered(...steps);
+        out.metric = 'Устойчивый запас мощности + остаток денег и время на типичную продажу + источник новых заказов.';
+        out.dont = 'Пока не масштабируйте рекламу или охваты: больше заказов без проверки мощности и экономики может ухудшить бизнес.';
+      } else if (a.core_access === 'unstable' && a.deep_a1 && a.deep_a1 !== 'yes') {
+        out.title = 'Сначала выясните, какой источник действительно даёт заказы';
+        out.summary = 'Новые клиенты приходят, но источник известен не всегда. Поэтому сейчас рано выбирать канал для усиления.';
+        out.action = numbered(
+          'У каждого следующего нового обращения отмечайте, где человек впервые вас нашёл.',
+          'Рядом отмечайте: подходит ли запрос и состоялся ли заказ.',
+          'Через обычный рабочий период сравните источники по цепочке: источник → подходящее обращение → заказ.'
+        );
+        out.metric = 'Источник → подходящее обращение → заказ.';
+        out.dont = 'Не выбирайте канал для масштабирования по просмотрам, подписчикам или отдельным удачным заказам.';
+      } else if (a.gate_economics === 'unknown' && ['new_sales','income'].includes(a.scope_goal)) {
         out.action = numbered(
           'Возьмите следующую типичную продажу и запишите сумму от клиента.',
           'Отдельно запишите прямые расходы именно на эту продажу и сколько вашего времени она заняла.',
