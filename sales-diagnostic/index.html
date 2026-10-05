@@ -1,0 +1,1241 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="#f6f4ef" />
+  <meta name="description" content="Практический B2C-диагност системы продаж для мастеров, услуг, экспертов и обучения." />
+  <title>Диагностика системы продаж</title>
+  <style>
+:root {
+  --bg: #f6f4ef;
+  --surface: #fffdf9;
+  --surface-2: #f0ede6;
+  --text: #1f2421;
+  --muted: #686b67;
+  --line: #ddd8cf;
+  --accent: #253a33;
+  --accent-soft: #e5ece8;
+  --warning: #775f2d;
+  --warning-soft: #f5ecd3;
+  --danger: #7a3737;
+  --danger-soft: #f4e2e2;
+  --ok: #315b45;
+  --ok-soft: #e2eee7;
+  --shadow: 0 12px 35px rgba(42, 40, 35, .08);
+  --radius: 22px;
+  --max: 760px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid rgba(37,58,51,.22);
+  outline-offset: 2px;
+}
+
+.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.topbar {
+  width: min(100%, calc(var(--max) + 48px));
+  margin: 0 auto;
+  padding: 16px 24px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.brand {
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+.brand-logo { width: 42px; height: 42px; object-fit: contain; }
+.brand-text { display: grid; gap: 0; }
+.brand-text strong { font-size: 14px; }
+.brand-text small { font-size: 12px; color: var(--muted); }
+
+.app {
+  width: min(100%, calc(var(--max) + 48px));
+  margin: 0 auto;
+  padding: 12px 24px 32px;
+  flex: 1;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid rgba(63,58,49,.09);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.hero { padding: clamp(24px, 6vw, 48px); }
+.eyebrow {
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+h1, h2, p { margin-top: 0; }
+h1 {
+  margin-bottom: 16px;
+  font-size: clamp(30px, 7vw, 48px);
+  line-height: 1.05;
+  letter-spacing: -.035em;
+}
+h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
+.lead { font-size: 18px; color: #454944; max-width: 62ch; margin-bottom: 28px; }
+.note-box {
+  margin-top: 24px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: #4e514d;
+  font-size: 14px;
+}
+
+.mode-grid { display: grid; gap: 12px; }
+.mode-card {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  padding: 18px;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+  align-items: center;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.mode-card:hover { transform: translateY(-1px); border-color: #a9b4ae; box-shadow: 0 8px 18px rgba(42,40,35,.05); }
+.mode-card strong { font-size: 17px; }
+.mode-card span { color: var(--muted); font-size: 14px; grid-column: 1; }
+.mode-card .arrow { grid-column: 2; grid-row: 1 / span 2; font-size: 24px; color: var(--accent); }
+.mode-card[disabled] { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.wizard-card { overflow: hidden; }
+.progress-wrap { padding: 18px 22px 0; }
+.progress-track { height: 6px; border-radius: 99px; background: #ebe7df; overflow: hidden; }
+.progress-bar { height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.progress-meta { display: flex; justify-content: space-between; gap: 12px; padding-top: 8px; color: var(--muted); font-size: 12px; }
+.question-wrap { padding: clamp(26px, 7vw, 54px) clamp(22px, 6vw, 48px) 26px; min-height: 430px; }
+.question-title { font-size: clamp(27px, 6vw, 40px); max-width: 18ch; }
+.question-help { color: var(--muted); max-width: 62ch; margin-bottom: 24px; }
+.answer-area { display: grid; gap: 10px; }
+.option-card {
+  position: relative;
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 15px;
+  padding: 14px 16px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+}
+.option-card:hover { border-color: #a6b1ab; }
+.option-card.selected { border: 2px solid var(--accent); padding: 13px 15px; background: var(--accent-soft); }
+.option-dot {
+  width: 20px; height: 20px; border-radius: 50%; border: 2px solid #9c9d98; flex: 0 0 auto;
+  display: grid; place-items: center;
+}
+.option-card.selected .option-dot { border-color: var(--accent); }
+.option-card.selected .option-dot::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.option-text strong { display: block; font-size: 16px; }
+.option-text small { display: block; color: var(--muted); margin-top: 2px; }
+
+.text-input, .select-input {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px 15px;
+  color: var(--text);
+}
+.text-input::placeholder { color: #9a9b96; }
+.input-note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+.wizard-actions {
+  border-top: 1px solid #ece8e0;
+  padding: 16px 22px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.primary-btn, .ghost-btn {
+  min-height: 48px;
+  border-radius: 13px;
+  padding: 0 18px;
+  font-weight: 750;
+}
+.primary-btn { border: 1px solid var(--accent); background: var(--accent); color: white; }
+.primary-btn:disabled { opacity: .38; cursor: not-allowed; }
+.ghost-btn { border: 1px solid var(--line); background: transparent; color: var(--text); }
+
+.result-stack { display: grid; gap: 14px; }
+.result-hero { padding: clamp(25px, 6vw, 44px); background: var(--accent); color: white; }
+.result-hero .eyebrow { color: #c9d8d0; }
+.result-hero h1 { font-size: clamp(30px, 7vw, 46px); margin-bottom: 12px; }
+.result-summary { max-width: 62ch; font-size: 18px; color: #edf2ef; }
+.confidence { display: inline-flex; margin-top: 8px; border-radius: 999px; padding: 7px 11px; background: rgba(255,255,255,.12); font-size: 13px; font-weight: 700; }
+.result-card { padding: 24px; }
+.reason-list { display: grid; gap: 10px; }
+.reason {
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid #eeeae2;
+}
+.reason:last-child { border-bottom: 0; }
+.reason::before { content: "•"; font-weight: 900; color: var(--accent); }
+.action-card { border-color: #cbd9d1; }
+.action-text { font-size: 18px; line-height: 1.55; }
+.metric-box { margin-top: 18px; background: var(--accent-soft); border-radius: 15px; padding: 15px 16px; display: grid; gap: 4px; }
+.metric-box span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 800; }
+.metric-box strong { font-size: 16px; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; background: #fff; font-size: 13px; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.microcopy { margin: 10px 0 0; color: var(--ok); font-size: 13px; }
+
+.status-card { padding: 18px; border-radius: 16px; margin-top: 12px; }
+.status-card.ok { background: var(--ok-soft); color: var(--ok); }
+.status-card.warn { background: var(--warning-soft); color: var(--warning); }
+.status-card.danger { background: var(--danger-soft); color: var(--danger); }
+
+.footer {
+  width: min(100%, calc(var(--max) + 48px));
+  margin: 0 auto;
+  padding: 0 24px 28px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.footer p { margin: 0; }
+
+@media (max-width: 640px) {
+  .topbar { padding: 12px 14px 6px; }
+  .app { padding: 8px 12px 24px; }
+  .footer { padding: 0 14px 22px; }
+  .brand-text small { display: none; }
+  .top-reset { min-height: 40px; padding: 0 12px; font-size: 13px; }
+  .hero { border-radius: 18px; }
+  .wizard-card { border-radius: 18px; }
+  .question-wrap { min-height: 420px; }
+  .wizard-actions { position: sticky; bottom: 0; background: rgba(255,253,249,.96); backdrop-filter: blur(10px); }
+  .primary-btn, .ghost-btn { flex: 1; }
+  .result-actions .primary-btn, .result-actions .ghost-btn { flex: 1 1 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
+
+</style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="brand" id="brandButton" type="button" aria-label="На главную">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAcUAAAHBCAYAAAAYUKCSAAAAxXpUWHRSYXcgcHJvZmlsZSB0eXBlIGV4aWYAAHjabVBbDsMgDPvnFDsCeUDhOJQyaTfY8WdIKrXVLOG4jmpCwvh+3uE1waRB01ZyzTkCWrVygyjR0BZT1MULPbmiux86uWRUQRVrlGyVTt9/OCs1qHQJKt0b+71R1SqXR5BfJHMAhjg8qHqQsDXIA5o9K+ZatusT9hHvKHbCpD5WdiS/7fmtG7Z3JJjCPAQ2WCTbADKPBmkQBIbBUyn0xPTZJ8FC/u3pRPgB1ItaL0ltNRAAAAGFaUNDUElDQyBwcm9maWxlAAB4nH2RPUjDUBSFT1OlKhUHC4o6ZKhOdlERx1LFIlgobYVWHUxe+gdNGpIUF0fBteDgz2LVwcVZVwdXQRD8AXF2cFJ0kRLvSwotYrzweB/n3XN47z5AaFSYanZFAVWzjFQ8JmZzq2LgFT6E0IshjErM1BPpxQw86+ueuqnuIjzLu+/P6lfyJgN8InGU6YZFvEE8u2npnPeJQ6wkKcTnxJMGXZD4keuyy2+ciw4LPDNkZFLzxCFisdjBcgezkqESzxCHFVWjfCHrssJ5i7NaqbHWPfkLg3ltJc11WmOIYwkJJCFCRg1lVGAhQrtGiokUncc8/COOP0kumVxlMHIsoAoVkuMH/4PfszUL01NuUjAGdL/Y9sc4ENgFmnXb/j627eYJ4H8GrrS2v9oA5j5Jr7e18BEwsA1cXLc1eQ+43AGGn3TJkBzJT0soFID3M/qmHDB4C/StuXNrneP0AcjQrJZvgINDYKJI2ese7+7pnNu/Pa35/QCFnnKuJkN4tgAADlVpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+Cjx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IlhNUCBDb3JlIDQuNC4wLUV4aXYyIj4KIDxyZGY6UkRGIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+CiAgPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIKICAgIHhtbG5zOnhtcE1NPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvbW0vIgogICAgeG1sbnM6c3RFdnQ9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZUV2ZW50IyIKICAgIHhtbG5zOmRjPSJodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyIKICAgIHhtbG5zOkdJTVA9Imh0dHA6Ly93d3cuZ2ltcC5vcmcveG1wLyIKICAgIHhtbG5zOnRpZmY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vdGlmZi8xLjAvIgogICAgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIgogICB4bXBNTTpEb2N1bWVudElEPSJnaW1wOmRvY2lkOmdpbXA6MTM5ZWI4NDMtMjk3OS00YjE5LTg0ZTktZTE3ZGJhMThlMjYxIgogICB4bXBNTTpJbnN0YW5jZUlEPSJ4bXAuaWlkOmY5ZmRmODZiLTAwNWUtNDZiNC04ODA1LWI4NDJlYjZmNzM4OCIKICAgeG1wTU06T3JpZ2luYWxEb2N1bWVudElEPSJ4bXAuZGlkOmUxNWRiYmQ4LWVmMTMtNGEwYi04ZDc2LTk3NzFjNDI2MmZkMiIKICAgZGM6Rm9ybWF0PSJpbWFnZS9wbmciCiAgIEdJTVA6QVBJPSIyLjAiCiAgIEdJTVA6UGxhdGZvcm09IldpbmRvd3MiCiAgIEdJTVA6VGltZVN0YW1wPSIxNzA1NzQzMTkwODQ4NzU5IgogICBHSU1QOlZlcnNpb249IjIuMTAuMzYiCiAgIHRpZmY6T3JpZW50YXRpb249IjEiCiAgIHhtcDpDcmVhdG9yVG9vbD0iR0lNUCAyLjEwIgogICB4bXA6TWV0YWRhdGFEYXRlPSIyMDI0OjAxOjIwVDE0OjMzOjAyKzA1OjAwIgogICB4bXA6TW9kaWZ5RGF0ZT0iMjAyNDowMToyMFQxNDozMzowMiswNTowMCI+CiAgIDx4bXBNTTpIaXN0b3J5PgogICAgPHJkZjpTZXE+CiAgICAgPHJkZjpsaQogICAgICBzdEV2dDphY3Rpb249InNhdmVkIgogICAgICBzdEV2dDpjaGFuZ2VkPSIvIgogICAgICBzdEV2dDppbnN0YW5jZUlEPSJ4bXAuaWlkOmVhNGY1MDAzLTBjOGYtNDYyNC04NDVhLWMzODM3ZTJkYWU2ZSIKICAgICAgc3RFdnQ6c29mdHdhcmVBZ2VudD0iR2ltcCAyLjEwIChXaW5kb3dzKSIKICAgICAgc3RFdnQ6d2hlbj0iMjAyNC0wMS0yMFQxNDoyNzoyNyIvPgogICAgIDxyZGY6bGkKICAgICAgc3RFdnQ6YWN0aW9uPSJzYXZlZCIKICAgICAgc3RFdnQ6Y2hhbmdlZD0iLyIKICAgICAgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDpjYTEzN2E5My0zMmE2LTRlM2EtOTU4Yi0zMDBlNTM4NzljYjYiCiAgICAgIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkdpbXAgMi4xMCAoV2luZG93cykiCiAgICAgIHN0RXZ0OndoZW49IjIwMjQtMDEtMjBUMTQ6MzM6MTAiLz4KICAgIDwvcmRmOlNlcT4KICAgPC94bXBNTTpIaXN0b3J5PgogIDwvcmRmOkRlc2NyaXB0aW9uPgogPC9yZGY6UkRGPgo8L3g6eG1wbWV0YT4KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgIAo8P3hwYWNrZXQgZW5kPSJ3Ij8+Gp6lVgAAAAZiS0dEAC0ALQAvW1a4IAAAAAlwSFlzAAAOwwAADsMBx2+oZAAAAAd0SU1FB+gBFAkhCrdDHUUAACAASURBVHhe7J0HvI31H8cfKSWJ7IyMCCHZe2XPkJBkZWZnj2QLkb2l/ijKbCCVWbayV7IiNCQqMv+/9/f0HOeee869z7mDe+/5fl//+9K955mf3/k/n+e7Pt94efLkvW2pKQKKgCKgCCgCioB1n2KgCCgC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EIFAAhLFQFCqJgIiIAIikHwCEsXkj7F6KAIiIAIiEEhAohgIStVEQAREQASST0CimPwxVg9FQAREQAQCCUgUA0GpmgiIgAiIQPIJSBSTP8bqoQiIgAiIQCABiWIgKFUTAREQARFIPgGJYvLHWD0UAREQAREIJCBRDASlaiIgAiIgAsknIFFM/hirhyIgAiIgAoEEJIqBoFRNBERABEQg+QQkiskfY/VQBERABEQgkIBEMRCUqomACIiACCSfgEQx+WOsHoqACIiACAQSkCgGglI1ERABERCB5BOQKCZ/jNVDERABERCBQAISxUBQqiYCIiACIpB8AhLF5I+xeigCIiACIhBIQKIYCErVREAEREAEkk9Aopj8MVYPRUAEREAEAglIFANBqZoIiIAIiEDyCUgUkz/G6qEIiIAIiEAgAYliIChVEwEREAERSD4BiWLyx1g9FAEREAERCCQgUQwEpWoiIAIiIALJJyBRTP4Yq4ciIAIiIAKBBCSKgaBUTQREQAREIPkEJIrJH2P1UAREQAREIJCARDEQlKqJgAiIgAgkn4BEMfljrB6KgAiIgAgEEpAoBoJSNREQAREQgeQTkCgmf4zVQxEQAREQgUACEsVAUKomAiIgAiKQfAISxeSPsXooAiIgAiIQSECiGAhK1URABERABJJPQKKY/DFWD0VABERABAIJSBQDQamaCIiACIhA8glIFJM/xuqhCIiACIhAIAGJYiAoVRMBERABEUg+AYli8sdYPRQBERABEQgkIFEMBKVqIiACIiACyScgUUz+GKuHIiACIiACgQQkioGgVE0EREAERCD5BCSKyR9j9VAEREAERCCQgEQxEJSqiYAIiIAIJJ+ARDH5Y6weioAIiIAIBBKQKAaCUjUREAEREIHkE5AoJn+M1UMREAEREIFAAhLFQFCqJgIiIAIikHwCEsXkj7F6KAIiIAIiEEhAohgIStVEQAREQASST0CimPwxVg9FQAREQAQCCUgUA0GpmgiIgAiIQPIJSBSTP8bqoQiIgAiIQCABiWIgKFUTAREQARFIPgGJYvLHWD0UAREQAREIJCBRDASlaiIgAiIgAsknIFFM/hirhyIgAiIgAoEEJIqBoFRNBERABEQg+QQkiskfY/VQBERABEQgkIBEMRCUqomACIiACCSfgEQx+WOsHoqACIiACAQSkCgGglI1ERABERCB5BOQKCZ/jNVDERABERCBQAISxUBQqiYCIiACIpB8AhLF5I+xeigCIiACIhBIQKIYCErVREAEREAEkk9Aopj8MVYPRUAEREAEAglIFANBqZoIiIAIiEDyCUgUkz/G6qEIiIAIiEAgAYliIChVEwEREAERSD4BiWLyx1g9FAEREAERCCQgUQwEpWoiIAIiIALJJyBRTP4Yq4ciIAIiIAKBBCSKgaBUTQREQAREIPkEJIrJH2P1UAREQAREIJCARDEQlKqJgAiIgAgkn4BEMfljrB6KgAiIgAgEEpAoBoJSNREQAREQgeQTkCgmf4zVQxEQAREQgUACEsVAUKomAiIgAiKQfAISxeSPsXooAiIgAiIQSECiGAhK1URABERABJJPQKKY/DFWD0VABERABAIJSBQDQamaCIiACIhA8gn8PwZjmZVzPGcQAAAAAElFTkSuQmCC" alt="" class="brand-logo" />
+        <span class="brand-text">
+          <strong>Диагностика продаж</strong>
+          <small>Практический инструмент</small>
+        </span>
+      </button>
+      <button class="ghost-btn top-reset" id="resetButton" type="button" hidden>Начать заново</button>
+    </header>
+
+    <main id="app" class="app" aria-live="polite"></main>
+
+    <footer class="footer">
+      <p>Ответы сохраняются только в вашем браузере. Никакой регистрации и отправки данных на сервер.</p>
+    </footer>
+  </div>
+
+  <template id="homeTemplate">
+    <section class="hero card">
+      <div class="eyebrow">Не тест. Не оценка «из 100».</div>
+      <h1>Поймите, что мешает продажам именно сейчас</h1>
+      <p class="lead">Ответьте на понятные вопросы. Инструмент проверит не только рекламу и контент, а весь путь: спрос, предложение, покупку, выполнение, деньги, загрузку и повторные продажи.</p>
+      <div class="mode-grid" id="modeGrid"></div>
+      <div class="note-box">
+        <strong>Важно:</strong> если данных не хватает, инструмент так и скажет — и предложит, что именно начать фиксировать. Он не будет придумывать диагноз.
+      </div>
+    </section>
+  </template>
+
+  <template id="questionTemplate">
+    <section class="wizard-card card">
+      <div class="progress-wrap" aria-hidden="true">
+        <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="progress-meta"><span id="progressLabel"></span><span id="sectionLabel"></span></div>
+      </div>
+      <div class="question-wrap">
+        <div class="eyebrow" id="questionEyebrow"></div>
+        <h1 class="question-title" id="questionTitle"></h1>
+        <p class="question-help" id="questionHelp"></p>
+        <div id="answerArea" class="answer-area"></div>
+      </div>
+      <div class="wizard-actions">
+        <button class="ghost-btn" id="backButton" type="button">Назад</button>
+        <button class="primary-btn" id="nextButton" type="button" disabled>Дальше</button>
+      </div>
+    </section>
+  </template>
+
+  <template id="resultTemplate">
+    <section class="result-stack">
+      <article class="card result-hero">
+        <div class="eyebrow">Что проверить первым</div>
+        <h1 id="resultTitle"></h1>
+        <p class="result-summary" id="resultSummary"></p>
+        <div class="confidence" id="confidenceBadge"></div>
+      </article>
+
+      <article class="card result-card">
+        <h2>Почему инструмент начал отсюда</h2>
+        <div id="resultWhy" class="reason-list"></div>
+      </article>
+
+      <article class="card result-card action-card">
+        <h2>Что сделать сейчас</h2>
+        <p id="resultAction" class="action-text"></p>
+        <div class="metric-box">
+          <span>Что смотреть</span>
+          <strong id="resultMetric"></strong>
+        </div>
+      </article>
+
+      <article class="card result-card" id="dontCard">
+        <h2>Пока не делайте</h2>
+        <p id="resultDont"></p>
+      </article>
+
+      <article class="card result-card" id="secondaryCard">
+        <h2>Что ещё заметил диагност</h2>
+        <div id="secondaryRisks" class="tag-list"></div>
+      </article>
+
+      <article class="card result-card next-card">
+        <h2>Что дальше</h2>
+        <p id="resultNext"></p>
+        <div class="result-actions">
+          <button class="primary-btn" id="saveResultButton" type="button">Сохранить результат</button>
+          <button class="ghost-btn" id="copyResultButton" type="button">Скопировать</button>
+          <button class="ghost-btn" id="restartResultButton" type="button">Новая диагностика</button>
+        </div>
+        <p class="microcopy" id="saveMessage" hidden>Результат сохранён в этом браузере.</p>
+      </article>
+    </section>
+  </template>
+
+  <script>
+(() => {
+  'use strict';
+
+  const STORAGE_KEY = 'salesDiagnosticHistoryV1';
+  const APP_VERSION = '1.0.0-mvp';
+
+  const app = document.getElementById('app');
+  const resetButton = document.getElementById('resetButton');
+  const brandButton = document.getElementById('brandButton');
+
+  const state = {
+    mode: null,
+    answers: {},
+    path: [],
+    index: 0,
+    result: null,
+    followupBase: null,
+    deepAdded: false,
+  };
+
+  const opt = (value, label, hint = '') => ({ value, label, hint });
+
+  const GOAL_OPTIONS = [
+    opt('new_sales', 'Больше новых заказов или клиентов'),
+    opt('stable', 'Сделать продажи менее хаотичными'),
+    opt('income', 'Зарабатывать больше с нынешних продаж'),
+    opt('overload', 'Перестать перегружаться'),
+    opt('repeat', 'Получать больше повторных покупок или визитов'),
+    opt('unknown', 'Понять, где вообще проблема'),
+  ];
+
+  const MODEL_OPTIONS = [
+    opt('PRODUCT', 'Физический товар', 'Букеты, торты, украшения, handmade и другие товары.'),
+    opt('APPOINTMENT', 'Услуга по записи', 'Парикмахер, брейдер, косметология, эпиляция и другие услуги по времени.'),
+    opt('EXPERT', 'Экспертная услуга', 'Консультация, аудит, разбор, наставничество.'),
+    opt('EDUCATION', 'Обучение или цифровой продукт', 'Курс, программа, мастер-класс, обучение.'),
+  ];
+
+  const ROUTES = {
+    PRODUCT: [
+      opt('ready', 'Готовый товар'),
+      opt('guided', 'Помощь с выбором'),
+      opt('custom', 'Индивидуальный заказ'),
+      opt('repeat', 'Повторный заказ'),
+    ],
+    APPOINTMENT: [
+      opt('first_visit', 'Первый визит'),
+      opt('repeat_visit', 'Повторный визит'),
+      opt('course', 'Курс или серия процедур'),
+      opt('urgent', 'Разовая или срочная услуга'),
+    ],
+    EXPERT: [
+      opt('consult', 'Разовая консультация'),
+      opt('audit', 'Аудит или разбор'),
+      opt('support', 'Длительное сопровождение'),
+      opt('repeat_work', 'Повторная работа'),
+    ],
+    EDUCATION: [
+      opt('self_course', 'Самостоятельный курс'),
+      opt('supported_course', 'Курс с сопровождением'),
+      opt('group', 'Групповая программа'),
+      opt('course_plus_expert', 'Обучение + консультации'),
+    ],
+  };
+
+  const COMMON_SCALE = [
+    opt('yes', 'Да'),
+    opt('mostly', 'Скорее да'),
+    opt('mostly_no', 'Скорее нет'),
+    opt('no', 'Нет'),
+    opt('unknown', 'Не знаю'),
+  ];
+
+  const questions = {
+    scope_goal: q('scope_goal', 'Сначала о задаче', 'Что вы хотите изменить сейчас?', 'Выберите то, что беспокоит больше всего. Это не диагноз — только направление проверки.', GOAL_OPTIONS),
+    scope_name: textQ('scope_name', 'Что проверяем', 'Какой товар, услугу или направление будем разбирать?', 'Например: «торты на заказ», «первый визит на лазерную эпиляцию», «мой курс по…».', 'Напишите коротко'),
+    scope_model: q('scope_model', 'Как устроена продажа', 'Что получает клиент?', 'Выберите основной вариант. Если у вас смешанная модель, берите ту часть, которую сейчас хотите проверить.', MODEL_OPTIONS),
+    scope_route: dynamicQ('scope_route', 'Как проходит покупка', 'Какой сценарий сейчас разбираем?', 'Диагност будет оценивать только этот маршрут, а не весь бизнес сразу.', s => ROUTES[s.answers.scope_model] || ROUTES.PRODUCT),
+    scope_period: q('scope_period', 'Период', 'За какой период вы сейчас отвечаете?', 'Берите тот период, по которому вы реально помните или можете восстановить ситуацию.', [
+      opt('recent_month', 'Последний обычный месяц'),
+      opt('recent_quarter', 'Последние несколько месяцев'),
+      opt('season', 'Текущий сезон / сезон продаж'),
+      opt('other', 'Другой понятный мне период'),
+    ]),
+    period_integrity: q('period_integrity', 'Проверка периода', 'Вы работали и принимали заказы весь этот период примерно одинаково?', 'Отпуск, болезнь, отсутствие товара или закрытая запись могут сильно исказить картину.', [
+      opt('normal', 'Да, период обычный'),
+      opt('closed', 'Были дни или недели, когда заказы не принимались'),
+      opt('stock', 'Были проблемы с наличием, материалами или свободными слотами'),
+      opt('absence', 'Был отпуск, болезнь или закрытие'),
+      opt('unknown', 'Не знаю / не помню'),
+    ]),
+    period_context: q('period_context', 'Контекст периода', 'Было ли в этот период что-то необычное?', '', [
+      opt('normal', 'Нет, обычный период'),
+      opt('peak', 'Сезонный пик или большой праздник'),
+      opt('slump', 'Сезонный спад'),
+      opt('offer_change', 'Сильно менялись цена, продукт или условия'),
+      opt('channel_change', 'Сильно менялся основной канал продаж'),
+      opt('unknown', 'Не знаю'),
+    ]),
+    mode_sales: q('mode_sales', 'Состояние направления', 'Были ли реальные оплаченные продажи именно этого предложения в нынешнем виде?', '', [
+      opt('repeatable', 'Да, продажи происходят'),
+      opt('few', 'Были единичные или пробные продажи'),
+      opt('none', 'Продаж ещё не было'),
+      opt('changed', 'Раньше продавалось, но предложение сильно изменилось'),
+    ]),
+
+    gate_legal: q('gate_legal', 'Стоп-проверка', 'Есть ли известная нерешённая проблема с безопасностью, обязательными правилами или законностью продажи?', 'Диагност не заменяет юриста или профильного специалиста. Здесь важно только понять, есть ли известный риск.', [
+      opt('no', 'Нет'), opt('maybe', 'Возможно'), opt('yes', 'Да'), opt('unknown', 'Не знаю'),
+    ]),
+    gate_fulfillment: q('gate_fulfillment', 'Стоп-проверка', 'Как часто клиент не получает обещанное качество, срок или объём?', '', [
+      opt('never', 'Практически никогда'),
+      opt('sometimes', 'Иногда случаются отдельные сбои'),
+      opt('regular', 'Это происходит регулярно'),
+      opt('unknown', 'Не знаю'),
+    ]),
+    gate_capacity: q('gate_capacity', 'Стоп-проверка', 'Если покупателей станет заметно больше, сможете ли вы обслужить их без авралов и падения качества?', '', [
+      opt('reserve', 'Да, запас есть'),
+      opt('small_reserve', 'Небольшой запас есть'),
+      opt('limit', 'Уже работаю почти на пределе'),
+      opt('overload', 'Уже не справляюсь'),
+      opt('unknown', 'Не знаю'),
+    ]),
+    gate_economics: q('gate_economics', 'Стоп-проверка', 'Вы понимаете, остаются ли с большинства продаж деньги после расходов и вашего времени?', '', [
+      opt('good', 'Да, результат меня устраивает'),
+      opt('mixed', 'Очень зависит от товара или услуги'),
+      opt('low', 'Похоже, остаётся слишком мало'),
+      opt('negative', 'Похоже, некоторые продажи убыточны'),
+      opt('unknown', 'Не считаю / не знаю'),
+    ]),
+
+    core_demand: q('core_demand', 'Быстрый скан системы', 'Есть ли реальные люди, которые сейчас покупают или активно ищут такое решение?', '', [
+      opt('regular', 'Да, вижу это регулярно'), opt('sometimes', 'Иногда'), opt('rare', 'Почти не вижу'), opt('new', 'Направление новое'), opt('unknown', 'Не знаю'),
+    ]),
+    core_offer: q('core_offer', 'Быстрый скан системы', 'Подходящий покупатель быстро понимает, что он получит, примерную цену и основные условия?', '', COMMON_SCALE),
+    core_fit: q('core_fit', 'Быстрый скан системы', 'Людям, которые обращаются, ваш продукт или услуга обычно действительно подходит?', '', [
+      opt('yes', 'Да'), opt('most', 'Большинству'), opt('half', 'Примерно половине'), opt('bad', 'Часто обращаются совсем не те'), opt('unknown', 'Не знаю'),
+    ]),
+    core_access: q('core_access', 'Быстрый скан системы', 'Есть ли хотя бы один источник, который приводит новых подходящих покупателей?', '', [
+      opt('regular', 'Да, достаточно регулярно'), opt('unstable', 'Есть, но нестабильно'), opt('none', 'Практически нет'), opt('unknown', 'Не знаю'),
+    ]),
+    core_trust: q('core_trust', 'Быстрый скан системы', 'Перед покупкой люди часто застревают на одинаковых вопросах или сомнениях?', '', [
+      opt('rare', 'Редко'), opt('sometimes', 'Иногда'), opt('often', 'Часто'), opt('almost_always', 'Почти всегда'), opt('unknown', 'Не знаю'),
+    ]),
+    core_conversion: q('core_conversion', 'Быстрый скан системы', 'Если человек уже решил купить, легко ли ему оформить заказ, записаться и оплатить?', '', [
+      opt('easy', 'Легко'), opt('minor', 'Есть мелкие неудобства'), opt('hard', 'Есть заметные сложности'), opt('breaks', 'Покупки или записи регулярно срываются'), opt('unknown', 'Не знаю'),
+    ]),
+    core_start: dynamicQ('core_start', 'Быстрый скан системы', s => ({
+      PRODUCT: 'После заказа клиент обычно нормально получает товар?',
+      APPOINTMENT: 'Записавшийся клиент обычно действительно приходит?',
+      EXPERT: 'После оплаты клиент обычно нормально доходит до начала работы?',
+      EDUCATION: 'После покупки человек получает доступ и начинает пользоваться продуктом?',
+    }[s.answers.scope_model] || 'После покупки клиент нормально начинает получать продукт или услугу?'), '', () => [
+      opt('always', 'Практически всегда'), opt('usually', 'Обычно'), opt('losses', 'Здесь бывают заметные потери'), opt('problem', 'Здесь серьёзная проблема'), opt('unknown', 'Не знаю'),
+    ]),
+    core_fulfillment: q('core_fulfillment', 'Быстрый скан системы', 'Получается ли выполнить обещанное вовремя и в нужном качестве?', '', [
+      opt('yes', 'Да'), opt('usually', 'Обычно'), opt('regular_problem', 'Регулярно возникают проблемы'), opt('no', 'Нет'), opt('unknown', 'Не знаю'),
+    ]),
+    core_value: q('core_value', 'Быстрый скан системы', 'Есть ли основания считать, что клиент получает ожидаемую пользу или результат?', '', [
+      opt('yes', 'Да'), opt('mostly', 'Скорее да'), opt('issues', 'Бывают заметные проблемы'), opt('no', 'Часто нет'), opt('unknown', 'Не знаю'),
+    ]),
+    core_repeat: q('core_repeat', 'Быстрый скан системы', 'Если человеку естественно снова понадобится ваш продукт или услуга, возвращается ли он?', '', [
+      opt('often', 'Да, часто'), opt('sometimes', 'Иногда'), opt('rare', 'Редко'), opt('na', 'Повтор здесь почти не применим'), opt('unknown', 'Не знаю'),
+    ]),
+    core_economics: q('core_economics', 'Быстрый скан системы', 'Есть ли продажи, которые занимают много ресурсов, но почти ничего не оставляют?', '', [
+      opt('none', 'Практически нет'), opt('some', 'Бывают'), opt('many', 'Таких много'), opt('unknown', 'Не знаю'),
+    ]),
+    core_capacity: q('core_capacity', 'Быстрый скан системы', 'Что происходит в периоды повышенного спроса?', '', [
+      opt('fine', 'Спокойно справляюсь'), opt('tense', 'Напряжённо, но нормально'), opt('rush', 'Появляются авралы или очередь'), opt('quality', 'Падает качество или приходится отказывать'), opt('none', 'Таких периодов пока не было'),
+    ]),
+    core_data: q('core_data', 'Последний вопрос общего скана', 'Большинство ответов выше основаны на реальных случаях или скорее на ощущениях?', '', [
+      opt('facts', 'В основном на фактах'), opt('mixed', 'Часть знаю, часть предполагаю'), opt('feelings', 'Почти всё по ощущениям'),
+    ]),
+
+    // Deep demand
+    deep_d1: q('deep_d1', 'Уточняем спрос', 'Были ли оплаченные покупки этого предложения в выбранном периоде?', '', [opt('yes','Да'), opt('no','Нет'), opt('unknown','Не знаю')]),
+    deep_d2: q('deep_d2', 'Уточняем спрос', 'Что точнее описывает ситуацию?', '', [
+      opt('ask_not_buy', 'Люди спрашивают, но редко покупают у меня'),
+      opt('few_requests', 'Вообще мало подобных запросов'),
+      opt('seasonal', 'Спрос явно сезонный'),
+      opt('unknown', 'Не могу отличить'),
+    ]),
+    deep_d3: q('deep_d3', 'Уточняем спрос', 'Есть ли понятные альтернативы, которые люди выбирают вместо вас?', '', [opt('yes','Да'), opt('no','Нет'), opt('unknown','Не знаю')]),
+
+    // Deep offer
+    deep_o1: multiQ('deep_o1', 'Уточняем предложение', 'Что человеку приходится выяснять уже в переписке?', 'Отметьте всё, что повторяется.', [
+      opt('what', 'Что именно он получит'), opt('price', 'Цена или диапазон'), opt('deadline', 'Срок'), opt('conditions', 'Условия'), opt('how', 'Как заказать'), opt('none', 'Ничего из этого'),
+    ]),
+    deep_o2: q('deep_o2', 'Уточняем предложение', 'Насколько легко человеку понять, какой вариант подходит именно ему?', '', [
+      opt('easy','Легко'), opt('sometimes','Не всегда'), opt('long','Часто приходится долго выбирать'), opt('from_scratch','Почти каждый раз всё собираем с нуля'),
+    ]),
+
+    // Fit
+    deep_fit1: multiQ('deep_fit1', 'Уточняем соответствие', 'Почему обращения оказываются неподходящими?', 'Можно выбрать несколько вариантов.', [
+      opt('other_need','Нужна другая услуга/товар'), opt('budget','Не подходит бюджет'), opt('deadline','Не подходит срок'), opt('format','Не подходит формат'), opt('limits','Есть ограничения или противопоказания'), opt('expect','Человек ожидал другое'), opt('unknown','Не знаю'),
+    ]),
+    deep_fit2: q('deep_fit2', 'Уточняем соответствие', 'Можно ли раньше понять, подходит человек или нет?', '', [opt('yes','Да'), opt('partly','Частично'), opt('no','Нет')]),
+
+    // Access
+    deep_a1: q('deep_a1', 'Уточняем доступ', 'Вы обычно знаете, откуда человек впервые о вас узнал?', '', [opt('yes','Да'), opt('sometimes','Иногда'), opt('no','Нет')]),
+    deep_a2: q('deep_a2', 'Уточняем доступ', 'Если продажи снизились, что изменилось первым?', '', [
+      opt('views_down','Стало меньше показов или просмотров'),
+      opt('responses_down','Просмотры примерно те же, но обращений меньше'),
+      opt('buy_down','Обращений столько же, но покупают хуже'),
+      opt('unknown','Не знаю / снижения не было'),
+    ]),
+    deep_a3: q('deep_a3', 'Уточняем доступ', 'Почти весь приток новых клиентов зависит от одного источника?', '', [opt('no','Нет'), opt('mostly','В основном да'), opt('all','Практически полностью'), opt('unknown','Не знаю')]),
+
+    // Trust
+    deep_t1: multiQ('deep_t1', 'Уточняем выбор', 'О чём чаще всего спрашивают перед решением?', 'Отметьте повторяющиеся темы.', [
+      opt('price','Цена'), opt('choice','Что выбрать'), opt('deadline','Сроки'), opt('result','Результат'), opt('quality','Качество'), opt('safety','Безопасность'), opt('delivery','Доставка / место'), opt('reviews','Отзывы'), opt('payment','Оплата'), opt('none','Ничего повторяющегося'),
+    ]),
+    deep_t2: q('deep_t2', 'Уточняем выбор', 'Есть ли у человека понятные доказательства того, что он получит обещанное?', '', [opt('yes','Да'), opt('partly','Частично'), opt('no','Почти нет'), opt('unknown','Не знаю')]),
+
+    // Conversion
+    deep_c1: multiQ('deep_c1', 'Уточняем покупку', 'Где чаще всего возникают сложности?', 'Отметьте только реальные проблемы.', [
+      opt('availability','Наличие'), opt('price','Цена'), opt('choice','Выбор'), opt('chat','Долгая переписка'), opt('form','Форма'), opt('booking','Запись'), opt('slots','Свободные слоты'), opt('handoff','Переход между площадками'), opt('payment','Оплата'), opt('confirm','Подтверждение'), opt('reschedule','Перенос'), opt('unknown','Не знаю'),
+    ]),
+    deep_c2: q('deep_c2', 'Уточняем покупку', 'Есть ли шаг, который можно убрать без потери нужной информации или безопасности?', '', [opt('yes','Да'), opt('maybe','Возможно'), opt('no','Нет'), opt('unknown','Не знаю')]),
+
+    // Start
+    deep_s1: dynamicQ('deep_s1', 'Уточняем начало получения', s => ({
+      PRODUCT: 'Между оплатой и получением товара бывают заметные проблемы?',
+      APPOINTMENT: 'Из записавшихся клиентов заметная часть отменяет или не приходит?',
+      EXPERT: 'После оплаты работа часто откладывается или срывается до фактического старта?',
+      EDUCATION: 'После покупки большинство людей реально начинает обучение?',
+    }[s.answers.scope_model]), '', s => {
+      if (s.answers.scope_model === 'EDUCATION') return [opt('most','Большинство начинает'), opt('half','Примерно половина'), opt('few','Меньшинство'), opt('unknown','Не знаю')];
+      return [opt('no','Почти нет'), opt('some','Иногда'), opt('many','Заметно часто'), opt('unknown','Не знаю')];
+    }),
+    deep_s2: dynamicQ('deep_s2', 'Уточняем начало получения', s => s.answers.scope_model === 'EDUCATION' ? 'Доходит ли начавший до первого полезного действия?' : 'Вы понимаете, почему это происходит?', '', s => s.answers.scope_model === 'EDUCATION' ? [opt('most','Большинство'), opt('some','Часть'), opt('rare','Редко'), opt('unknown','Не знаю')] : [opt('yes','Да'), opt('partly','Частично'), opt('no','Нет')]),
+
+    // Fulfillment
+    deep_f1: multiQ('deep_f1', 'Уточняем выполнение', 'Что чаще всего ломается после продажи?', '', [
+      opt('deadline','Сроки'), opt('quality','Качество'), opt('supply','Закупка / наличие'), opt('rework','Переделки'), opt('delivery','Доставка'), opt('equipment','Оборудование'), opt('errors','Ошибки'), opt('communication','Коммуникация'), opt('support','Поддержка'), opt('overload','Перегруз'), opt('none','Ничего системного'),
+    ]),
+    deep_f2: q('deep_f2', 'Уточняем выполнение', 'При росте заказов эта проблема усиливается?', '', [opt('yes','Да'), opt('no','Нет'), opt('unknown','Не знаю')]),
+
+    // Value
+    deep_v1: multiQ('deep_v1', 'Уточняем результат клиента', 'По чему вы понимаете, что клиент получил нужный результат?', '', [
+      opt('repeat','Повторная покупка или запись'), opt('feedback','Конкретная обратная связь'), opt('observable','Результат можно увидеть'), opt('usage','Использование продукта'), opt('progress','Прохождение / применение'), opt('complaints','Жалобы или возвраты'), opt('none','Никак не проверяю'),
+    ]),
+    deep_v2: q('deep_v2', 'Уточняем результат клиента', 'Есть ли повторяющаяся причина недовольства?', '', [opt('no','Нет'), opt('yes','Да'), opt('unknown','Не знаю')]),
+
+    // Repeat
+    deep_r1: q('deep_r1', 'Уточняем повтор', 'У этого продукта есть естественный следующий цикл?', '', [opt('yes','Да'), opt('sometimes','Иногда'), opt('no','Практически нет'), opt('unknown','Не знаю')]),
+    deep_r2: q('deep_r2', 'Уточняем повтор', 'Вы обычно знаете, когда клиенту снова может понадобиться ваша помощь?', '', [opt('often','Часто знаю'), opt('sometimes','Иногда'), opt('rare','Почти никогда'), opt('impossible','Это невозможно предсказать')]),
+    deep_r3: q('deep_r3', 'Уточняем повтор', 'Сохраняется ли минимально нужная история клиента?', '', [opt('yes','Да'), opt('partly','Частично'), opt('no','Нет')]),
+
+    // Economics
+    deep_e1: q('deep_e1', 'Уточняем деньги', 'Есть ли товары или услуги, которые заметно хуже других по деньгам или вашему времени?', '', [opt('yes','Да'), opt('maybe','Возможно'), opt('no','Нет'), opt('unknown','Не знаю')]),
+    deep_e2: q('deep_e2', 'Уточняем деньги', 'Если увеличить продажи нынешнего предложения, ваш финансовый результат действительно улучшится?', '', [opt('yes','Да'), opt('likely','Скорее да'), opt('unknown','Не уверен'), opt('no','Скорее нет')]),
+
+    // Capacity
+    deep_cap1: q('deep_cap1', 'Уточняем загрузку', 'Что заканчивается первым, когда заказов становится больше?', '', [
+      opt('time','Моё время'), opt('production','Производственное время'), opt('slots','Свободные слоты'), opt('materials','Материалы'), opt('equipment','Оборудование'), opt('room','Помещение'), opt('delivery','Доставка'), opt('support','Поддержка'), opt('helpers','Помощники'), opt('cash','Деньги на закупку'), opt('unknown','Не знаю'),
+    ]),
+    deep_cap2: q('deep_cap2', 'Уточняем загрузку', 'Перегруз уже ухудшает сроки, качество или вашу личную нагрузку?', '', [opt('no','Нет'), opt('sometimes','Иногда'), opt('regular','Регулярно')]),
+
+    // BUILD
+    build_demand: q('build_demand', 'Новый продукт: проверяем спрос', 'Есть реальные признаки, что конкретным людям в конкретной ситуации это нужно?', '', [opt('yes','Да'), opt('weak','Есть только слабые сигналы'), opt('no','Нет'), opt('unknown','Не знаю')]),
+    build_offer: q('build_offer', 'Новый продукт: предложение', 'Есть уже минимально понятное предложение: что человек получит, цена/условия и кому это подходит?', '', COMMON_SCALE),
+    build_route: q('build_route', 'Новый продукт: путь покупки', 'Человек уже может нормально купить или записаться от начала до конца?', '', COMMON_SCALE),
+    build_access: q('build_access', 'Новый продукт: доступ', 'Есть реальный способ показать предложение подходящим людям?', '', COMMON_SCALE),
+    build_market: q('build_market', 'Новый продукт: рыночная проверка', 'Было реальное коммерческое действие — заявка, бронь, предзаказ или оплата от подходящего человека?', '', [opt('paid','Да, была оплата/бронь'), opt('action','Было реальное действие без оплаты'), opt('no','Нет'), opt('unknown','Не знаю')]),
+    build_fulfillment: q('build_fulfillment', 'Новый продукт: выполнение', 'Удалось нормально выполнить реальный заказ или оказать услугу?', '', [opt('yes','Да'), opt('issues','С заметными проблемами'), opt('no','Нет'), opt('notyet','До этого этапа ещё не дошли')]),
+    build_value: q('build_value', 'Новый продукт: результат', 'Есть подтверждение, что клиент получил ту пользу, ради которой покупал?', '', [opt('yes','Да'), opt('partial','Частично'), opt('no','Нет'), opt('unknown','Не знаю / ещё не проверяли')]),
+    build_economics: q('build_economics', 'Новый продукт: деньги', 'По реальной или правдоподобной оценке эта продажа может оставлять приемлемый результат после расходов и времени?', '', [opt('yes','Да'), opt('maybe','Возможно'), opt('no','Нет'), opt('unknown','Не знаю')]),
+    build_capacity: q('build_capacity', 'Новый продукт: повторяемость', 'Если такой заказ повторится несколько раз, вы сможете выполнять его без аврала и падения качества?', '', [opt('yes','Да'), opt('small','С небольшим запасом'), opt('no','Нет'), opt('unknown','Не знаю')]),
+
+    // Follow-up
+    fu_done: q('fu_done', 'Возвращаемся к прошлому решению', 'Удалось выполнить рекомендованное действие?', '', [opt('yes','Да'), opt('partly','Частично'), opt('no','Нет')]),
+    fu_effect: q('fu_effect', 'Что получилось', 'Что произошло с главным показателем?', '', [opt('better','Заметно улучшился'), opt('worse','Ухудшился'), opt('same','Существенной разницы не вижу'), opt('little','Данных пока мало'), opt('invalid','Измерение получилось ненадёжным')]),
+    fu_guardrail: multiQ('fu_guardrail', 'Защитная проверка', 'Не ухудшилось ли что-то важное?', 'Можно отметить несколько пунктов.', [
+      opt('money','Деньги'), opt('quality','Качество'), opt('deadline','Сроки'), opt('load','Нагрузка'), opt('customer','Результат клиента'), opt('none','Ничего не ухудшилось'),
+    ]),
+  };
+
+  const resultLibrary = {
+    LEGAL_SAFETY_BLOCKER: card('Сначала проверьте безопасность и обязательные требования', 'Есть риск, который важнее роста продаж. Инструмент не определяет сам, нарушено ли правило — но усиливать продажи до проверки не стоит.', 'Установите актуальное требование по официальному или профильному источнику и исправьте процесс, если это необходимо.', 'Риск проверен и устранён / подтверждено, что требование выполняется.', 'Не усиливайте поток в потенциально небезопасную или неправомерную схему.', 'После проверки требований повторите диагностику.'),
+    DATA_GAP: card('Сначала получите один недостающий факт', 'Сейчас несколько разных причин выглядят правдоподобно, а действия для них будут разными.', 'Начните фиксировать один показатель, который различит причины. Инструмент подскажет его из ваших ответов.', 'Нужный факт, который меняет следующее решение.', 'Не меняйте сразу рекламу, цену, контент и продукт «на всякий случай».', 'Как только появятся наблюдения, повторите диагностику — она выберет ветку точнее.'),
+    DEMAND_WEAK: card('Проверьте реальный спрос', 'Пока мало не только продаж, но и признаков того, что люди активно ищут или покупают такое решение.', 'Возьмите одну конкретную ситуацию покупки и проверьте её реальным поведением: запросом, бронью, предзаказом или оплатой.', 'Подходящие обращения и реальные покупки по этой ситуации.', 'Не вкладывайтесь сильно в рекламу и сложную упаковку предложения до подтверждения спроса.', 'Если люди откликаются — дальше проверяем предложение и доступ. Если нет — меняем ситуацию покупки или продукт.'),
+    DEMAND_UNCLEAR: card('Разделите слабый спрос и слабый доступ', 'Пока непонятно: людей действительно мало или вы просто плохо до них добираетесь.', 'Проведите небольшой тест доступа к уже понятной ситуации покупки — без масштабной рекламной кампании.', 'Подходящие обращения после появления доступа.', 'Не объявляйте рынок «мёртвым» и не увеличивайте бюджеты до проверки.', 'Если обращения появились — спрос есть, идём к доступу/предложению. Если нет — гипотеза слабого спроса становится сильнее.'),
+    OFFER: card('Упростите предложение', 'Люди приходят, но им приходится долго выяснять базовые условия или понимать, что именно выбрать.', 'Для одной частой ситуации покупки соберите понятный вариант: что человек получит, кому подходит, цена/диапазон, срок, условия и как заказать.', 'Подходящие обращения → подтверждённые покупки; повторяющиеся базовые вопросы.', 'Не увеличивайте поток людей к предложению, которое пока приходится объяснять вручную.', 'Если стало проще выбирать и покупать — сохраняем. Если нет — проверяем соответствие, доверие или путь покупки.'),
+    FIT: card('Сократите неподходящие обращения', 'Часть людей изначально не подходит продукту или услуге. Это не всегда «плохая конверсия».', 'Выделите самый частый признак неподходящего обращения и сделайте его понятным раньше — до длинной переписки.', 'Доля подходящих обращений и время на обработку неподходящих.', 'Не пытайтесь продать всем подряд.', 'После фильтрации смотрим, как покупают уже подходящие люди.'),
+    ACCESS: card('Проверьте один источник новых покупателей', 'Подходящие люди в целом покупают, но новых подходящих обращений недостаточно.', 'Выберите один источник под конкретную ситуацию покупки и проведите ограниченный тест.', 'Новые подходящие обращения → выполненные продажи → деньги → нагрузка.', 'Не открывайте сразу несколько новых каналов: потом будет непонятно, что сработало.', 'Если источник работает — продолжаем до следующего ограничения. Если нет — проверяем качество доступа, предложение или спрос.'),
+    DISTRIBUTION: card('Проверьте распространение, а не переписывайте всё', 'Похоже, материал или предложение видят реже, но реакция тех, кто всё-таки увидел, не выглядит основной проблемой.', 'Проверьте один способ увеличить доступ к тому же работающему предложению или материалу.', 'Показы/просмотры → подходящие переходы и обращения.', 'Не объявляйте контент плохим только из-за падения охвата.', 'Если доступ вернулся, а обращения нет — тогда проверяем содержание и предложение.'),
+    DECISION_GAP: card('Закройте главный вопрос перед покупкой', 'Подходящие люди приходят, но регулярно застревают на одном и том же сомнении или вопросе.', 'Возьмите самый частый незакрытый вопрос и дайте на него понятный ответ до момента покупки.', 'Подходящие обращения → покупки.', 'Не стройте длинный «прогрев», если мешает один конкретный пробел.', 'Если покупка стала проще — сохраняем. Если нет — проверяем следующий пробел или сам путь заказа.'),
+    PURCHASE_FRICTION: card('Уберите одно реальное препятствие в покупке', 'Человек уже хочет купить, но путь заказа, записи или оплаты создаёт заметные потери.', 'Исправьте одно самое частое место срыва: запись, выбор, форма, переход между площадками, оплата или подтверждение.', 'Готовые купить → успешно оформили/оплатили.', 'Не убирайте шаги, которые нужны для безопасности, нормального выбора или обязательных данных.', 'Если потери снизились — сохраняем новый путь. Если нет — ищем следующий реальный барьер.'),
+    START_FAILURE: card('Разберитесь, почему клиент не доходит до получения', 'Продажа или запись происходит, но часть клиентов теряется уже до фактического начала получения.', 'Разберитесь, почему человек не доходит от покупки или записи до получения товара, визита или начала работы.', 'Для записи: пришли / записались. Для товара: успешно получили / оплаченные заказы.', 'Не лечите этот участок увеличением рекламы.', 'Когда причина локализована — исправьте один фактор и сравните результат.'),
+    ACTIVATION_FAILURE: card('Упростите начало использования', 'Продукт покупают, но слишком мало людей реально начинает им пользоваться.', 'Упростите переход «оплата → доступ → первое начало». Найдите одно препятствие и уберите его.', 'Активировались / оплатили.', 'Не увеличивайте продажи продукта, которым большинство купивших не начинает пользоваться.', 'Если активация выросла — дальше проверяем первую полезную ценность.'),
+    FIRST_VALUE_GAP: card('Сократите путь до первой пользы', 'Люди начинают, но слишком мало доходит до первого действительно полезного результата.', 'Определите самое короткое действие, после которого человек получает первую ценность, и сделайте путь к нему проще.', 'Получили первую подтверждённую пользу / активировались.', 'Не перегружайте человека всеми материалами сразу, если это мешает начать.', 'Если первая ценность достигается чаще — дальше смотрим использование и итоговый результат.'),
+    FULFILLMENT: card('Сначала почините выполнение', 'Существующие продажи уже системно создают задержки, ошибки, переделки или проблемы качества.', 'Найдите повторяющуюся причину сбоя и исправьте её первой — закупка, производство, слот, доставка, оборудование, поддержка или перегруз.', 'Выполнено без серьёзного сбоя / принятые заказы; сроки, жалобы, переделки.', 'Не усиливайте привлечение, пока существующий спрос выполняется нестабильно.', 'Когда выполнение стабилизируется, повторите диагностику и вернитесь к следующему ограничению.'),
+    VALUE_FAILURE: card('Сначала исправьте результат для клиента', 'Работа может быть выполнена технически, но клиент не всегда получает ту пользу, ради которой покупал.', 'Найдите одну повторяющуюся причину расхождения между обещанием и фактическим результатом.', 'Подтверждённая полезность, жалобы, возвраты, повторяющееся недовольство.', 'Не усиливайте обещания, рекламу и поток до исправления клиентского результата.', 'После исправления снова проверьте выполнение и повторные покупки.'),
+    NEXT_CYCLE: card('Настройте естественный следующий цикл', 'У клиента есть нормальная причина обратиться снова, но этот момент почти не используется.', 'Для одного повторного сценария определите, когда человеку снова может понадобиться продукт и какую минимальную информацию нужно сохранить после первой покупки.', 'Повтор среди тех клиентов, которым повтор действительно был релевантен.', 'Не запускайте массовую программу лояльности просто потому, что «так принято».', 'Если повтор растёт без раздражения и лишних затрат — сохраняем механику.'),
+    CUSTOMER_MEMORY_GAP: card('Начните помнить только нужное', 'Повтор возможен, но бизнес почти не хранит информацию, которая могла бы упростить следующую покупку.', 'Сохраняйте минимум полезного: что покупал человек, когда, его важные предпочтения и следующий вероятный повод — если это действительно нужно.', 'Уместные повторные обращения и скорость повторного заказа.', 'Не собирайте данные «на всякий случай».', 'Когда появилась полезная история покупок, снова проверьте повторный маршрут.'),
+    ECONOMICS: card('Проверьте, что именно приносит деньги', 'Продажи есть, но увеличение объёма само по себе может не улучшить доход.', 'Посчитайте несколько типичных продаж: получено минус переменные расходы; отдельно — ваше время или другой ограничивающий ресурс.', 'Деньги, остающиеся с продажи; при ограниченном времени — деньги на час/слот.', 'Не увеличивайте объём только ради выручки.', 'Если экономика нормальная — можно возвращаться к росту. Если нет — меняйте цену, состав предложения или процесс, но уже по конкретной причине.'),
+    CAPACITY: card('Найдите ресурс, который заканчивается первым', 'Покупатели сейчас не главная проблема: рост уже упирается во время, слоты, производство, материалы или другой ресурс.', 'Определите ограничивающий ресурс и меняйте именно его: расписание, ассортимент, процесс, цену, помощь или мощность — в зависимости от причины.', 'Устойчиво выполненный объём + качество + нагрузка + деньги.', 'Не создавайте новый спрос по умолчанию.', 'Когда появится нормальный запас мощности, повторите диагностику.'),
+    BUILD_DEMAND: card('Сначала докажите покупательскую ситуацию', 'Для нового направления пока не хватает реального подтверждения, что конкретным людям это нужно.', 'Проверьте одну ситуацию покупки на релевантных людях и добейтесь реального действия, а не комплиментов идее.', 'Запрос, бронь, предзаказ или оплата от подходящего человека.', 'Не стройте сложное продвижение вокруг непроверенной потребности.', 'Если поведение подтверждает спрос — переходите к минимальному предложению.'),
+    BUILD_OFFER: card('Соберите минимально понятное предложение', 'Потребность выглядит возможной, но человеку пока трудно понять, что именно вы продаёте.', 'Соберите минимальное предложение: кому, для какой задачи, что человек получает, цена/условия, срок, ограничения и как купить.', 'Реальное коммерческое действие подходящего покупателя.', 'Не тратьте время на огромную линейку и сложную упаковку до первых проверок.', 'Если предложение понятно — проверяем маршрут покупки.'),
+    BUILD_ROUTE: card('Соберите простой путь покупки', 'Предложение существует, но купить или записаться от начала до конца пока неудобно или невозможно.', 'Соберите самый простой маршрут: увидел → понял → заказал/записался → оплатил → получил подтверждение.', 'Проходит ли реальный человек путь без ручного спасения на каждом шаге.', 'Не добавляйте бота, CRM или лишние формы просто ради «системы».', 'Когда маршрут работает — проверяем доступ к подходящим людям.'),
+    BUILD_ACCESS: card('Дайте новому предложению доступ к подходящим людям', 'Предложение и маршрут уже есть, но пока нет нормального контакта с потенциальными покупателями.', 'Выберите один канал, где реально встречаются люди с этой ситуацией, и проведите ограниченный тест.', 'Подходящие люди → реальное коммерческое действие.', 'Не идите сразу во все площадки.', 'Если люди реагируют — получаем реальную рыночную проверку.'),
+    BUILD_MARKET_TEST: card('Получите первую честную коммерческую проверку', 'Подготовка уже есть, но реального рыночного поведения пока недостаточно.', 'Добейтесь первой нормальной проверки: реальный покупатель, реальные условия, без «покупки из жалости» и скидки, полностью меняющей продукт.', 'Кто купил, почему, на каких условиях и похож ли этот человек на будущего покупателя.', 'Не считайте лайки и похвалу доказательством продажи.', 'После реальной сделки проверяем выполнение и результат клиента.'),
+    BUILD_FULFILLMENT: card('Докажите, что продажу можно нормально выполнить', 'Оплата ещё не означает, что система работает.', 'Выполните реальный заказ от начала до конца и зафиксируйте время, расходы, проблемы и результат.', 'Заказ выполнен без критического сбоя; фактическое время и расходы.', 'Не масштабируйте предложение только потому, что первая оплата состоялась.', 'Когда выполнение подтверждено — проверяем реальную пользу для клиента.'),
+    BUILD_VALUE: card('Проверьте, получил ли клиент обещанную пользу', 'Продажа и выполнение состоялись, но ценность для клиента ещё не подтверждена.', 'Получите подтверждение результата подходящим способом — не просто «всё понравилось», а решилась ли задача покупки.', 'Фактический результат клиента.', 'Не усиливайте обещание до подтверждения ценности.', 'Если ценность подтверждается — проверяем экономику.'),
+    BUILD_ECONOMICS: card('Проверьте экономический смысл продажи', 'Продать и выполнить можно, но пока неясно, стоит ли повторять такую продажу.', 'Посчитайте реальную тестовую продажу: выручка, переменные расходы, ваше время и ограничивающий ресурс.', 'Положительный и правдоподобный результат при нормальной цене и выполнении.', 'Не требуйте идеальной финансовой модели, но не масштабируйте явно убыточную механику.', 'Если экономика приемлема — проверяем устойчивую мощность.'),
+    BUILD_CAPACITY: card('Проверьте, можно ли повторять продажу без аврала', 'Одна продажа может работать, а серия таких продаж — уже нет.', 'Определите, что заканчивается первым, и оцените нормальный устойчивый объём без ночных авралов.', 'Повторяемый объём без ухудшения качества и денег.', 'Не считайте экстренный максимум нормальной мощностью.', 'Если механизм повторяем — направление можно переводить в режим обычной оптимизации.'),
+    NO_CRITICAL_CONSTRAINT_FOUND: card('Явного критического ограничения не найдено', 'По вашим ответам нет достаточно сильного основания объявить одну зону главной проблемой.', 'Возьмите вашу текущую цель и проверьте одну небольшую управляемую гипотезу. Инструмент сохранит её как возможность, а не как «диагноз».', 'Главный бизнес-результат вашей цели + деньги + нагрузка + качество.', 'Не придумывайте проблему ради того, чтобы что-нибудь срочно переделать.', 'После нового наблюдения или изменения снова пройдите диагностику.'),
+  };
+
+  function q(id, eyebrow, title, help, options) { return { id, type: 'single', eyebrow, title, help, options }; }
+  function dynamicQ(id, eyebrow, title, help, optionsFn) { return { id, type: 'single', eyebrow, title, help, optionsFn }; }
+  function multiQ(id, eyebrow, title, help, options) { return { id, type: 'multi', eyebrow, title, help, options }; }
+  function textQ(id, eyebrow, title, help, placeholder) { return { id, type: 'text', eyebrow, title, help, placeholder }; }
+  function card(title, summary, action, metric, dont, next) { return { title, summary, action, metric, dont, next }; }
+
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+  }
+  function saveHistory(item) {
+    try {
+      const history = getHistory();
+      history.unshift(item);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, 12)));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function showHome() {
+    state.mode = null;
+    state.answers = {};
+    state.path = [];
+    state.index = 0;
+    state.result = null;
+    state.followupBase = null;
+    state.deepAdded = false;
+    resetButton.hidden = true;
+    const tpl = document.getElementById('homeTemplate').content.cloneNode(true);
+    app.replaceChildren(tpl);
+    const grid = document.getElementById('modeGrid');
+    const history = getHistory();
+    const modes = [
+      { id: 'full', title: 'Проверить текущие продажи', text: 'Короткий скан всей системы, затем вопросы только по подозрительным участкам.' },
+      { id: 'build', title: 'Проверить новый продукт или услугу', text: 'Для направления, которое ещё не имеет устойчивых продаж.' },
+      { id: 'followup', title: 'Вернуться к прошлой диагностике', text: history.length ? `Есть сохранённый результат от ${formatDate(history[0].date)}.` : 'Появится после первой сохранённой диагностики.', disabled: !history.length },
+    ];
+    modes.forEach(m => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'mode-card'; b.disabled = !!m.disabled;
+      b.innerHTML = `<strong>${m.title}</strong><span>${m.text}</span><span class="arrow">→</span>`;
+      b.addEventListener('click', () => startMode(m.id));
+      grid.appendChild(b);
+    });
+  }
+
+  function startMode(mode) {
+    state.mode = mode;
+    state.answers = {};
+    state.index = 0;
+    state.result = null;
+    state.deepAdded = false;
+    resetButton.hidden = false;
+
+    if (mode === 'followup') {
+      const history = getHistory();
+      state.followupBase = history[0] || null;
+      state.path = ['fu_done', 'fu_effect', 'fu_guardrail'];
+    } else {
+      state.path = mode === 'build'
+        ? ['scope_name', 'scope_model', 'scope_route', 'scope_period', 'period_integrity', 'period_context']
+        : ['scope_goal', 'scope_name', 'scope_model', 'scope_route', 'scope_period', 'period_integrity', 'period_context'];
+      if (mode === 'build') state.answers.scope_goal = 'launch';
+      if (mode === 'full') {
+        state.path.push('mode_sales', 'gate_legal', 'gate_fulfillment', 'gate_capacity', 'gate_economics',
+          'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data');
+      } else {
+        state.path.push('gate_legal','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity');
+      }
+    }
+    renderQuestion();
+  }
+
+  function renderQuestion() {
+    const id = state.path[state.index];
+    const question = questions[id];
+    if (!question) return finalizeDiagnosis();
+
+    const tpl = document.getElementById('questionTemplate').content.cloneNode(true);
+    app.replaceChildren(tpl);
+    document.getElementById('progressBar').style.width = `${Math.round(((state.index + 1) / state.path.length) * 100)}%`;
+    document.getElementById('progressLabel').textContent = `${state.index + 1} из ${state.path.length}`;
+    document.getElementById('sectionLabel').textContent = sectionName(id);
+    document.getElementById('questionEyebrow').textContent = resolve(question.eyebrow);
+    document.getElementById('questionTitle').textContent = resolve(question.title);
+    const help = resolve(question.help);
+    const helpEl = document.getElementById('questionHelp');
+    helpEl.textContent = help || '';
+    helpEl.hidden = !help;
+
+    const answerArea = document.getElementById('answerArea');
+    const nextButton = document.getElementById('nextButton');
+    const backButton = document.getElementById('backButton');
+    backButton.disabled = state.index === 0;
+    backButton.addEventListener('click', () => { state.index--; renderQuestion(); });
+    nextButton.addEventListener('click', goNext);
+
+    const current = state.answers[id];
+    if (question.type === 'text') {
+      const input = document.createElement('input');
+      input.className = 'text-input'; input.type = 'text'; input.placeholder = question.placeholder || '';
+      input.value = current || '';
+      input.autocomplete = 'off';
+      input.addEventListener('input', () => { state.answers[id] = input.value.trim(); nextButton.disabled = !state.answers[id]; });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter' && state.answers[id]) goNext(); });
+      answerArea.appendChild(input);
+      nextButton.disabled = !current;
+      setTimeout(() => input.focus(), 0);
+    } else {
+      const options = question.optionsFn ? question.optionsFn(state) : question.options;
+      options.forEach(o => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'option-card';
+        const selected = question.type === 'multi' ? Array.isArray(current) && current.includes(o.value) : current === o.value;
+        if (selected) b.classList.add('selected');
+        b.innerHTML = `<span class="option-dot" aria-hidden="true"></span><span class="option-text"><strong>${o.label}</strong>${o.hint ? `<small>${o.hint}</small>` : ''}</span>`;
+        b.addEventListener('click', () => {
+          if (question.type === 'multi') {
+            const arr = Array.isArray(state.answers[id]) ? [...state.answers[id]] : [];
+            if (o.value === 'none') state.answers[id] = ['none'];
+            else {
+              const cleaned = arr.filter(v => v !== 'none');
+              const ix = cleaned.indexOf(o.value);
+              if (ix >= 0) cleaned.splice(ix, 1); else cleaned.push(o.value);
+              state.answers[id] = cleaned;
+            }
+          } else state.answers[id] = o.value;
+          renderQuestion();
+        });
+        answerArea.appendChild(b);
+      });
+      nextButton.disabled = question.type === 'multi' ? !(Array.isArray(current) && current.length) : current == null;
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function goNext() {
+    const currentId = state.path[state.index];
+    if (!isAnswered(currentId)) return;
+
+    // If a supposedly current business has no repeatable sales yet, switch to BUILD/HYBRID logic.
+    if (state.mode === 'full' && currentId === 'mode_sales' && state.answers.mode_sales !== 'repeatable') {
+      state.mode = 'build';
+      state.deepAdded = false;
+      state.path = state.path.slice(0, state.index + 1).concat([
+        'gate_legal','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
+      ]);
+    }
+
+    // Stop early in BUILD: the first failed meaningful gate is the current job.
+    if (state.mode === 'build') {
+      const early = buildEarlyResult(currentId);
+      if (early) { state.result = makeResult(early); renderResult(state.result); return; }
+    }
+
+    // In a mature route, ask all four hard gates first, then stop if a blocker is already clear.
+    if (state.mode === 'full' && currentId === 'gate_economics') {
+      const blocker = hardGateResult();
+      if (blocker) { state.result = makeResult(blocker); renderResult(state.result); return; }
+    }
+
+    // If the general scan already shows decision-critical uncertainty, stop before deep branches.
+    if (state.mode === 'full' && currentId === 'core_data') {
+      const gap = decisionCriticalUnknown();
+      if (gap) { state.result = makeResult('DATA_GAP', [gap]); renderResult(state.result); return; }
+    }
+
+    if (state.index < state.path.length - 1) {
+      state.index++;
+      renderQuestion();
+    } else {
+      if (state.mode === 'full' && !state.deepAdded) {
+        const deeper = chooseDeepBranches();
+        if (deeper.length) {
+          state.deepAdded = true;
+          state.path.push(...deeper);
+          state.index++;
+          renderQuestion();
+          return;
+        }
+      }
+      finalizeDiagnosis();
+    }
+  }
+
+  function hardGateResult() {
+    const a = state.answers;
+    if (a.gate_legal === 'yes') return 'LEGAL_SAFETY_BLOCKER';
+    if (a.gate_fulfillment === 'regular') return 'FULFILLMENT';
+    if (a.gate_economics === 'negative') return 'ECONOMICS';
+    if (a.gate_capacity === 'overload') return 'CAPACITY';
+    return '';
+  }
+
+  function buildEarlyResult(currentId) {
+    const a = state.answers;
+    if (currentId === 'gate_legal' && a.gate_legal === 'yes') return 'LEGAL_SAFETY_BLOCKER';
+    const fail = {
+      build_demand: () => !['yes'].includes(a.build_demand),
+      build_offer: () => !['yes','mostly'].includes(a.build_offer),
+      build_route: () => !['yes','mostly'].includes(a.build_route),
+      build_access: () => !['yes','mostly'].includes(a.build_access),
+      build_market: () => !['paid','action'].includes(a.build_market),
+      build_fulfillment: () => a.build_fulfillment !== 'yes',
+      build_value: () => a.build_value !== 'yes',
+      build_economics: () => !['yes','maybe'].includes(a.build_economics),
+      build_capacity: () => !['yes','small'].includes(a.build_capacity),
+    };
+    const codes = {
+      build_demand:'BUILD_DEMAND', build_offer:'BUILD_OFFER', build_route:'BUILD_ROUTE', build_access:'BUILD_ACCESS',
+      build_market:'BUILD_MARKET_TEST', build_fulfillment:'BUILD_FULFILLMENT', build_value:'BUILD_VALUE', build_economics:'BUILD_ECONOMICS', build_capacity:'BUILD_CAPACITY'
+    };
+    return fail[currentId] && fail[currentId]() ? codes[currentId] : '';
+  }
+
+  function chooseDeepBranches() {
+    const candidates = collectCandidates();
+    const selected = candidates.slice(0, 2).map(c => c.zone);
+    const deepMap = {
+      D: ['deep_d1','deep_d2','deep_d3'],
+      O: ['deep_o1','deep_o2'],
+      FIT: ['deep_fit1','deep_fit2'],
+      A: ['deep_a1','deep_a2','deep_a3'],
+      T: ['deep_t1','deep_t2'],
+      C: ['deep_c1','deep_c2'],
+      S: ['deep_s1','deep_s2'],
+      F: ['deep_f1','deep_f2'],
+      V: ['deep_v1','deep_v2'],
+      R: ['deep_r1','deep_r2','deep_r3'],
+      E: ['deep_e1','deep_e2'],
+      CAP: ['deep_cap1','deep_cap2'],
+    };
+    return selected.flatMap(z => deepMap[z] || []);
+  }
+
+  function collectCandidates() {
+    const a = state.answers;
+    const list = [];
+    pushCandidate(list, 'F', Math.max(severity(a.gate_fulfillment, { regular:4, sometimes:2, unknown:1 }), severity(a.core_fulfillment, { no:4, regular_problem:3 })), 95);
+    pushCandidate(list, 'V', severity(a.core_value, { no:4, issues:3, unknown:1 }), 90);
+    pushCandidate(list, 'E', Math.max(severity(a.gate_economics, { negative:4, low:3, mixed:2, unknown:1 }), severity(a.core_economics, { many:3, some:2, unknown:1 })), 88);
+    pushCandidate(list, 'CAP', Math.max(severity(a.gate_capacity, { overload:4, limit:3, unknown:1 }), severity(a.core_capacity, { quality:4, rush:3 })), 86);
+    pushCandidate(list, 'S', severity(a.core_start, { problem:4, losses:3, unknown:1 }), 82);
+    pushCandidate(list, 'C', severity(a.core_conversion, { breaks:4, hard:3, unknown:1 }), 78);
+    pushCandidate(list, 'T', severity(a.core_trust, { almost_always:4, often:3, unknown:1 }), 74);
+    pushCandidate(list, 'FIT', severity(a.core_fit, { bad:4, half:3, unknown:1 }), 72);
+    pushCandidate(list, 'O', severity(a.core_offer, { no:4, mostly_no:3, unknown:1 }), 70);
+    pushCandidate(list, 'A', severity(a.core_access, { none:4, unstable:3, unknown:1 }), 68);
+    pushCandidate(list, 'D', severity(a.core_demand, { rare:4, sometimes:2, new:2, unknown:1 }), 66);
+    pushCandidate(list, 'R', severity(a.core_repeat, { rare:3, unknown:1 }), 45);
+
+    const goalBoost = { new_sales:['A','D','O','FIT','T','C'], stable:['A','R','CAP'], income:['E','CAP','O'], overload:['CAP','F','E'], repeat:['R','V'], unknown:[] };
+    const boost = goalBoost[a.scope_goal] || [];
+    list.forEach(x => { if (boost.includes(x.zone)) x.rank += 7; });
+    return list.filter(x => x.sev > 0).sort((x,y) => (y.sev*100 + y.rank) - (x.sev*100 + x.rank));
+  }
+
+  function pushCandidate(list, zone, sev, rank) { if (sev > 0) list.push({ zone, sev, rank }); }
+  function severity(value, map) { return map[value] || 0; }
+
+  function finalizeDiagnosis() {
+    if (state.mode === 'followup') return finalizeFollowup();
+    const diagnosis = state.mode === 'build' ? diagnoseBuild() : diagnoseFull();
+    state.result = diagnosis;
+    renderResult(diagnosis);
+  }
+
+  function diagnoseBuild() {
+    const a = state.answers;
+    if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
+    const buildChecks = [
+      ['build_demand', v => v === 'yes', 'BUILD_DEMAND'],
+      ['build_offer', v => ['yes','mostly'].includes(v), 'BUILD_OFFER'],
+      ['build_route', v => ['yes','mostly'].includes(v), 'BUILD_ROUTE'],
+      ['build_access', v => ['yes','mostly'].includes(v), 'BUILD_ACCESS'],
+      ['build_market', v => ['paid','action'].includes(v), 'BUILD_MARKET_TEST'],
+      ['build_fulfillment', v => v === 'yes', 'BUILD_FULFILLMENT'],
+      ['build_value', v => v === 'yes', 'BUILD_VALUE'],
+      ['build_economics', v => ['yes','maybe'].includes(v), 'BUILD_ECONOMICS'],
+      ['build_capacity', v => ['yes','small'].includes(v), 'BUILD_CAPACITY'],
+    ];
+    for (const [id, pass, code] of buildChecks) if (!pass(a[id])) return makeResult(code);
+    return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', ['Новый маршрут прошёл основные проверки первой версии. Следующий шаг — начать обычную диагностику уже на реальных повторяющихся продажах.']);
+  }
+
+  function diagnoseFull() {
+    const a = state.answers;
+    if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
+    if (a.gate_fulfillment === 'regular' || a.core_fulfillment === 'no') return makeResult('FULFILLMENT');
+    if (a.core_value === 'no') return makeResult('VALUE_FAILURE');
+    if (a.gate_economics === 'negative') return makeResult('ECONOMICS');
+    if (a.gate_capacity === 'overload' || a.core_capacity === 'quality') return makeResult('CAPACITY');
+
+    const decisionGap = decisionCriticalUnknown();
+    if (decisionGap) return makeResult('DATA_GAP', [decisionGap]);
+
+    const candidates = collectCandidates();
+    const zone = candidates[0]?.zone;
+    let code = 'NO_CRITICAL_CONSTRAINT_FOUND';
+
+    if (zone === 'D') code = diagnoseDemand();
+    if (zone === 'O') code = 'OFFER';
+    if (zone === 'FIT') code = 'FIT';
+    if (zone === 'A') code = diagnoseAccess();
+    if (zone === 'T') code = 'DECISION_GAP';
+    if (zone === 'C') code = 'PURCHASE_FRICTION';
+    if (zone === 'S') code = diagnoseStart();
+    if (zone === 'F') code = 'FULFILLMENT';
+    if (zone === 'V') code = 'VALUE_FAILURE';
+    if (zone === 'R') code = diagnoseRepeat();
+    if (zone === 'E') code = 'ECONOMICS';
+    if (zone === 'CAP') code = 'CAPACITY';
+
+    return makeResult(code);
+  }
+
+  function diagnoseDemand() {
+    const a = state.answers;
+    if (a.deep_d2 === 'ask_not_buy') return 'OFFER';
+    if (a.deep_d2 === 'few_requests' && a.deep_d3 !== 'yes') return 'DEMAND_WEAK';
+    if (a.deep_d2 === 'unknown' || a.core_access === 'unknown') return 'DEMAND_UNCLEAR';
+    if (a.core_access === 'none' || a.deep_d3 === 'yes') return 'ACCESS';
+    return 'DEMAND_UNCLEAR';
+  }
+
+  function diagnoseAccess() {
+    const a = state.answers;
+    if (a.deep_a2 === 'views_down') return 'DISTRIBUTION';
+    if (a.deep_a2 === 'responses_down') return a.core_offer === 'no' || a.core_offer === 'mostly_no' ? 'OFFER' : 'DECISION_GAP';
+    if (a.deep_a2 === 'buy_down') return a.core_conversion === 'hard' || a.core_conversion === 'breaks' ? 'PURCHASE_FRICTION' : 'DECISION_GAP';
+    return 'ACCESS';
+  }
+
+  function diagnoseStart() {
+    const a = state.answers;
+    if (a.scope_model === 'EDUCATION') {
+      if (a.deep_s1 === 'few') return 'ACTIVATION_FAILURE';
+      if (a.deep_s2 === 'rare') return 'FIRST_VALUE_GAP';
+    }
+    return 'START_FAILURE';
+  }
+  function diagnoseRepeat() {
+    const a = state.answers;
+    if (a.deep_r1 === 'no' || a.core_repeat === 'na') return 'NO_CRITICAL_CONSTRAINT_FOUND';
+    if (a.deep_r3 === 'no') return 'CUSTOMER_MEMORY_GAP';
+    return 'NEXT_CYCLE';
+  }
+
+  function decisionCriticalUnknown() {
+    const a = state.answers;
+    const unknownCount = ['core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_fulfillment','core_value','core_repeat','core_economics'].filter(id => a[id] === 'unknown').length;
+    if (a.core_data === 'feelings' && unknownCount >= 3) return 'Слишком много ключевых ответов сейчас основано на ощущениях. Сначала нужен один факт, который отделит разные причины.';
+    if (a.core_access === 'unknown' && a.core_demand === 'unknown') return 'Непонятно одновременно, есть ли реальный спрос и есть ли у вас доступ к нему. Эти две причины требуют разных действий.';
+    if (a.gate_economics === 'unknown' && ['new_sales','income'].includes(a.scope_goal) && ['reserve','small_reserve'].includes(a.gate_capacity)) return 'Перед увеличением объёма нужно хотя бы грубо понимать, оставляет ли типичная продажа деньги после расходов и вашего времени.';
+    return '';
+  }
+
+  function makeResult(code, extraWhy = []) {
+    const base = adaptResultToModel(code, resultLibrary[code] || resultLibrary.NO_CRITICAL_CONSTRAINT_FOUND);
+    return {
+      code,
+      ...base,
+      confidence: confidenceFor(code),
+      why: [...buildWhy(code), ...extraWhy].slice(0, 4),
+      secondary: secondaryRisks(code),
+      date: new Date().toISOString(),
+    };
+  }
+
+  function adaptResultToModel(code, base) {
+    const model = state.answers.scope_model;
+    const out = { ...base };
+    if (code === 'START_FAILURE') {
+      if (model === 'APPOINTMENT') {
+        out.title = 'Разберитесь, почему клиент записывается, но не приходит';
+        out.summary = 'Запись происходит, но часть клиентов теряется до фактического визита.';
+        out.action = 'Разберите реальные отмены, переносы и неявки и найдите самую частую устранимую причину.';
+        out.metric = 'Пришли / записались. Отмены, переносы и неявки считать отдельно.';
+      } else if (model === 'PRODUCT') {
+        out.title = 'Разберитесь, почему оплаченный заказ не доходит до клиента';
+        out.summary = 'Покупка происходит, но часть заказов теряется между оплатой и фактическим получением.';
+        out.action = 'Разберите реальные случаи между оплатой и получением: подтверждение, готовность, выдачу, доставку и связь с клиентом.';
+        out.metric = 'Успешно получили / оплаченные заказы.';
+      } else if (model === 'EXPERT') {
+        out.title = 'Разберитесь, почему работа не начинается после оплаты';
+        out.summary = 'Клиент покупает услугу, но часть работ откладывается или срывается до фактического старта.';
+        out.action = 'Разберите, что мешает перейти от оплаты к началу работы: подготовка, согласование, явка, материалы или расписание.';
+        out.metric = 'Фактически начали работу / оплатили.';
+      }
+    }
+    return out;
+  }
+
+  function buildWhy(code) {
+    const a = state.answers;
+    const lines = [];
+    const add = (cond, text) => { if (cond) lines.push(text); };
+    add(a.period_integrity && a.period_integrity !== 'normal', 'Выбранный период был не совсем обычным, поэтому сравнивать продажи нужно осторожно.');
+    add(code === 'ACCESS' && ['none','unstable'].includes(a.core_access), 'Новых подходящих покупателей приходит мало или нерегулярно.');
+    add(code === 'OFFER' && ['no','mostly_no'].includes(a.core_offer), 'Покупателю трудно быстро понять предложение и основные условия.');
+    add(code === 'FIT' && ['half','bad'].includes(a.core_fit), 'Среди обращений заметно много людей, которым предложение изначально не подходит.');
+    add(code === 'DECISION_GAP' && ['often','almost_always'].includes(a.core_trust), 'Перед покупкой повторяются одинаковые вопросы или сомнения.');
+    add(code === 'PURCHASE_FRICTION' && ['hard','breaks'].includes(a.core_conversion), 'Даже готовая покупка или запись проходит с заметными сложностями.');
+    add(['START_FAILURE','ACTIVATION_FAILURE','FIRST_VALUE_GAP'].includes(code) && ['losses','problem'].includes(a.core_start), 'Потери происходят уже после решения купить или записаться.');
+    add(code === 'FULFILLMENT' && (a.gate_fulfillment === 'regular' || ['regular_problem','no'].includes(a.core_fulfillment)), 'Существующие продажи уже регулярно создают проблемы с выполнением обещанного.');
+    add(code === 'VALUE_FAILURE' && ['issues','no'].includes(a.core_value), 'Есть признаки, что часть клиентов не получает ожидаемую пользу.');
+    add(['NEXT_CYCLE','CUSTOMER_MEMORY_GAP'].includes(code) && a.core_repeat === 'rare', 'Естественный повтор возможен, но происходит редко.');
+    add(code === 'ECONOMICS' && ['negative','low','mixed','unknown'].includes(a.gate_economics), 'Экономика части продаж слабая или пока неясна.');
+    add(code === 'CAPACITY' && ['limit','overload'].includes(a.gate_capacity), 'Свободной мощности мало или её уже не хватает.');
+    add(['DEMAND_WEAK','DEMAND_UNCLEAR'].includes(code) && ['rare','unknown'].includes(a.core_demand), 'Реальный спрос по выбранной ситуации пока виден слабо или неясно.');
+    if (!lines.length) lines.push('Диагноз выбран по совокупности ваших ответов и приоритету более сильных ограничений над косметическими улучшениями.');
+    return lines;
+  }
+
+  function secondaryRisks(primary) {
+    const a = state.answers;
+    const risks = [];
+    const add = (code, text, cond) => { if (cond && code !== primary) risks.push(text); };
+    add('ECONOMICS','Неясная или слабая экономика', ['low','mixed','unknown'].includes(a.gate_economics));
+    add('CAPACITY','Небольшой запас мощности', ['limit'].includes(a.gate_capacity) || a.core_capacity === 'rush');
+    add('ACCESS','Нестабильный приток новых покупателей', a.core_access === 'unstable');
+    add('FIT','Много неподходящих обращений', ['half','bad'].includes(a.core_fit));
+    add('R','Слабый повторный цикл', a.core_repeat === 'rare');
+    add('K','Данные в основном по ощущениям', a.core_data === 'feelings');
+    add('CHANNEL','Зависимость от одного источника', ['mostly','all'].includes(a.deep_a3));
+    return risks.slice(0, 4);
+  }
+
+  function confidenceFor(code) {
+    const a = state.answers;
+    if (code === 'LEGAL_SAFETY_BLOCKER' || code === 'FULFILLMENT' && a.gate_fulfillment === 'regular' || code === 'CAPACITY' && a.gate_capacity === 'overload') return 'Высокая';
+    if (state.mode === 'build') return 'Средняя';
+    if (a.core_data === 'facts') return 'Высокая';
+    if (a.core_data === 'mixed') return 'Средняя';
+    return 'Низкая';
+  }
+
+  function finalizeFollowup() {
+    const a = state.answers;
+    const base = state.followupBase;
+    let title, summary, action, metric, dont, next;
+    const guard = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
+    const guardProblem = guard.some(x => x !== 'none');
+    if (a.fu_done === 'no') {
+      title = 'Сначала нужно понять, что помешало выполнить действие';
+      summary = 'Гипотезу нельзя оценивать, если сама проверка не состоялась.';
+      action = 'Зафиксируйте, что именно помешало: время, деньги, техническая сложность, непонятная задача или другое ограничение. После этого упростите проверку.';
+      metric = 'Удалось ли провести проверку в реальных условиях.';
+      dont = 'Не объявляйте прошлую рекомендацию работающей или неработающей.';
+      next = 'После нормальной проверки вернитесь и оцените результат.';
+    } else if (a.fu_effect === 'better' && !guardProblem) {
+      title = 'Изменение выглядит полезным';
+      summary = 'Главный показатель улучшился, а защитные показатели по вашим ответам не пострадали.';
+      action = 'Сохраните изменение как рабочее и запустите новую диагностику: теперь ограничение могло переместиться.';
+      metric = 'Сохраняется ли эффект на следующих реальных случаях.';
+      dont = 'Не масштабируйте резко только по одному удачному эпизоду.';
+      next = 'Повторная диагностика покажет, что теперь ограничивает результат сильнее всего.';
+    } else if (a.fu_effect === 'worse' || guardProblem) {
+      title = 'Это изменение не стоит закреплять в нынешнем виде';
+      summary = guardProblem ? 'Даже если локальный показатель улучшился, пострадал важный защитный показатель.' : 'Главный показатель ухудшился.';
+      action = 'Остановите или откатите изменение, если это возможно. Сохраните вывод и пройдите диагностику заново с учётом нового факта.';
+      metric = 'Возвращается ли система к нормальному уровню после отката.';
+      dont = 'Не продолжайте действие только потому, что уже потратили на него время или деньги.';
+      next = 'Новая диагностика должна проверить конкурирующую причину.';
+    } else if (a.fu_effect === 'invalid') {
+      title = 'Проверка получилась ненадёжной';
+      summary = 'Условия не позволяют честно понять, помогло действие или нет.';
+      action = 'Исправьте измерение или условия проверки и повторите только если ответ всё ещё влияет на решение.';
+      metric = 'Надёжный результат следующей проверки.';
+      dont = 'Не делайте вывод по испорченному тесту.';
+      next = 'После нормального измерения вернитесь к результату.';
+    } else {
+      title = 'Пока рано объявлять победу или провал';
+      summary = 'Существенной разницы пока не видно либо наблюдений мало.';
+      action = 'Решите, даст ли ещё несколько реальных случаев полезную информацию. Если нет — лучше проверить следующую сильную гипотезу.';
+      metric = 'Главный показатель из прошлой диагностики.';
+      dont = 'Не растягивайте слабую проверку бесконечно.';
+      next = 'После достаточного наблюдения сохраните вывод или начните новую диагностику.';
+    }
+    state.result = { code:'FOLLOWUP', title, summary, action, metric, dont, next, confidence:'—', why:[base ? `Прошлая диагностика: ${base.result?.title || base.title || 'сохранённый результат'}.` : 'Использован предыдущий сохранённый результат.'], secondary:[], date:new Date().toISOString(), followup:true };
+    renderResult(state.result);
+  }
+
+  function renderResult(result) {
+    const tpl = document.getElementById('resultTemplate').content.cloneNode(true);
+    app.replaceChildren(tpl);
+    document.getElementById('resultTitle').textContent = result.title;
+    document.getElementById('resultSummary').textContent = result.summary;
+    const badge = document.getElementById('confidenceBadge');
+    badge.textContent = result.followup ? 'Повторная проверка' : `Уверенность вывода: ${result.confidence.toLowerCase()}`;
+    const why = document.getElementById('resultWhy');
+    result.why.forEach(x => { const d=document.createElement('div'); d.className='reason'; d.textContent=x; why.appendChild(d); });
+    document.getElementById('resultAction').textContent = result.action;
+    document.getElementById('resultMetric').textContent = result.metric;
+    document.getElementById('resultDont').textContent = result.dont;
+    document.getElementById('resultNext').textContent = result.next;
+
+    const secCard = document.getElementById('secondaryCard');
+    const sec = document.getElementById('secondaryRisks');
+    if (!result.secondary?.length) secCard.hidden = true;
+    else result.secondary.forEach(x => { const t=document.createElement('span'); t.className='tag'; t.textContent=x; sec.appendChild(t); });
+
+    const saveButton = document.getElementById('saveResultButton');
+    saveButton.textContent = result.followup ? 'Сохранить проверку' : 'Сохранить результат';
+    saveButton.addEventListener('click', () => {
+      const item = {
+        appVersion: APP_VERSION,
+        date: result.date,
+        mode: state.mode,
+        scope: state.answers.scope_name || state.followupBase?.scope || '',
+        answers: state.answers,
+        result,
+      };
+      const saved = saveHistory(item);
+      const msg = document.getElementById('saveMessage');
+      msg.hidden = false;
+      if (saved) {
+        msg.textContent = 'Результат сохранён в этом браузере.';
+        saveButton.disabled = true;
+      } else {
+        msg.textContent = 'Браузер не разрешил сохранить историю. Скопируйте результат, чтобы не потерять его.';
+      }
+    });
+    document.getElementById('restartResultButton').addEventListener('click', showHome);
+    document.getElementById('copyResultButton').addEventListener('click', async () => {
+      const text = resultText(result);
+      try {
+        await navigator.clipboard.writeText(text);
+        document.getElementById('copyResultButton').textContent = 'Скопировано';
+      } catch {
+        window.prompt('Скопируйте результат:', text);
+      }
+    });
+    resetButton.hidden = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function resultText(r) {
+    return `${r.title}
+
+Почему:
+${r.why.map(x=>'• '+x).join('
+')}
+
+Что сделать:
+${r.action}
+
+Что смотреть:
+${r.metric}
+
+Пока не делать:
+${r.dont}
+
+Что дальше:
+${r.next}`;
+  }
+
+  function isAnswered(id) {
+    const v = state.answers[id];
+    if (Array.isArray(v)) return v.length > 0;
+    return v !== undefined && v !== null && String(v).trim() !== '';
+  }
+  function resolve(value) { return typeof value === 'function' ? value(state) : value; }
+  function sectionName(id) {
+    if (id.startsWith('scope') || id.startsWith('period') || id.startsWith('mode')) return 'Контекст';
+    if (id.startsWith('gate')) return 'Защитная проверка';
+    if (id.startsWith('core')) return 'Общий скан';
+    if (id.startsWith('deep')) return 'Уточнение';
+    if (id.startsWith('build')) return 'Новый продукт';
+    if (id.startsWith('fu')) return 'Повторная проверка';
+    return '';
+  }
+  function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
+
+  resetButton.addEventListener('click', showHome);
+  brandButton.addEventListener('click', showHome);
+  showHome();
+})();
+
+</script>
+</body>
+</html>
