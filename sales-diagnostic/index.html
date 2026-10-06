@@ -402,6 +402,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     opt('APPOINTMENT', 'Услуга по записи', 'Парикмахер, брейдер, косметология, эпиляция и другие услуги по времени.'),
     opt('EXPERT', 'Экспертная услуга', 'Консультация, аудит, разбор, наставничество.'),
     opt('EDUCATION', 'Обучение или цифровой продукт', 'Курс, программа, мастер-класс, обучение.'),
+    opt('SUBSCRIPTION', 'Подписка / клуб / регулярное членство', 'Платный клуб, сообщество, подписка на материалы, поддержку или регулярный сервис.'),
   ];
 
   const ROUTES = {
@@ -428,6 +429,12 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       opt('supported_course', 'Курс с сопровождением'),
       opt('group', 'Групповая программа'),
       opt('course_plus_expert', 'Обучение + консультации'),
+    ],
+    SUBSCRIPTION: [
+      opt('membership', 'Платный клуб / сообщество'),
+      opt('content_sub', 'Подписка на материалы или контент'),
+      opt('support_sub', 'Регулярная поддержка / сопровождение'),
+      opt('service_sub', 'Регулярная услуга по подписке'),
     ],
   };
 
@@ -459,12 +466,16 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         if (m === 'APPOINTMENT') return [opt('attended_visits','Больше реально состоявшихся визитов'), opt('fill_slots','Заполнить свободные окна'), opt('new_customers','Больше новых клиентов'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
         if (m === 'EXPERT') return [opt('paid_clients','Больше оплаченных клиентов или проектов'), opt('new_customers','Больше новых клиентов'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
         if (m === 'EDUCATION') return [opt('paid_students','Больше оплаченных участников'), opt('new_customers','Больше новых покупателей'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
+        if (m === 'SUBSCRIPTION') return [opt('new_subscribers','Больше новых подписчиков / участников'), opt('renewals','Больше продлений'), opt('active_members','Больше реально активных участников'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
         return [opt('completed_orders','Больше выполненных заказов'), opt('new_customers','Больше новых покупателей'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
       }
       if (g === 'income') return [opt('owner_money','Больше денег оставлять себе'), opt('per_sale','Больше зарабатывать с каждой продажи'), opt('same_money_less_time','Примерно тот же заработок за меньшее время'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
       if (g === 'stable') return [opt('steady_orders','Более ровное число заказов или клиентов'), opt('steady_income','Более ровный доход'), opt('less_channel_dependency','Меньше зависеть от одного источника клиентов'), opt('unknown','Пока не знаю')];
       if (g === 'overload') return [opt('less_hours','Меньше работать по времени'), opt('fewer_urgent','Меньше авралов и срочных переделок'), opt('stable_quality','Сохранять качество без перегруза'), opt('unknown','Пока не знаю')];
-      if (g === 'repeat') return [opt('repeat_orders','Больше повторных заказов'), opt('repeat_visits','Больше повторных визитов / продолжений'), opt('repeat_income','Больше дохода от повторных клиентов'), opt('unknown','Пока не знаю')];
+      if (g === 'repeat') {
+        if (m === 'SUBSCRIPTION') return [opt('renewals','Больше продлений'), opt('less_churn','Меньше уходов из подписки'), opt('reactivate_members','Возвращать подходящих ушедших участников'), opt('repeat_income','Больше дохода от действующих участников'), opt('unknown','Пока не знаю')];
+        return [opt('repeat_orders','Больше повторных заказов'), opt('repeat_visits','Больше повторных визитов / продолжений'), opt('repeat_income','Больше дохода от повторных клиентов'), opt('unknown','Пока не знаю')];
+      }
       return [opt('more_orders','Больше заказов или клиентов'), opt('more_money','Больше денег оставлять себе'), opt('less_load','Меньше перегружаться'), opt('more_repeat','Больше повторных покупок'), opt('stable','Более стабильные продажи'), opt('unknown','Пока не знаю')];
     }),
     scope_route: dynamicQ('scope_route', 'Как проходит покупка', 'Как клиент обычно покупает именно этот товар или услугу?', 'Выберите вариант, который ближе к реальности. Проверка будет касаться только этого пути покупки, а не всего бизнеса сразу.', s => ROUTES[s.answers.scope_model] || ROUTES.PRODUCT),
