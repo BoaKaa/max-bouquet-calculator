@@ -1047,7 +1047,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         SUBSCRIPTION:'Если активных участников «' + (s.answers.scope_name || 'этой подписки') + '» станет больше, это помешает другой работе, которая использует те же ресурсы?'
       }[s.answers.scope_model] || 'Если продаж станет больше, это помешает другой работе, которая использует те же ресурсы?'),
       'Предыдущий вопрос выяснял, какие ресурсы общие. Здесь нужно понять другое: есть ли по ним реальный запас или рост одной работы начнёт мешать другой.',
-      s => ({
+      s => {
+        const includeCash = Array.isArray(s.answers.shared_resources) && s.answers.shared_resources.includes('cash');
+        const byModel = {
         PRODUCT:[
           opt('fine','Нет — запаса хватает и другая работа не пострадает'),
           opt('other_suffer','Да — придётся отказывать в другой работе или переносить её'),
@@ -1088,14 +1090,18 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
           opt('cash','Да — может не хватить своих денег на расходы до оплат участников'),
           opt('unknown','Не знаю / пока не могу оценить'),
         ],
-      }[s.answers.scope_model] || [
-        opt('fine','Нет — запаса хватает'),
-        opt('other_suffer','Да — придётся отказываться от другой работы или переносить её'),
-        opt('current_suffer','Да — может пострадать уже принятая другая работа'),
-        opt('overload','Да — придётся регулярно работать на пределе'),
-        opt('cash','Да — может не хватить своих денег на расходы до получения оплаты'),
-        opt('unknown','Не знаю / пока не могу оценить'),
-      ])),
+        };
+        const fallback = [
+          opt('fine','Нет — запаса хватает'),
+          opt('other_suffer','Да — придётся отказываться от другой работы или переносить её'),
+          opt('current_suffer','Да — может пострадать уже принятая другая работа'),
+          opt('overload','Да — придётся регулярно работать на пределе'),
+          opt('cash','Да — может не хватить своих денег на расходы до получения оплаты'),
+          opt('unknown','Не знаю / пока не могу оценить'),
+        ];
+        const opts = byModel[s.answers.scope_model] || fallback;
+        return includeCash ? opts : opts.filter(o => o.value !== 'cash');
+      }),
 
     // BUILD
     // BUILD
@@ -1164,45 +1170,51 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         opt('unknown','Пока не могу оценить'),
       ])),
 
-    build_demand: dynamicQ('build_demand', 'До первых продаж: реакция людей',
-      s => '«' + (s.answers.scope_name || 'Выбранное предложение') + '»: что происходило, когда вы рассказывали людям об этом предложении?',
-      'Нас интересует не похвала идеи, а реальная попытка купить или начать оформление.',
+    build_demand: dynamicQ('build_demand', 'До запуска: есть ли сама потребность',
+      s => ({
+        PRODUCT:'До того как проверять именно «' + (s.answers.scope_name || 'этот товар') + '», вы уже видели, что люди ищут или покупают похожие товары для той же задачи или повода?',
+        APPOINTMENT:'До того как проверять именно «' + (s.answers.scope_name || 'эту услугу') + '», вы уже видели, что люди ищут или записываются на похожую услугу?',
+        EXPERT:'До того как проверять именно «' + (s.answers.scope_name || 'эту услугу') + '», вы уже сталкивались с людьми, которые реально ищут помощь с такой задачей?',
+        EDUCATION:'До того как проверять именно «' + (s.answers.scope_name || 'это обучение') + '», вы уже видели, что люди ищут обучение или другое платное решение этой задачи?',
+        SUBSCRIPTION:'До того как проверять именно «' + (s.answers.scope_name || 'эту подписку') + '», вы уже видели, что люди платят за регулярную помощь, материалы или сообщество по этой задаче?'
+      }[s.answers.scope_model] || 'До проверки именно этого предложения вы уже видели, что люди реально ищут или покупают похожее решение?'),
+      'Здесь вопрос не о вашем предложении. Нужно понять, существует ли сама покупательская потребность. Реакцию именно на ваше предложение инструмент спросит отдельно.',
       s => ({
         PRODUCT:[
-          opt('yes','Люди уже спрашивали по делу, пытались заказать, бронировали, делали предзаказ или платили'),
-          opt('weak','Говорили, что товар интересный или нравится, но заказать не пытались'),
-          opt('no','Я показывал(а) товар, но заметного интереса к покупке не было'),
-          opt('unknown','Я ещё не показывал(а) этот товар подходящим покупателям'),
+          opt('yes','Да — вижу реальные запросы или покупки похожих товаров'),
+          opt('weak','Вижу интерес к теме, но реальных попыток купить почти не замечал(а)'),
+          opt('no','Нет — не вижу, чтобы люди искали или покупали что-то похожее'),
+          opt('unknown','Не проверял(а) / не знаю')
         ],
         APPOINTMENT:[
-          opt('yes','Люди уже пытались записаться, бронировали время, вносили предоплату или оплачивали'),
-          opt('weak','Говорили, что услуга интересна, но записаться не пытались'),
-          opt('no','Я рассказывал(а) об услуге, но заметного интереса к записи не было'),
-          opt('unknown','Я ещё не показывал(а) эту услугу подходящим клиентам'),
+          opt('yes','Да — вижу реальные запросы или записи на похожие услуги'),
+          opt('weak','Люди интересуются темой, но реальных записей почти не вижу'),
+          opt('no','Нет — не вижу заметного спроса на похожую услугу'),
+          opt('unknown','Не проверял(а) / не знаю')
         ],
         EXPERT:[
-          opt('yes','Уже были конкретные запросы на работу, обсуждение условий, заявки или оплата'),
-          opt('weak','Люди говорили, что услуга интересна, но обсуждать заказ не переходили'),
-          opt('no','Я рассказывал(а) об услуге, но конкретных запросов на работу не было'),
-          opt('unknown','Я ещё не предлагал(а) эту услугу подходящим клиентам'),
+          opt('yes','Да — люди реально ищут исполнителя или помощь с такой задачей'),
+          opt('weak','Проблему обсуждают, но за решением обращаются редко'),
+          opt('no','Нет — не вижу реальных запросов на решение этой задачи'),
+          opt('unknown','Не проверял(а) / не знаю')
         ],
         EDUCATION:[
-          opt('yes','Уже были конкретные заявки, попытки оформить участие, предоплата или оплата'),
-          opt('weak','Люди говорили, что обучение интересно, но оформлять участие не пытались'),
-          opt('no','Я показывал(а) обучение, но заметного интереса к покупке не было'),
-          opt('unknown','Я ещё не показывал(а) обучение подходящим людям'),
+          opt('yes','Да — люди реально покупают обучение или другие решения этой задачи'),
+          opt('weak','Интерес к теме есть, но платный спрос мне не виден'),
+          opt('no','Нет — не вижу реального платного спроса на эту задачу'),
+          opt('unknown','Не проверял(а) / не знаю')
         ],
         SUBSCRIPTION:[
-          opt('yes','Люди уже пытались вступить, уточняли условия по делу, оформляли или оплачивали подписку'),
-          opt('weak','Говорили, что формат интересен, но вступать или оплачивать не пытались'),
-          opt('no','Я показывал(а) подписку, но заметного интереса к вступлению не было'),
-          opt('unknown','Я ещё не показывал(а) подписку подходящим людям'),
+          opt('yes','Да — люди реально платят за регулярное решение такой задачи'),
+          opt('weak','Интерес к теме есть, но готовность платить регулярно мне не видна'),
+          opt('no','Нет — не вижу реального спроса на регулярный формат'),
+          opt('unknown','Не проверял(а) / не знаю')
         ],
       }[s.answers.scope_model] || [
-        opt('yes','Люди уже сделали реальный шаг к покупке'),
-        opt('weak','Был только интерес без попытки купить'),
-        opt('no','Показывал(а), но заметного интереса к покупке не было'),
-        opt('unknown','Ещё не показывал(а) предложение подходящим людям'),
+        opt('yes','Да — вижу реальные запросы или покупки похожих решений'),
+        opt('weak','Интерес есть, но реальных покупок почти не вижу'),
+        opt('no','Нет — реального спроса не вижу'),
+        opt('unknown','Не проверял(а) / не знаю')
       ])),
 
     build_offer: dynamicQ('build_offer', 'Новое предложение: понятно ли оно покупателю',
@@ -1858,13 +1870,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       state.path = ['fu_done', 'fu_effect', 'fu_guardrail'];
     } else {
       state.path = mode === 'build'
-        ? ['scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'scope_period', 'period_integrity', 'period_context', 'build_base']
-        : ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'scope_period', 'period_integrity', 'period_context'];
+        ? ['scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'build_base']
+        : ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'mode_sales'];
       if (mode === 'build') state.answers.scope_goal = 'launch';
-      if (mode === 'full') {
-        state.path.push('mode_sales', 'gate_legal', 'gate_fulfillment', 'gate_capacity', 'gate_economics', 'shared_resources',
-          'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data');
-      }
     }
     renderQuestion();
   }
@@ -2031,12 +2039,20 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     // A current business with no repeatable sales moves to BUILD or HYBRID,
     // but we first ask what can be inherited from what already works.
-    if (state.mode === 'full' && currentId === 'mode_sales' && state.answers.mode_sales !== 'repeatable') {
-      state.mode = state.answers.mode_sales === 'changed' ? 'hybrid' : 'build';
-      state.deepAdded = false;
-      if (state.answers.mode_sales === 'changed') state.answers.build_base = 'existing';
-      const next = state.answers.mode_sales === 'changed' ? ['hybrid_changed'] : ['build_base'];
-      state.path = state.path.slice(0, state.index + 1).concat(next);
+    if (state.mode === 'full' && currentId === 'mode_sales') {
+      if (state.answers.mode_sales === 'repeatable') {
+        state.path = state.path.slice(0, state.index + 1).concat([
+          'scope_period','period_integrity','period_context',
+          'gate_legal','gate_fulfillment','gate_capacity','gate_economics','shared_resources',
+          'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data'
+        ]);
+      } else {
+        state.mode = state.answers.mode_sales === 'changed' ? 'hybrid' : 'build';
+        state.deepAdded = false;
+        if (state.answers.mode_sales === 'changed') state.answers.build_base = 'existing';
+        const next = state.answers.mode_sales === 'changed' ? ['hybrid_changed'] : ['build_base'];
+        state.path = state.path.slice(0, state.index + 1).concat(next);
+      }
     }
 
     if ((state.mode === 'build' || state.mode === 'hybrid') && currentId === 'build_base') {
