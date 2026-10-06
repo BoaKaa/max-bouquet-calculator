@@ -343,7 +343,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         <div class="result-actions">
           <button class="primary-btn" id="saveResultButton" type="button">Сохранить результат</button>
           <button class="ghost-btn" id="copyResultButton" type="button">Скопировать</button>
-          <button class="ghost-btn" id="restartResultButton" type="button">Новая диагностика</button>
+          <button class="ghost-btn" id="restartResultButton" type="button">Проверить заново</button>
         </div>
         <p class="microcopy" id="saveMessage" hidden>Результат сохранён в этом браузере.</p>
       </article>
@@ -965,7 +965,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const modes = [
       { id: 'full', title: 'Проверить текущие продажи', text: 'Короткий скан всей системы, затем вопросы только по подозрительным участкам.' },
       { id: 'build', title: 'Проверить новый продукт или услугу', text: 'Для товара или услуги, которые вы только запускаете или пока продаёте редко.' },
-      { id: 'followup', title: 'Проверить прошлое изменение', text: history.length ? `Есть сохранённый результат от ${formatDate(history[0].date)}.` : 'Появится после первой сохранённой диагностики.', disabled: !history.length },
+      { id: 'followup', title: 'Проверить прошлое изменение', text: history.length ? `Есть сохранённый результат от ${formatDate(history[0].date)}.` : 'Появится после первой сохранённой проверки.', disabled: !history.length },
     ];
     modes.forEach(m => {
       const b = document.createElement('button');
@@ -1247,7 +1247,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       ['build_capacity', v => ['yes','small'].includes(v), 'BUILD_CAPACITY'],
     ];
     for (const [id, pass, code] of buildChecks) if (!pass(a[id])) return makeResult(code);
-    return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', ['Новый маршрут прошёл основные проверки первой версии. Следующий шаг — начать обычную диагностику уже на реальных повторяющихся продажах.']);
+    return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', ['Новый товар или услуга прошли основные проверки. Теперь оценивайте их уже по реальным повторяющимся продажам.']);
   }
 
   function evidenceConflict() {
@@ -1951,43 +1951,45 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const a = state.answers;
     const lines = [];
     const add = (cond, text) => { if (cond) lines.push(text); };
-    add(a.period_integrity && !['normal','unknown'].includes(a.period_integrity), 'Выбранный период был не совсем обычным, поэтому сравнивать продажи нужно осторожно.');
-    add(meaningful(a.period_context).some(v => ['peak','slump','offer_change','channel_change'].includes(v)), 'В выбранном периоде были изменения, которые могли повлиять на сравнение: сезонность, предложение или канал.');
-    add(code === 'ACCESS' && ['none','unstable'].includes(a.core_access), 'Новых подходящих покупателей приходит мало или нерегулярно.');
-    add(code === 'OFFER' && ['no','mostly_no'].includes(a.core_offer), 'Покупателю трудно быстро понять предложение и основные условия.');
-    add(code === 'FIT' && ['half','bad'].includes(a.core_fit), 'Среди обращений заметно много людей, которым предложение изначально не подходит.');
-    add(code === 'DECISION_GAP' && ['often','almost_always'].includes(a.core_trust), 'Перед покупкой повторяются одинаковые вопросы или сомнения.');
-    add(code === 'PURCHASE_FRICTION' && ['hard','breaks'].includes(a.core_conversion), 'Даже готовая покупка или запись проходит с заметными сложностями.');
-    add(['START_FAILURE','ACTIVATION_FAILURE','FIRST_VALUE_GAP'].includes(code) && ['losses','problem'].includes(a.core_start), 'Потери происходят уже после решения купить или записаться.');
-    add(code === 'FULFILLMENT' && a.gate_fulfillment === 'regular', 'Существующие продажи уже регулярно создают проблемы с выполнением обещанного.');
-    add(code === 'VALUE_FAILURE' && ['issues','no'].includes(a.core_value), 'Есть признаки, что часть клиентов не получает ожидаемую пользу.');
-    add(['NEXT_CYCLE','CUSTOMER_MEMORY_GAP'].includes(code) && a.core_repeat === 'rare', 'Естественный повтор возможен, но происходит редко.');
-    add(code === 'ECONOMICS' && ['negative','low','mixed','unknown'].includes(a.gate_economics), 'Экономика части продаж слабая или пока неясна.');
-    add(code === 'CAPACITY' && ['limit','overload'].includes(a.gate_capacity), 'Свободной мощности мало или её уже не хватает.');
-    add(['DEMAND_WEAK','DEMAND_UNCLEAR'].includes(code) && ['rare','unknown'].includes(a.core_demand), 'Реальный спрос по выбранной ситуации пока виден слабо или неясно.');
-    if (!lines.length) lines.push('Диагноз выбран по совокупности ваших ответов и приоритету более сильных ограничений над косметическими улучшениями.');
+    add(a.period_integrity && !['normal','unknown'].includes(a.period_integrity), 'Выбранный период был необычным: часть времени вы не могли работать в обычном режиме. Поэтому сравнивать продажи с другими периодами нужно осторожно.');
+    add(meaningful(a.period_context).some(v => ['peak','slump','offer_change','channel_change'].includes(v)), 'В этот период были изменения — сезон, цены, товар или источник клиентов. Они могли заметно повлиять на результат.');
+    add(code === 'ACCESS' && ['none','unstable'].includes(a.core_access), 'Новые люди, которые действительно могут купить у вас, приходят редко или нерегулярно.');
+    add(code === 'OFFER' && ['no','mostly_no'].includes(a.core_offer), 'Новому человеку трудно быстро понять, что вы продаёте, сколько это стоит и на каких условиях.');
+    add(code === 'FIT' && ['half','bad'].includes(a.core_fit), 'Среди обращений много людей, которым ваш товар или услуга не подходят по важным условиям.');
+    add(code === 'DECISION_GAP' && ['often','almost_always'].includes(a.core_trust), 'Перед покупкой люди часто задают один и тот же вопрос или сомневаются в одном и том же.');
+    add(code === 'PURCHASE_FRICTION' && ['hard','breaks'].includes(a.core_conversion), 'Даже люди, которые уже хотят купить, заметно теряются во время оформления.');
+    add(['START_FAILURE','ACTIVATION_FAILURE','FIRST_VALUE_GAP'].includes(code) && ['losses','problem'].includes(a.core_start), 'Часть клиентов теряется уже после покупки, записи или оплаты.');
+    add(code === 'FULFILLMENT' && a.gate_fulfillment === 'regular', 'При выполнении текущих заказов регулярно повторяются задержки, ошибки, переделки или другие сбои.');
+    add(code === 'VALUE_FAILURE' && ['issues','no'].includes(a.core_value), 'Есть признаки, что часть клиентов не получает тот результат, который ожидала.');
+    add(['NEXT_CYCLE','CUSTOMER_MEMORY_GAP'].includes(code) && a.core_repeat === 'rare', 'Повторная покупка здесь возможна, но клиенты возвращаются редко.');
+    add(code === 'ECONOMICS' && ['negative','low','mixed','unknown'].includes(a.gate_economics), 'Пока неясно, сколько вы действительно зарабатываете на части продаж, либо заработок выглядит слишком низким.');
+    add(code === 'CAPACITY' && ['limit','overload'].includes(a.gate_capacity), 'Вы уже близко к пределу нагрузки или не справляетесь с текущим объёмом.');
+    add(['DEMAND_WEAK','DEMAND_UNCLEAR'].includes(code) && ['rare','unknown'].includes(a.core_demand), 'Пока мало реальных признаков, что люди активно пытаются купить такой товар или услугу.');
+    if (!lines.length) lines.push('По вашим ответам именно этот участок сейчас больше других влияет на результат и его разумно проверить первым.');
     return lines;
   }
 
+  
   function secondaryRisks(primary) {
     const a = state.answers;
     const risks = [];
     const add = (code, text, cond) => { if (cond && code !== primary) risks.push(text); };
-    add('LEGAL','Есть вопрос по безопасности / обязательным требованиям', ['maybe','unknown'].includes(a.gate_legal));
-    add('FULFILLMENT','Есть регулярные сбои выполнения', a.gate_fulfillment === 'regular');
-    add('ECONOMICS','Есть убыточные продажи', a.gate_economics === 'negative');
-    add('ECONOMICS','С продаж остаётся мало денег', a.gate_economics === 'low');
-    add('ECONOMICS','Экономика сильно различается по товарам/услугам', a.gate_economics === 'mixed');
-    add('ECONOMICS','Экономика пока не считается', a.gate_economics === 'unknown');
-    add('CAPACITY','Мало запаса мощности или уже есть перегруз', ['limit','overload'].includes(a.gate_capacity));
-    add('ACCESS','Нестабильный приток новых покупателей', a.core_access === 'unstable');
-    add('FIT','Много неподходящих обращений', ['half','bad'].includes(a.core_fit));
-    add('R','Слабый повторный цикл', a.core_repeat === 'rare');
-    add('K','Данные в основном по ощущениям', a.core_data === 'feelings');
-    add('CHANNEL','Зависимость от одного источника', ['mostly','all'].includes(a.deep_a3));
+    add('LEGAL','Есть вопрос по обязательным требованиям', ['maybe','unknown'].includes(a.gate_legal));
+    add('FULFILLMENT','Повторяются проблемы с выполнением заказов', a.gate_fulfillment === 'regular');
+    add('ECONOMICS','Некоторые продажи могут быть убыточными', a.gate_economics === 'negative');
+    add('ECONOMICS','С части продаж остаётся слишком мало денег', a.gate_economics === 'low');
+    add('ECONOMICS','Разные товары или услуги дают очень разный заработок', a.gate_economics === 'mixed');
+    add('ECONOMICS','Пока неясно, сколько остаётся с продажи', a.gate_economics === 'unknown');
+    add('CAPACITY','Нагрузка уже близка к пределу', ['limit','overload'].includes(a.gate_capacity));
+    add('ACCESS','Новые клиенты приходят нерегулярно', a.core_access === 'unstable');
+    add('FIT','Много обращений, которые заведомо не могут закончиться покупкой', ['half','bad'].includes(a.core_fit));
+    add('R','Клиенты редко возвращаются, хотя повтор возможен', a.core_repeat === 'rare');
+    add('K','Часть выводов пока основана скорее на ощущениях, чем на фактах', a.core_data === 'feelings');
+    add('CHANNEL','Новые клиенты слишком сильно зависят от одного источника', ['mostly','all'].includes(a.deep_a3));
     return risks.slice(0, 4);
   }
 
+  
   function confidenceFor(code) {
     const a = state.answers;
     if (state.mode === 'build') return 'Средняя';
@@ -2064,7 +2066,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     document.getElementById('resultAction').textContent = result.action;
     document.getElementById('resultMetric').textContent = result.metric;
     document.getElementById('resultDont').textContent = result.dont;
-    document.getElementById('resultDecisionRule').textContent = result.decisionRule || 'После действия сравните главный показатель и защитные показатели и затем повторите диагностику.';
+    document.getElementById('resultDecisionRule').textContent = result.decisionRule || 'После изменения посмотрите, стало ли лучше по главному результату и не ухудшились ли деньги, качество и нагрузка.';
     document.getElementById('resultNext').textContent = result.next;
 
     const secCard = document.getElementById('secondaryCard');
