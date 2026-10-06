@@ -1561,7 +1561,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     pushCandidate(list, 'E', economicsContradicted ? 0 : severity(a.gate_economics, { negative:4, low:3 }), 88);
     pushCandidate(list, 'CAP', severity(a.gate_capacity, { overload:4, limit:3 }), 86);
 
-    const startContradicted = a.scope_model === 'EDUCATION'
+    const startContradicted = ['EDUCATION','SUBSCRIPTION'].includes(a.scope_model)
       ? (a.deep_s1 === 'most' && a.deep_s2 === 'most')
       : (a.deep_s1 === 'no');
     pushCandidate(list, 'S', startContradicted ? 0 : severity(a.core_start, { problem:4, losses:3 }), 82);
@@ -1593,6 +1593,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       steady_orders:['A','R','CAP'], steady_income:['E','R','A'], less_channel_dependency:['A'],
       less_hours:['CAP','E','F'], fewer_urgent:['F','CAP'], stable_quality:['F','CAP'],
       repeat_orders:['R','V'], repeat_visits:['R','V'], repeat_income:['R','E','V'],
+      new_subscribers:['A','D','O','C'], renewals:['R','V'], active_members:['S','V','R'], less_churn:['R','V','F'], reactivate_members:['REACT','R'],
       more_orders:['A','D','C'], more_money:['E','CAP'], less_load:['CAP','F','E'], more_repeat:['R','V'], stable:['A','R','CAP']
     };
     const boost = [...new Set([...(goalBoost[a.scope_goal] || []), ...(targetBoost[a.scope_target] || [])])];
@@ -1822,8 +1823,10 @@ function finalizePrecision() {
     if (['hard','breaks'].includes(a.core_conversion) && Array.isArray(a.deep_c1) && a.deep_c1.includes('unknown') && a.deep_c2 === 'no') {
       return 'Вы указали, что оформление часто срывается, но конкретный шаг срыва пока не известен. Без этого нельзя безопасно назначить изменение.';
     }
-    if (a.scope_model === 'EDUCATION') {
-      if (['losses','problem'].includes(a.core_start) && a.deep_s1 === 'most' && a.deep_s2 === 'most') return 'Ответы о старте обучения расходятся: общий скан показывает заметные потери после покупки, а уточнение — что большинство и начинает, и доходит до первого полезного действия.';
+    if (['EDUCATION','SUBSCRIPTION'].includes(a.scope_model)) {
+      if (['losses','problem'].includes(a.core_start) && a.deep_s1 === 'most' && a.deep_s2 === 'most') return a.scope_model === 'SUBSCRIPTION'
+        ? 'Ответы о старте подписки расходятся: общий скан показывает заметные потери после оплаты, а уточнение — что большинство и начинает пользоваться, и получает первую пользу.'
+        : 'Ответы о старте обучения расходятся: общий скан показывает заметные потери после покупки, а уточнение — что большинство и начинает, и доходит до первого полезного действия.';
     } else if (['losses','problem'].includes(a.core_start) && a.deep_s1 === 'no') {
       return 'Ответы о начале получения расходятся: общий скан показывает заметные потери после покупки/записи, а уточнение — что таких проблем почти нет.';
     }
@@ -2174,7 +2177,7 @@ function finalizePrecision() {
         out.summary = 'Общий ответ говорит о слабой экономике, а уточнение — что основные расходы учтены и слабых позиций нет.';
         out.action = numbered('Возьмите одну типичную завершённую продажу.', 'Запишите сумму от клиента, прямые расходы и всё фактическое время.', 'Сравните результат со своим минимально приемлемым заработком/нагрузкой и только потом решайте, есть ли экономическая проблема.');
         out.metric = 'Деньги после прямых расходов + фактическое время на одну типичную продажу.';
-      } else if (['losses','problem'].includes(a.core_start) && ((a.scope_model !== 'EDUCATION' && a.deep_s1 === 'no') || (a.scope_model === 'EDUCATION' && a.deep_s1 === 'most' && a.deep_s2 === 'most'))) {
+      } else if (['losses','problem'].includes(a.core_start) && ((!['EDUCATION','SUBSCRIPTION'].includes(a.scope_model) && a.deep_s1 === 'no') || (['EDUCATION','SUBSCRIPTION'].includes(a.scope_model) && a.deep_s1 === 'most' && a.deep_s2 === 'most'))) {
         out.title = 'Сначала посчитайте реальную потерю после покупки/записи';
         out.summary = 'Ответы о начале получения противоречат друг другу, поэтому менять маршрут пока рано.';
         out.action = numbered('За ближайший обычный период отметьте для каждого подтверждённого заказа/записи: начал получать / не начал / отменил / перенёс.', 'Не пытайтесь объяснить причины заранее — сначала подтвердите сам размер потери.', 'После этого снова пройдите проверку.');
