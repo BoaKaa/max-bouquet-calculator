@@ -1884,8 +1884,14 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       new_subscribers:['A','D','O','C'], renewals:['R','V'], active_members:['S','V','R'], less_churn:['R','V','F'], reactivate_members:['REACT','R'],
       more_orders:['A','D','C'], more_money:['E','CAP'], less_load:['CAP','F','E'], more_repeat:['R','V'], stable:['A','R','CAP']
     };
-    const boost = [...new Set([...(goalBoost[a.scope_goal] || []), ...(targetBoost[a.scope_target] || [])])];
-    list.forEach(x => { if (boost.includes(x.zone)) x.rank += 7; });
+    const goalZones = goalBoost[a.scope_goal] || [];
+    const targetZones = targetBoost[a.scope_target] || [];
+    // Severity remains dominant (100 points per level), but the user's stated outcome
+    // must break ties between problems of comparable strength.
+    list.forEach(x => {
+      if (goalZones.includes(x.zone)) x.rank += 15;
+      if (targetZones.includes(x.zone)) x.rank += 25;
+    });
     return list.filter(x => x.sev > 0).sort((x,y) => (y.sev*100 + y.rank) - (x.sev*100 + x.rank));
   }
 
