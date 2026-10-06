@@ -458,6 +458,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       if (g === 'stable') return 'Что именно вы хотите сделать стабильнее?';
       if (g === 'overload') return 'Что должно измениться, чтобы вы перестали перегружаться?';
       if (g === 'repeat') return 'Какой повторный результат для вас важнее?';
+      if (g === 'launch') return 'Что для вас сейчас важнее всего проверить в новом направлении?';
       return 'Какой результат сейчас был бы для вас самым полезным?';
     }, 'Это уточнение нужно, чтобы не советовать больше заказов, когда вам на самом деле нужны, например, больший заработок или меньшая нагрузка.', s => {
       const g = s.answers.scope_goal;
@@ -476,9 +477,28 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         if (m === 'SUBSCRIPTION') return [opt('renewals','Больше продлений'), opt('less_churn','Меньше уходов из подписки'), opt('reactivate_members','Возвращать подходящих ушедших участников'), opt('repeat_income','Больше дохода от действующих участников'), opt('unknown','Пока не знаю')];
         return [opt('repeat_orders','Больше повторных заказов'), opt('repeat_visits','Больше повторных визитов / продолжений'), opt('repeat_income','Больше дохода от повторных клиентов'), opt('unknown','Пока не знаю')];
       }
+      if (g === 'launch') return [
+        opt('first_paid_sales','Получить первые реальные оплаченные продажи'),
+        opt('validate_demand','Понять, готовы ли люди это покупать'),
+        opt('validate_economics','Понять, имеет ли это смысл по деньгам и времени'),
+        opt('launch_without_overload','Понять, смогу ли я это нормально выполнять без перегруза'),
+        opt('unknown','Пока не знаю')
+      ];
       return [opt('more_orders','Больше заказов или клиентов'), opt('more_money','Больше денег оставлять себе'), opt('less_load','Меньше перегружаться'), opt('more_repeat','Больше повторных покупок'), opt('stable','Более стабильные продажи'), opt('unknown','Пока не знаю')];
     }),
     scope_route: dynamicQ('scope_route', 'Как проходит покупка', 'Как клиент обычно покупает именно этот товар или услугу?', 'Выберите вариант, который ближе к реальности. Проверка будет касаться только этого пути покупки, а не всего бизнеса сразу.', s => ROUTES[s.answers.scope_model] || ROUTES.PRODUCT),
+    scope_geography: dynamicQ('scope_geography', 'Где находятся ваши клиенты',
+      s => s.answers.scope_model === 'APPOINTMENT'
+        ? 'Где обычно находится клиент, который покупает именно эту услугу?'
+        : 'Для какой территории или географии вы продаёте именно это предложение?',
+      'Это нужно, чтобы не советовать локальный поиск бизнесу, который работает онлайн, и наоборот.',
+      () => [
+        opt('local','Один город / район и ближайшая территория'),
+        opt('regional','Несколько городов или регионов'),
+        opt('online','География почти не ограничивает продажу — работаю онлайн / дистанционно'),
+        opt('mixed','Есть и локальные, и дистанционные продажи'),
+        opt('unknown','Пока не могу точно определить')
+      ]),
     scope_period: q('scope_period', 'Период', 'За какой период вы сейчас отвечаете?', 'Берите тот период, по которому вы реально помните или можете восстановить ситуацию.', [
       opt('recent_month', 'Последний обычный месяц'),
       opt('recent_quarter', 'Последние несколько месяцев'),
@@ -501,8 +521,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       opt('unknown', 'Не знаю / не помню'),
     ]),
     mode_sales: q('mode_sales', 'Состояние направления', 'Были ли реальные оплаченные продажи именно этого предложения в нынешнем виде?', '', [
-      opt('repeatable', 'Да, продажи происходят'),
-      opt('few', 'Были единичные или пробные продажи'),
+      opt('repeatable', 'Да, такие продажи повторяются в обычной работе'),
+      opt('few', 'Были только единичные или пробные продажи'),
       opt('none', 'Продаж ещё не было'),
       opt('changed', 'Раньше продавалось, но предложение сильно изменилось'),
     ]),
@@ -620,7 +640,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     // Deep demand
     deep_d1: q('deep_d1', 'Уточняем спрос', 'Были ли оплаченные покупки этого предложения в выбранном периоде?', '', [opt('yes','Да'), opt('no','Нет'), opt('unknown','Не знаю')]),
-    deep_d2: q('deep_d2', 'Уточняем спрос', 'На каком этапе сейчас не хватает покупательского спроса?', 'Выберите вариант, который точнее описывает реальную картину.', [
+    deep_d2: q('deep_d2', 'Уточняем спрос', 'Какая картина сейчас ближе всего к реальности?', 'Здесь мы не предполагаем заранее, что проблема именно в спросе. Выберите, что фактически происходит.', [
       opt('ask_not_buy', 'Запросы есть, но у меня покупают редко'),
       opt('few_requests', 'Самих запросов на такой товар или услугу мало'),
       opt('seasonal', 'Запросы сильно зависят от сезона или повода'),
@@ -1259,8 +1279,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       state.path = ['fu_done', 'fu_effect', 'fu_guardrail'];
     } else {
       state.path = mode === 'build'
-        ? ['scope_name', 'scope_model', 'scope_route', 'scope_period', 'period_integrity', 'period_context', 'build_base']
-        : ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_period', 'period_integrity', 'period_context'];
+        ? ['scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'scope_period', 'period_integrity', 'period_context', 'build_base']
+        : ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'scope_period', 'period_integrity', 'period_context'];
       if (mode === 'build') state.answers.scope_goal = 'launch';
       if (mode === 'full') {
         state.path.push('mode_sales', 'gate_legal', 'gate_fulfillment', 'gate_capacity', 'gate_economics', 'shared_resources',
