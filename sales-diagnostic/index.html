@@ -319,6 +319,12 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         <p class="microcopy" id="resultBoundary"></p>
       </article>
 
+      <article class="card result-card" id="precisionCard" hidden>
+        <h2>Что показывают ваши цифры</h2>
+        <p id="precisionSummary"></p>
+        <p class="microcopy" id="precisionCaveat"></p>
+      </article>
+
       <article class="card result-card action-card">
         <h2>Ваш следующий шаг</h2>
         <p id="resultAction" class="action-text"></p>
@@ -348,6 +354,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         <p id="resultNext"></p>
         <div class="result-actions">
           <button class="primary-btn" id="saveResultButton" type="button">Сохранить результат</button>
+          <button class="ghost-btn" id="precisionResultButton" type="button" hidden>Уточнить цифрами</button>
           <button class="ghost-btn" id="copyResultButton" type="button">Скопировать</button>
           <button class="ghost-btn" id="restartResultButton" type="button">Проверить заново</button>
         </div>
@@ -375,6 +382,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     result: null,
     followupBase: null,
     deepAdded: false,
+    precisionBase: null,
+    precisionOriginMode: null,
   };
 
   const opt = (value, label, hint = '') => ({ value, label, hint });
@@ -751,6 +760,56 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     build_economics: q('build_economics', 'Новый продукт: деньги', 'По расчёту или хотя бы реалистичной оценке такая продажа оставляет достаточно денег после прямых расходов и вашего времени?', '', [opt('yes','Да'), opt('maybe','Возможно'), opt('no','Нет'), opt('unknown','Не знаю')]),
     build_capacity: q('build_capacity', 'Новый продукт: повторяемость', 'Какой запас у вас есть, если таких заказов станет несколько подряд?', 'Оценивайте обычную устойчивую работу, а не разовый максимум.', [opt('yes','Есть достаточный запас'), opt('small','Есть небольшой запас'), opt('no','Запаса нет — начнётся перегруз или пострадает качество'), opt('unknown','Не знаю')]),
 
+    // Необязательное уточнение цифрами
+    p_inquiries: numberQ('p_inquiries', 'Уточняем цифрами', 'Сколько новых людей обратилось по этому товару или услуге за тот же период?', 'Считайте реальные обращения: сообщения, звонки, заявки. Просмотры и подписчики сюда не входят.', 'Например: 20', 'count'),
+    p_fit: numberQ('p_fit', 'Уточняем цифрами', 'Из этих обращений сколько было от людей, которым вы действительно могли продать?', 'То есть человеку был нужен ваш товар или услуга и подходили основные условия: цена, срок, формат, география и ограничения.', 'Например: 14', 'count'),
+    p_orders: dynamicNumberQ('p_orders', 'Уточняем цифрами', s => s.answers.scope_model === 'APPOINTMENT'
+      ? 'Сколько из этих людей в итоге подтвердили запись?'
+      : 'Сколько из этих людей в итоге оформили или оплатили заказ?', 'Не нужно восстанавливать идеально точную статистику. Если у вас есть нормальная рабочая оценка — укажите её.', 'Например: 9', 'count'),
+
+    p_confirmed: dynamicNumberQ('p_confirmed', 'Уточняем цифрами', s => {
+      const code = s.precisionBase?.code;
+      if (code === 'FIRST_VALUE_GAP') return 'Сколько человек реально начало пользоваться продуктом или обучением?';
+      if (s.answers.scope_model === 'APPOINTMENT') return 'Сколько подтверждённых записей было за выбранный период?';
+      if (s.answers.scope_model === 'PRODUCT') return 'Сколько подтверждённых или оплаченных заказов было за выбранный период?';
+      if (s.answers.scope_model === 'EXPERT') return 'Сколько оплаченных работ или проектов должно было начаться за выбранный период?';
+      return 'Сколько покупателей должно было начать пользоваться продуктом или обучением?';
+    }, '', 'Например: 18', 'count'),
+    p_started: dynamicNumberQ('p_started', 'Уточняем цифрами', s => {
+      const code = s.precisionBase?.code;
+      if (code === 'FIRST_VALUE_GAP') return 'Сколько из них дошло до первого полезного результата?';
+      if (s.answers.scope_model === 'APPOINTMENT') return 'Сколько из подтверждённых записей закончились реальным визитом?';
+      if (s.answers.scope_model === 'PRODUCT') return 'Сколько заказов клиент получил вовремя и без срыва получения?';
+      if (s.answers.scope_model === 'EXPERT') return 'Сколько работ реально началось в согласованный срок?';
+      return 'Сколько покупателей действительно начало пользоваться продуктом или обучением?';
+    }, '', 'Например: 15', 'count'),
+
+    p_completed: dynamicNumberQ('p_completed', 'Уточняем цифрами', s => s.answers.scope_model === 'APPOINTMENT'
+      ? 'Сколько услуг или визитов вы выполнили за этот период?'
+      : 'Сколько заказов или работ вы выполнили за этот период?', '', 'Например: 25', 'count'),
+    p_problems: numberQ('p_problems', 'Уточняем цифрами', 'В скольких из них были серьёзная задержка, переделка, ошибка или другой повторяющийся сбой?', 'Считайте только реальные случаи, а не то, что теоретически могло произойти.', 'Например: 4', 'count'),
+
+    p_value_total: numberQ('p_value_total', 'Уточняем цифрами', 'По скольким выполненным продажам у вас есть реальная информация о результате клиента?', 'Например: обратная связь, жалоба, возврат, повторное обращение или наблюдаемый результат.', 'Например: 12', 'count'),
+    p_value_problems: numberQ('p_value_problems', 'Уточняем цифрами', 'В скольких из них клиент не получил обещанный результат или столкнулся с повторяющейся проблемой?', '', 'Например: 3', 'count'),
+
+    p_repeat_eligible: numberQ('p_repeat_eligible', 'Уточняем цифрами', 'У скольких прошлых клиентов за выбранный период действительно был естественный повод купить снова?', 'Не считайте всех старых клиентов подряд — только тех, кому повтор реально был нужен или уместен.', 'Например: 10', 'count'),
+    p_repeat_returned: numberQ('p_repeat_returned', 'Уточняем цифрами', 'Сколько из этих клиентов действительно вернулось?', '', 'Например: 4', 'count'),
+
+    p_revenue: numberQ('p_revenue', 'Уточняем цифрами', 'Сколько клиент платит за одну типичную продажу?', 'Введите сумму в той валюте, в которой обычно считаете. Знак валюты писать не нужно.', 'Например: 3500', 'decimal'),
+    p_direct_costs: numberQ('p_direct_costs', 'Уточняем цифрами', 'Сколько прямых расходов приходится на такую продажу?', 'Материалы, упаковка, комиссии, доставка, расходники и другие расходы, которые появляются именно из-за этой продажи.', 'Например: 1400', 'decimal'),
+    p_hours: numberQ('p_hours', 'Уточняем цифрами', 'Сколько вашего времени в часах уходит на такую продажу целиком?', 'Включите подготовку, выполнение, переписку и поддержку, если они действительно занимают время.', 'Например: 2,5', 'decimal'),
+
+    p_capacity_period: q('p_capacity_period', 'Уточняем цифрами', 'За какой одинаковый отрезок вам удобнее сравнить текущую загрузку и нормальный максимум?', '', [
+      opt('week','За обычную неделю'),
+      opt('month','За обычный месяц'),
+      opt('cycle','За один рабочий цикл / набор / поток'),
+    ]),
+    p_current_volume: numberQ('p_current_volume', 'Уточняем цифрами', 'Сколько таких заказов, клиентов или участников вы сейчас обычно обслуживаете за этот отрезок?', 'Берите обычную нагрузку, а не праздничный пик.', 'Например: 12', 'count'),
+    p_sustainable_volume: numberQ('p_sustainable_volume', 'Уточняем цифрами', 'Сколько вы реально можете обслужить за тот же отрезок без постоянных авралов и падения качества?', 'Не разовый максимум, а объём, который можно повторять.', 'Например: 15', 'count'),
+
+    p_market_people: numberQ('p_market_people', 'Уточняем цифрами', 'Скольким людям, которым это реально могло быть нужно, вы сделали конкретное предложение на обычных условиях?', 'Не считайте общие просмотры. Нужны люди, которым предложение действительно показывали как возможную покупку.', 'Например: 20', 'count'),
+    p_market_actions: numberQ('p_market_actions', 'Уточняем цифрами', 'Сколько из них сделали реальный шаг к покупке?', 'Написали по делу, записались, забронировали, оформили предзаказ или оплатили.', 'Например: 5', 'count'),
+
     // Follow-up
     fu_done: q('fu_done', 'Возвращаемся к прошлому решению', 'Удалось выполнить рекомендованное действие?', '', [opt('yes','Да'), opt('partly','Частично'), opt('no','Нет')]),
     fu_effect: q('fu_effect', 'Что получилось', 'Что произошло с показателем, который вы отслеживали после прошлой рекомендации?', '', [opt('better','Заметно улучшился'), opt('worse','Ухудшился'), opt('same','Существенной разницы не вижу'), opt('little','Данных пока мало'), opt('invalid','Измерение получилось ненадёжным')]),
@@ -999,6 +1058,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function dynamicQ(id, eyebrow, title, help, optionsFn) { return { id, type: 'single', eyebrow, title, help, optionsFn }; }
   function multiQ(id, eyebrow, title, help, options) { return { id, type: 'multi', eyebrow, title, help, options }; }
   function textQ(id, eyebrow, title, help, placeholder) { return { id, type: 'text', eyebrow, title, help, placeholder }; }
+  function numberQ(id, eyebrow, title, help, placeholder, numericKind = 'count') { return { id, type: 'number', eyebrow, title, help, placeholder, numericKind }; }
+  function dynamicNumberQ(id, eyebrow, title, help, placeholder, numericKind = 'count') { return { id, type: 'number', eyebrow, title, help, placeholder, numericKind }; }
   function card(title, summary, action, metric, dont, next) { return { title, summary, action, metric, dont, next }; }
 
   function getHistory() {
