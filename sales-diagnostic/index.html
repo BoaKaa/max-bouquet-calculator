@@ -1566,7 +1566,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     if (currentId === 'core_repeat') {
       const a = state.answers;
       const extra = [];
-      const hasProblemToRecover = a.gate_fulfillment === 'regular' || ['issues','no'].includes(a.core_value);
+      const hasProblemToRecover = ['sometimes','regular'].includes(a.gate_fulfillment) || ['mostly','issues','no'].includes(a.core_value);
       const goodEnoughForReferral = ['yes','mostly'].includes(a.core_value);
       const repeatPossible = ['rare','sometimes'].includes(a.core_repeat);
       if (hasProblemToRecover && !state.path.includes('post_recovery')) extra.push('post_recovery');
@@ -2297,7 +2297,7 @@ function finalizePrecision() {
     const scope = a.scope_name ? `«${a.scope_name}»` : 'этого предложения';
 
     if (code === 'LEGAL_SAFETY_BLOCKER') {
-      out.action = numbered('Сформулируйте один конкретный вопрос: какое требование относится именно к вашему товару/услуге и способу продажи.', 'Проверьте его по актуальному официальному или профильному источнику; не ориентируйтесь только на чужие посты и пересказы.', 'Если требование относится к вам — исправьте процесс и сохраните подтверждение того, как оно выполняется. После этого повторите диагностику продаж.');
+      out.action = numbered('Сформулируйте один конкретный вопрос: какое требование относится именно к вашему товару/услуге и способу продажи.', 'Проверьте его по актуальному официальному или профильному источнику; не ориентируйтесь только на чужие посты и пересказы.', 'Если требование относится к вам — исправьте процесс и сохраните подтверждение того, как оно выполняется. После этого повторите проверку продаж.');
       out.metric = 'Есть однозначный ответ по требованию и понятный способ его выполнения в вашем процессе.';
     }
 
