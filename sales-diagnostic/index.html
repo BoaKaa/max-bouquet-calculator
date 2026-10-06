@@ -368,7 +368,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.6.0';
 
   const app = document.getElementById('app');
   const resetButton = document.getElementById('resetButton');
@@ -1471,6 +1471,177 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     renderResult(diagnosis);
   }
 
+function fmtNumber(value, maxFraction = 1) {
+  if (!Number.isFinite(value)) return '';
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits:maxFraction }).format(value);
+}
+
+function percentPart(num, den) {
+  if (!Number.isFinite(num) || !Number.isFinite(den) || den <= 0) return '';
+  return fmtNumber((num / den) * 100, 1) + '%';
+}
+
+function precisionContradiction(message) {
+  const base = state.precisionBase || {};
+  return {
+    ...base,
+    code:'DATA_GAP',
+    kind:'Нужно перепроверить вывод',
+    title:'Цифры не совпали с предыдущими ответами',
+    summary:message,
+    precisionRefined:true,
+    precisionSummary:message,
+    precisionCaveat:'Это не означает, что проблемы точно нет. Сначала убедитесь, что качественные ответы и цифры относятся к одному и тому же товару, периоду и пути покупки.',
+    action:numbered(
+      'Проверьте, что цифры относятся к тому же периоду и именно к тому товару или услуге, которые вы оценивали.',
+      'Если период один и тот же — опирайтесь на фактические случаи и обновите исходный ответ.',
+      'После этого снова пройдите нужную часть проверки, не меняя бизнес на основании противоречивых данных.'
+    ),
+    metric:'Один и тот же период, один и тот же товар/услуга и согласующиеся между собой факты.',
+    dont:'Не исправляйте процесс только потому, что первоначальный ответ звучал тревожно, если реальные случаи этого не подтверждают.',
+    decisionRule:'Когда качественный ответ и фактические случаи совпадут, используйте обновлённый вывод.',
+    why:[message],
+    secondary:base.secondary || [],
+    date:new Date().toISOString()
+  };
+}
+
+function finalizePrecision() {
+  const a = state.answers;
+  const base = state.precisionBase;
+  if (!base) { state.mode = state.precisionOriginMode || 'full'; return showHome(); }
+
+  const invalidPairs = [
+    ['p_fit','p_inquiries','Число людей, которым вы могли продать, не может быть больше общего числа обращений.'],
+    ['p_orders','p_fit','Число заказов в этом уточнении не может быть больше числа потенциальных покупателей, из которых вы его считаете.'],
+    ['p_started','p_confirmed','Число реально начавших или пришедших не может быть больше числа подтверждённых.'],
+    ['p_problems','p_completed','Число проблемных выполнений не может быть больше общего числа выполненных заказов или услуг.'],
+    ['p_value_problems','p_value_total','Число проблем с результатом не может быть больше числа случаев, по которым у вас вообще есть информация.'],
+    ['p_repeat_returned','p_repeat_eligible','Число вернувшихся клиентов не может быть больше числа клиентов, у которых был реальный повод вернуться.'],
+    ['p_market_actions','p_market_people','Число реальных шагов к покупке не может быть больше числа людей, которым сделали предложение.']
+  ];
+  for (const [numId, denId, msg] of invalidPairs) {
+    if (Number.isFinite(a[numId]) && Number.isFinite(a[denId]) && a[numId] > a[denId]) {
+      state.mode = state.precisionOriginMode || 'full';
+      state.result = precisionContradiction(msg);
+      renderResult(state.result);
+      return;
+    }
+  }
+
+  let result = { ...base, precisionRefined:true, date:new Date().toISOString() };
+  const code = base.code;
+  let summary = '';
+  const caveat = 'Цифры описывают именно выбранный период. Они помогают уточнить картину, но сами по себе не задают универсальную норму «хорошо/плохо».';
+
+  if (Number.isFinite(a.p_inquiries)) {
+    summary = `За выбранный период было ${fmtNumber(a.p_inquiries,0)} обращений.`;
+    if (Number.isFinite(a.p_fit)) summary += ` Из них ${fmtNumber(a.p_fit,0)} были от людей, которым вы реально могли продать${a.p_inquiries > 0 ? ` (${percentPart(a.p_fit,a.p_inquiries)})` : ''}.`;
+    if (Number.isFinite(a.p_orders)) summary += ` До заказа или подтверждённой записи дошло ${fmtNumber(a.p_orders,0)}${a.p_fit > 0 ? ` (${percentPart(a.p_orders,a.p_fit)} от потенциальных покупателей)` : ''}.`;
+
+    if (code === 'FIT' && a.p_inquiries > 0 && a.p_fit === a.p_inquiries) {
+      result = precisionContradiction(`Вы указали ${fmtNumber(a.p_inquiries,0)} обращений, и все ${fmtNumber(a.p_fit,0)} оказались от людей, которым вы реально могли продать. Эти цифры не подтверждают вывод, что основная проблема — неподходящие обращения.`);
+    } else if (code === 'PURCHASE_FRICTION' && a.p_fit > 0 && a.p_orders === a.p_fit) {
+      result = precisionContradiction(`По вашим цифрам все ${fmtNumber(a.p_fit,0)} потенциальных покупателей дошли до заказа или подтверждённой записи. В этом периоде потеря на оформлении не подтверждается.`);
+    } else {
+      result.precisionSummary = summary;
+      result.precisionCaveat = caveat;
+      result.metric = `${result.metric} Сейчас у вас есть исходная точка: ${fmtNumber(a.p_inquiries,0)} обращений → ${fmtNumber(a.p_fit,0)} потенциальных покупателей → ${fmtNumber(a.p_orders,0)} заказов/записей.`;
+    }
+  }
+
+  if (Number.isFinite(a.p_confirmed) && Number.isFinite(a.p_started)) {
+    const noun = a.scope_model === 'APPOINTMENT' ? 'визитов' : a.scope_model === 'PRODUCT' ? 'заказов, дошедших до клиента вовремя' : a.scope_model === 'EXPERT' ? 'работ, начавшихся вовремя' : code === 'FIRST_VALUE_GAP' ? 'людей, дошедших до первого результата' : 'людей, реально начавших';
+    summary = `${fmtNumber(a.p_started,0)} из ${fmtNumber(a.p_confirmed,0)} — ${noun}${a.p_confirmed > 0 ? ` (${percentPart(a.p_started,a.p_confirmed)})` : ''}.`;
+    if (a.p_confirmed > 0 && a.p_started === a.p_confirmed && ['START_FAILURE','ACTIVATION_FAILURE','FIRST_VALUE_GAP'].includes(code)) {
+      result = precisionContradiction(`По вашим цифрам все ${fmtNumber(a.p_confirmed,0)} случаев дошли до нужного следующего шага. В этом периоде заявленная потеря после покупки или записи не подтверждается.`);
+    } else {
+      result.precisionSummary = summary;
+      result.precisionCaveat = caveat;
+      result.metric = `${result.metric} Исходная точка: ${fmtNumber(a.p_started,0)} из ${fmtNumber(a.p_confirmed,0)} (${percentPart(a.p_started,a.p_confirmed)}).`;
+    }
+  }
+
+  if (Number.isFinite(a.p_completed) && Number.isFinite(a.p_problems)) {
+    summary = `Из ${fmtNumber(a.p_completed,0)} выполненных заказов или услуг в ${fmtNumber(a.p_problems,0)} были серьёзная задержка, переделка, ошибка или другой отмеченный сбой${a.p_completed > 0 ? ` (${percentPart(a.p_problems,a.p_completed)})` : ''}.`;
+    if (a.p_completed > 0 && a.p_problems === 0 && code === 'FULFILLMENT') {
+      result = precisionContradiction(`Вы указали ${fmtNumber(a.p_completed,0)} выполненных заказов или услуг и ни одного серьёзного сбоя. Эти случаи не подтверждают вывод о регулярно повторяющейся проблеме выполнения.`);
+    } else {
+      result.precisionSummary=summary; result.precisionCaveat=caveat;
+      result.metric = `${result.metric} Исходная точка: ${fmtNumber(a.p_problems,0)} проблемных случаев из ${fmtNumber(a.p_completed,0)}.`;
+    }
+  }
+
+  if (Number.isFinite(a.p_value_total) && Number.isFinite(a.p_value_problems)) {
+    summary = `По ${fmtNumber(a.p_value_total,0)} продажам у вас есть информация о результате клиента; в ${fmtNumber(a.p_value_problems,0)} из них результат не совпал с обещанным или повторилась проблема${a.p_value_total > 0 ? ` (${percentPart(a.p_value_problems,a.p_value_total)})` : ''}.`;
+    if (a.p_value_total > 0 && a.p_value_problems === 0 && code === 'VALUE_FAILURE') {
+      result = precisionContradiction(`По вашим данным есть ${fmtNumber(a.p_value_total,0)} случаев с известным результатом клиента и ни одного подтверждённого проблемного результата. Первоначальный вывод о повторяющейся проблеме сейчас не подтверждается этими случаями.`);
+    } else {
+      result.precisionSummary=summary; result.precisionCaveat=caveat;
+      result.metric = `${result.metric} Исходная точка: ${fmtNumber(a.p_value_problems,0)} проблемных результатов из ${fmtNumber(a.p_value_total,0)} известных.`;
+    }
+  }
+
+  if (Number.isFinite(a.p_repeat_eligible) && Number.isFinite(a.p_repeat_returned)) {
+    summary = `Реальный повод купить снова был у ${fmtNumber(a.p_repeat_eligible,0)} клиентов; вернулось ${fmtNumber(a.p_repeat_returned,0)}${a.p_repeat_eligible > 0 ? ` (${percentPart(a.p_repeat_returned,a.p_repeat_eligible)})` : ''}.`;
+    result.precisionSummary=summary;
+    result.precisionCaveat='Сравнивать нужно только с клиентами, у которых действительно возникла повторная потребность, а не со всей старой клиентской базой.';
+    result.metric = `${result.metric} Исходная точка: ${fmtNumber(a.p_repeat_returned,0)} из ${fmtNumber(a.p_repeat_eligible,0)} клиентов с реальным поводом вернуться.`;
+  }
+
+  if (Number.isFinite(a.p_revenue) && Number.isFinite(a.p_direct_costs) && Number.isFinite(a.p_hours)) {
+    const contribution = a.p_revenue - a.p_direct_costs;
+    const hourly = a.p_hours > 0 ? contribution / a.p_hours : null;
+    summary = `Типичная продажа: ${fmtNumber(a.p_revenue,2)} от клиента − ${fmtNumber(a.p_direct_costs,2)} прямых расходов = ${fmtNumber(contribution,2)} до учёта постоянных расходов и налогов.`;
+    if (hourly !== null) summary += ` При ${fmtNumber(a.p_hours,2)} ч вашего времени это примерно ${fmtNumber(hourly,2)} на час до постоянных расходов и налогов.`;
+    result.precisionSummary=summary;
+    result.precisionCaveat='Это не «правильная ставка». Сравните получившуюся сумму со своим приемлемым заработком, постоянными расходами и тем, чем ещё можно занять это время.';
+    if (contribution < 0) {
+      result.title = 'По вашим цифрам типичная продажа не покрывает даже прямые расходы';
+      result.summary = 'До учёта вашего времени и постоянных расходов такая продажа уже уходит в минус.';
+      result.action = numbered('Не увеличивайте количество таких продаж.', 'Проверьте цену и крупнейшие прямые расходы.', 'Только после исправления пересчитайте продажу и решайте, стоит ли её масштабировать.');
+      result.dont = 'Не пытайтесь компенсировать отрицательный результат большим количеством таких же продаж.';
+    }
+    result.metric = `На текущих цифрах после прямых расходов остаётся ${fmtNumber(contribution,2)}${hourly !== null ? `; примерно ${fmtNumber(hourly,2)} на час вашего времени до постоянных расходов и налогов` : ''}.`;
+  }
+
+  if (Number.isFinite(a.p_current_volume) && Number.isFinite(a.p_sustainable_volume)) {
+    const reserve = a.p_sustainable_volume - a.p_current_volume;
+    const period = ({week:'неделю',month:'месяц',cycle:'рабочий цикл'})[a.p_capacity_period] || 'тот же период';
+    summary = `Сейчас вы обычно обслуживаете ${fmtNumber(a.p_current_volume,0)} за ${period}; устойчиво, по вашей оценке, можете ${fmtNumber(a.p_sustainable_volume,0)}. Разница: ${reserve > 0 ? '+' : ''}${fmtNumber(reserve,0)}.`;
+    result.precisionSummary=summary;
+    result.precisionCaveat='Это ваша рабочая оценка устойчивой загрузки, а не разовый рекорд. Если объём меняется по сезонам, сравнивайте похожие периоды.';
+    if (reserve <= 0) {
+      result.title = 'По вашим цифрам свободного рабочего запаса сейчас нет';
+      result.summary = 'Текущая загрузка уже равна или выше объёма, который вы считаете устойчивым.';
+      result.dont = 'Не увеличивайте поток заказов, пока не освободите или не увеличите ресурс.';
+    }
+    result.metric = `Текущая загрузка: ${fmtNumber(a.p_current_volume,0)}; устойчивый объём: ${fmtNumber(a.p_sustainable_volume,0)} за ${period}.`;
+  }
+
+  if (Number.isFinite(a.p_market_people) && Number.isFinite(a.p_market_actions)) {
+    summary = `Конкретное предложение получили ${fmtNumber(a.p_market_people,0)} людей; реальный шаг к покупке сделали ${fmtNumber(a.p_market_actions,0)}${a.p_market_people > 0 ? ` (${percentPart(a.p_market_actions,a.p_market_people)})` : ''}.`;
+    result.precisionSummary=summary;
+    result.precisionCaveat='Это не универсальная конверсия рынка: важны качество выбранных людей, условия предложения и способ показа.';
+    if (code === 'BUILD_DEMAND' && a.p_market_actions > 0) {
+      result.title = 'Реальный шаг к покупке уже был — не проверяйте спрос с нуля';
+      result.summary = `По вашим цифрам как минимум ${fmtNumber(a.p_market_actions,0)} человек сделал реальный шаг к покупке. Это уже сильнее, чем просто интерес или похвала.`;
+      result.action = numbered('Не повторяйте тот же тест только ради ещё одного подтверждения интереса.', 'Проверьте следующий неподтверждённый участок: понятность предложения, путь заказа, выполнение или экономику — в зависимости от того, что ещё не проверялось.', 'Сохраняйте те же условия, чтобы не спутать эффект с изменением цены или продукта.');
+      result.decisionRule = 'Если реальные шаги к покупке повторяются на обычных условиях, переходите дальше по запуску. Если это был единичный особый случай, не считайте спрос полностью подтверждённым.';
+    }
+    result.metric = `Исходная точка: ${fmtNumber(a.p_market_actions,0)} реальных шагов к покупке из ${fmtNumber(a.p_market_people,0)} конкретных предложений.`;
+  }
+
+  if (!result.precisionSummary) {
+    result.precisionSummary = 'Цифры сохранены, но для этого вывода они не добавили отдельного расчёта.';
+    result.precisionCaveat = caveat;
+  }
+
+  state.mode = state.precisionOriginMode || 'full';
+  state.result = result;
+  renderResult(result);
+}
+
   function diagnoseBuild() {
     const a = state.answers;
     if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
@@ -2403,10 +2574,24 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     document.getElementById('resultDecisionRule').textContent = result.decisionRule || 'После изменения посмотрите, стало ли лучше по главному результату и не ухудшились ли деньги, качество и нагрузка.';
     document.getElementById('resultNext').textContent = result.next;
 
+    const precisionCard = document.getElementById('precisionCard');
+    if (result.precisionSummary) {
+      precisionCard.hidden = false;
+      document.getElementById('precisionSummary').textContent = result.precisionSummary;
+      document.getElementById('precisionCaveat').textContent = result.precisionCaveat || '';
+    }
+
     const secCard = document.getElementById('secondaryCard');
     const sec = document.getElementById('secondaryRisks');
     if (!result.secondary?.length) secCard.hidden = true;
     else result.secondary.forEach(x => { const t=document.createElement('span'); t.className='tag'; t.textContent=x; sec.appendChild(t); });
+
+    const precisionButton = document.getElementById('precisionResultButton');
+    const precisionPath = precisionQuestionsFor(result.code);
+    if (!result.followup && !result.precisionRefined && precisionPath.length) {
+      precisionButton.hidden = false;
+      precisionButton.addEventListener('click', () => startPrecision(result));
+    }
 
     const saveButton = document.getElementById('saveResultButton');
     saveButton.textContent = result.followup ? 'Сохранить проверку' : 'Сохранить результат';
@@ -2444,8 +2629,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   }
 
   function resultText(r) {
-    return `${r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}\n\nЧто сделать:\n${r.action}\n\nЧто смотреть:\n${r.metric}\n\nПока не делать:\n${r.dont}\n\nЧто дальше:\n${r.next}`;
-  }
+  const precision = r.precisionSummary ? `\n\nЧто показывают ваши цифры:\n${r.precisionSummary}\n${r.precisionCaveat || ''}` : '';
+  return `${r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать:\n${r.action}\n\nЧто смотреть:\n${r.metric}\n\nПока не делать:\n${r.dont}\n\nЧто дальше:\n${r.next}`;
+}
 
   function isAnswered(id) {
     const v = state.answers[id];
