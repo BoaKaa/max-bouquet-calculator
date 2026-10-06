@@ -1417,6 +1417,23 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       state.path.splice(state.index + 1, 0, 'deep_v3');
     }
 
+    if (currentId === 'core_repeat') {
+      const a = state.answers;
+      const extra = [];
+      const hasProblemToRecover = a.gate_fulfillment === 'regular' || ['issues','no'].includes(a.core_value);
+      const goodEnoughForReferral = ['yes','mostly'].includes(a.core_value);
+      const repeatPossible = ['rare','sometimes'].includes(a.core_repeat);
+      if (hasProblemToRecover && !state.path.includes('post_recovery')) extra.push('post_recovery');
+      if (goodEnoughForReferral && ['new_sales','stable','unknown'].includes(a.scope_goal) && !state.path.includes('post_referral')) extra.push('post_referral');
+      if (repeatPossible && ['repeat','stable','income','unknown'].includes(a.scope_goal) && !state.path.includes('post_reactivation')) extra.push('post_reactivation');
+      if (a.scope_model === 'SUBSCRIPTION' && ['rare','sometimes'].includes(a.core_repeat)) {
+        if (!state.path.includes('sub_cancel_known')) extra.push('sub_cancel_known');
+        if (!state.path.includes('sub_cancel_reason')) extra.push('sub_cancel_reason');
+        if (!state.path.includes('post_reactivation')) extra.push('post_reactivation');
+      }
+      if (extra.length) state.path.splice(state.index + 1, 0, ...extra);
+    }
+
     if (currentId === 'deep_f2' && state.answers.deep_f2 === 'yes' && meaningful(state.answers.deep_f1).includes('overload') && !state.path.includes('deep_cap1')) {
       state.path.splice(state.index + 1, 0, 'deep_cap1', 'deep_cap2');
     }
