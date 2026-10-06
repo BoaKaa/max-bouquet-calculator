@@ -1124,27 +1124,76 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function hybridBuildQuestions(changed) {
+    const xs = Array.isArray(changed) ? changed : [];
+    const all = ['build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'];
+    if (!xs.length || xs.includes('unknown')) return all;
+    const out = [];
+    const add = (...ids) => ids.forEach(id => { if (!out.includes(id)) out.push(id); });
+    if (xs.includes('offer')) add('build_demand','build_offer','build_market','build_fulfillment','build_value');
+    if (xs.includes('price')) add('build_offer','build_market','build_economics');
+    if (xs.includes('audience')) add('build_demand','build_access','build_market');
+    if (xs.includes('channel')) add('build_access','build_market');
+    if (xs.includes('route')) add('build_route','build_market');
+    if (xs.includes('fulfillment')) add('build_fulfillment','build_value');
+    if (xs.includes('capacity')) add('build_economics','build_capacity');
+    const order = all;
+    return order.filter(id => out.includes(id));
+  }
+
   function goNext() {
     const currentId = state.path[state.index];
     if (!isAnswered(currentId)) return;
 
-    // If a supposedly current business has no repeatable sales yet, switch to BUILD/HYBRID logic.
+    // A current business with no repeatable sales moves to BUILD or HYBRID,
+    // but we first ask what can be inherited from what already works.
     if (state.mode === 'full' && currentId === 'mode_sales' && state.answers.mode_sales !== 'repeatable') {
-      state.mode = 'build';
+      state.mode = state.answers.mode_sales === 'changed' ? 'hybrid' : 'build';
       state.deepAdded = false;
-      state.path = state.path.slice(0, state.index + 1).concat([
-        'gate_legal','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
-      ]);
+      if (state.answers.mode_sales === 'changed') state.answers.build_base = 'existing';
+      const next = state.answers.mode_sales === 'changed' ? ['hybrid_changed'] : ['build_base'];
+      state.path = state.path.slice(0, state.index + 1).concat(next);
     }
 
-    // Stop early in BUILD: the first failed meaningful gate is the current job.
-    if (state.mode === 'build') {
+    if ((state.mode === 'build' || state.mode === 'hybrid') && currentId === 'build_base') {
+      if (state.answers.build_base === 'existing') {
+        state.mode = 'hybrid';
+        state.path = state.path.slice(0, state.index + 1).concat(['hybrid_changed']);
+      } else {
+        state.mode = 'build';
+        state.path = state.path.slice(0, state.index + 1).concat([
+          'shared_resources','gate_legal','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
+        ]);
+      }
+    }
+
+    if (state.mode === 'hybrid' && currentId === 'hybrid_changed') {
+      const checks = hybridBuildQuestions(state.answers.hybrid_changed);
+      state.path = state.path.slice(0, state.index + 1).concat(['shared_resources','gate_legal', ...checks]);
+    }
+
+    // Ask about impact on the rest of the business only when resources are actually shared.
+    if (currentId === 'shared_resources') {
+      const shared = meaningful(state.answers.shared_resources);
+      if (shared.length && !state.path.includes('shared_impact')) {
+        state.path.splice(state.index + 1, 0, 'shared_impact');
+      }
+    }
+
+    // Stop early in BUILD/HYBRID: the first failed meaningful gate is the current job.
+    if (state.mode === 'build' || state.mode === 'hybrid') {
       const early = buildEarlyResult(currentId);
       if (early) { state.result = makeResult(early); renderResult(state.result); return; }
     }
 
-    // In a mature route, a hard blocker gets a very short targeted clarification
-    // instead of forcing the user through the whole diagnostic or returning a vague advice.
+    // Shared resources can block growth even when the selected product itself looks healthy.
+    if (currentId === 'shared_impact' && ['other_suffer','current_suffer','overload','cash'].includes(state.answers.shared_impact)) {
+      state.result = makeResult(state.answers.shared_impact === 'cash' ? 'ECONOMICS' : 'CAPACITY');
+      renderResult(state.result);
+      return;
+    }
+
+    // In a mature route, a hard blocker gets a short targeted clarification.
     if (state.mode === 'full' && currentId === 'gate_economics') {
       const blocker = hardGateResult();
       if (blocker === 'LEGAL_SAFETY_BLOCKER') { state.result = makeResult(blocker); renderResult(state.result); return; }
@@ -1159,7 +1208,6 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       }
     }
 
-    // If the general scan already shows decision-critical uncertainty, stop before deep branches.
     if (state.mode === 'full' && currentId === 'core_data') {
       const gap = decisionCriticalUnknown();
       if (gap) { state.result = makeResult('DATA_GAP', [gap]); renderResult(state.result); return; }
@@ -1285,7 +1333,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function severity(value, map) { return map[value] || 0; }
 
   function finalizeDiagnosis() {
-    if (state.mode === 'followup') return finalizeFollowup();    const diagnosis = state.mode === 'build' ? diagnoseBuild() : diagnoseFull();
+    if (state.mode === 'followup') return finalizeFollowup();
+    const diagnosis = (state.mode === 'build' || state.mode === 'hybrid') ? diagnoseBuild() : diagnoseFull();
     state.result = diagnosis;
     renderResult(diagnosis);
   }
@@ -1293,6 +1342,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function diagnoseBuild() {
     const a = state.answers;
     if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
+    if (['other_suffer','current_suffer','overload'].includes(a.shared_impact)) return makeResult('CAPACITY');
+    if (a.shared_impact === 'cash') return makeResult('ECONOMICS');
     const buildChecks = [
       ['build_demand', v => v === 'yes', 'BUILD_DEMAND'],
       ['build_offer', v => ['yes','mostly'].includes(v), 'BUILD_OFFER'],
@@ -1304,8 +1355,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       ['build_economics', v => ['yes','maybe'].includes(v), 'BUILD_ECONOMICS'],
       ['build_capacity', v => ['yes','small'].includes(v), 'BUILD_CAPACITY'],
     ];
-    for (const [id, pass, code] of buildChecks) if (!pass(a[id])) return makeResult(code);
-    return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', ['Новый товар или услуга прошли основные проверки. Теперь оценивайте их уже по реальным повторяющимся продажам.']);
+    for (const [id, pass, code] of buildChecks) {
+      if (!state.path.includes(id)) continue;
+      if (!pass(a[id])) return makeResult(code);
+    }
+    return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', [
+      state.mode === 'hybrid'
+        ? 'Перепроверены только изменившиеся части. Остальные элементы работающего процесса не пришлось строить заново.'
+        : 'Новый товар или услуга прошли основные проверки. Теперь оценивайте их уже по реальным повторяющимся продажам.'
+    ]);
   }
 
   function evidenceConflict() {
