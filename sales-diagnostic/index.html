@@ -313,6 +313,12 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         <div id="resultWhy" class="reason-list"></div>
       </article>
 
+      <article class="card result-card">
+        <h2>Что этот вывод действительно означает</h2>
+        <p id="resultProven"></p>
+        <p class="microcopy" id="resultBoundary"></p>
+      </article>
+
       <article class="card result-card action-card">
         <h2>Ваш следующий шаг</h2>
         <p id="resultAction" class="action-text"></p>
@@ -1324,7 +1330,16 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     pushCandidate(list, 'R', severity(a.core_repeat, { rare:3 }), 45);
 
     const goalBoost = { new_sales:['A','D','O','FIT','T','C'], stable:['A','R','CAP'], income:['E','CAP','O'], overload:['CAP','F','E'], repeat:['R','V'], unknown:[] };
-    const boost = goalBoost[a.scope_goal] || [];
+    const targetBoost = {
+      attended_visits:['C','S','CAP'], fill_slots:['C','A','CAP'], new_customers:['A','D','O','FIT'],
+      completed_orders:['C','F','CAP','A'], paid_clients:['C','FIT','T','A'], paid_students:['C','A','O'],
+      revenue:['E','C','A','CAP'], owner_money:['E','CAP'], per_sale:['E','O'], same_money_less_time:['E','CAP','F'],
+      steady_orders:['A','R','CAP'], steady_income:['E','R','A'], less_channel_dependency:['A'],
+      less_hours:['CAP','E','F'], fewer_urgent:['F','CAP'], stable_quality:['F','CAP'],
+      repeat_orders:['R','V'], repeat_visits:['R','V'], repeat_income:['R','E','V'],
+      more_orders:['A','D','C'], more_money:['E','CAP'], less_load:['CAP','F','E'], more_repeat:['R','V'], stable:['A','R','CAP']
+    };
+    const boost = [...new Set([...(goalBoost[a.scope_goal] || []), ...(targetBoost[a.scope_target] || [])])];
     list.forEach(x => { if (boost.includes(x.zone)) x.rank += 7; });
     return list.filter(x => x.sev > 0).sort((x,y) => (y.sev*100 + y.rank) - (x.sev*100 + x.rank));
   }
@@ -1598,11 +1613,40 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   }
 
   
+  function resultScopeText(code) {
+    const a = state.answers;
+    const name = a.scope_name ? `«${a.scope_name}»` : 'выбранного товара или услуги';
+    const provenMap = {
+      ACCESS: 'По вашим ответам именно в выбранном пути продаж новых потенциальных покупателей приходит мало или нерегулярно.',
+      DISTRIBUTION: 'Можно уверенно сказать, что на выбранной площадке или в выбранном способе показа снизилась видимость. Это ещё не доказывает проблему со спросом вообще.',
+      OFFER: 'По выбранному товару или услуге людям приходится дополнительно выяснять важные условия или долго разбираться с выбором.',
+      FIT: 'В выбранном потоке обращений заметна доля людей, которым покупка не подходит по важным условиям.',
+      DECISION_GAP: 'Перед покупкой по этому предложению повторяются одинаковые вопросы или сомнения.',
+      PURCHASE_FRICTION: 'Часть людей, уже готовых купить именно это предложение, теряется во время оформления.',
+      CAPACITY: 'Рост именно этого направления сейчас может упереться в вашу рабочую нагрузку или общие ресурсы бизнеса.',
+      ECONOMICS: 'До роста этого направления нужно убедиться, что оно оставляет приемлемые деньги и не создаёт кассовую проблему.',
+      FULFILLMENT: 'Проблема подтверждается на этапе выполнения уже принятых заказов или услуг по выбранному направлению.',
+      VALUE_FAILURE: 'По выбранному товару или услуге есть признаки, что часть клиентов не получает обещанный результат.',
+      DEMAND_WEAK: 'По выбранному предложению пока недостаточно реальных попыток купить, чтобы считать спрос подтверждённым.',
+      DEMAND_UNCLEAR: 'По выбранному предложению пока нельзя уверенно отделить слабый спрос от недостаточной видимости.',
+      NEXT_CYCLE: 'Для выбранного товара или услуги повтор возможен, но используется слабо.',
+      CUSTOMER_MEMORY_GAP: 'При повторном обращении по выбранному направлению вам не хватает сохранённого контекста клиента.'
+    };
+    let proven = provenMap[code] || `Этот вывод относится прежде всего к ${name} и тому пути покупки, который вы выбрали в начале проверки.`;
+    if (state.mode === 'hybrid') proven += ' Новыми считаются только те части, которые вы отметили как изменившиеся; остальной работающий процесс не признан проблемой автоматически.';
+    let boundary = 'Это не вывод обо всём бизнесе целиком. Другой товар, канал, тип клиента или способ покупки может иметь другую проблему.';
+    if (['ACCESS','DISTRIBUTION'].includes(code)) boundary = 'Проблема одного канала или способа показа не означает автоматически, что всему бизнесу не хватает клиентов.';
+    if (code === 'CAPACITY' && meaningful(a.shared_resources).length) boundary = 'Здесь учтено, что часть ресурсов общая с другими направлениями: рост одного продукта не должен ухудшать остальную работу.';
+    return { proven, boundary };
+  }
+
   function makeResult(code, extraWhy = []) {
     const base = adaptResultToModel(code, resultLibrary[code] || resultLibrary.NO_CRITICAL_CONSTRAINT_FOUND);
+    const scopeText = resultScopeText(code);
     return {
       code,
       ...base,
+      ...scopeText,
       kind: resultKindFor(code),
       confidence: confidenceFor(code),
       decisionRule: decisionRuleFor(code),
@@ -2192,6 +2236,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     badge.textContent = result.followup ? 'Повторная проверка' : `${result.kind || 'Вывод'} · уверенность: ${result.confidence.toLowerCase()}`;
     const why = document.getElementById('resultWhy');
     result.why.forEach(x => { const d=document.createElement('div'); d.className='reason'; d.textContent=x; why.appendChild(d); });
+    document.getElementById('resultProven').textContent = result.proven || '';
+    document.getElementById('resultBoundary').textContent = result.boundary || '';
     document.getElementById('resultAction').textContent = result.action;
     document.getElementById('resultMetric').textContent = result.metric;
     document.getElementById('resultDont').textContent = result.dont;
@@ -2239,7 +2285,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   }
 
   function resultText(r) {
-    return `${r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nЧто сделать:\n${r.action}\n\nЧто смотреть:\n${r.metric}\n\nПока не делать:\n${r.dont}\n\nЧто дальше:\n${r.next}`;
+    return `${r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}\n\nЧто сделать:\n${r.action}\n\nЧто смотреть:\n${r.metric}\n\nПока не делать:\n${r.dont}\n\nЧто дальше:\n${r.next}`;
   }
 
   function isAnswered(id) {
