@@ -428,6 +428,30 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     scope_goal: q('scope_goal', 'Сначала о задаче', 'Что вы хотите изменить сейчас?', 'Выберите то, что беспокоит больше всего. Это не диагноз — только направление проверки.', GOAL_OPTIONS),
     scope_name: textQ('scope_name', 'Что проверяем', 'Какой товар, услугу или направление будем разбирать?', 'Например: «торты на заказ», «первый визит на лазерную эпиляцию», «мой курс по…».', 'Напишите коротко'),
     scope_model: q('scope_model', 'Как устроена продажа', 'Что именно вы продаёте в этом направлении?', 'Выберите основной вариант. Если у вас смешанная модель, берите ту часть, которую сейчас хотите проверить.', MODEL_OPTIONS),
+    scope_target: dynamicQ('scope_target', 'Уточняем цель', s => {
+      const g = s.answers.scope_goal;
+      const m = s.answers.scope_model;
+      if (g === 'new_sales') return m === 'APPOINTMENT' ? 'Что именно вы хотите увеличить?' : 'Какой результат вы хотите увеличить в первую очередь?';
+      if (g === 'income') return 'Что для вас сейчас значит «зарабатывать больше»?';
+      if (g === 'stable') return 'Что именно вы хотите сделать стабильнее?';
+      if (g === 'overload') return 'Что должно измениться, чтобы вы перестали перегружаться?';
+      if (g === 'repeat') return 'Какой повторный результат для вас важнее?';
+      return 'Какой результат сейчас был бы для вас самым полезным?';
+    }, 'Это уточнение нужно, чтобы не советовать больше заказов, когда вам на самом деле нужны, например, больший заработок или меньшая нагрузка.', s => {
+      const g = s.answers.scope_goal;
+      const m = s.answers.scope_model;
+      if (g === 'new_sales') {
+        if (m === 'APPOINTMENT') return [opt('attended_visits','Больше реально состоявшихся визитов'), opt('fill_slots','Заполнить свободные окна'), opt('new_customers','Больше новых клиентов'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
+        if (m === 'EXPERT') return [opt('paid_clients','Больше оплаченных клиентов или проектов'), opt('new_customers','Больше новых клиентов'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
+        if (m === 'EDUCATION') return [opt('paid_students','Больше оплаченных участников'), opt('new_customers','Больше новых покупателей'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
+        return [opt('completed_orders','Больше выполненных заказов'), opt('new_customers','Больше новых покупателей'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
+      }
+      if (g === 'income') return [opt('owner_money','Больше денег оставлять себе'), opt('per_sale','Больше зарабатывать с каждой продажи'), opt('same_money_less_time','Примерно тот же заработок за меньшее время'), opt('revenue','Больше выручки'), opt('unknown','Пока не знаю')];
+      if (g === 'stable') return [opt('steady_orders','Более ровное число заказов или клиентов'), opt('steady_income','Более ровный доход'), opt('less_channel_dependency','Меньше зависеть от одного источника клиентов'), opt('unknown','Пока не знаю')];
+      if (g === 'overload') return [opt('less_hours','Меньше работать по времени'), opt('fewer_urgent','Меньше авралов и срочных переделок'), opt('stable_quality','Сохранять качество без перегруза'), opt('unknown','Пока не знаю')];
+      if (g === 'repeat') return [opt('repeat_orders','Больше повторных заказов'), opt('repeat_visits','Больше повторных визитов / продолжений'), opt('repeat_income','Больше дохода от повторных клиентов'), opt('unknown','Пока не знаю')];
+      return [opt('more_orders','Больше заказов или клиентов'), opt('more_money','Больше денег оставлять себе'), opt('less_load','Меньше перегружаться'), opt('more_repeat','Больше повторных покупок'), opt('stable','Более стабильные продажи'), opt('unknown','Пока не знаю')];
+    }),
     scope_route: dynamicQ('scope_route', 'Как проходит покупка', 'Как клиент обычно покупает именно этот товар или услугу?', 'Выберите вариант, который ближе к реальности. Проверка будет касаться только этого пути покупки, а не всего бизнеса сразу.', s => ROUTES[s.answers.scope_model] || ROUTES.PRODUCT),
     scope_period: q('scope_period', 'Период', 'За какой период вы сейчас отвечаете?', 'Берите тот период, по которому вы реально помните или можете восстановить ситуацию.', [
       opt('recent_month', 'Последний обычный месяц'),
@@ -673,6 +697,42 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       EDUCATION: [opt('time','Моё время'), opt('support','Проверка / чат / поддержка'), opt('live','Эфиры / живые занятия'), opt('helpers','Кураторы / помощники'), opt('platform','Техническая платформа'), opt('unknown','Не знаю')],
     }[s.answers.scope_model] || [opt('time','Моё время'), opt('helpers','Помощники'), opt('unknown','Не знаю')])),
     deep_cap2: q('deep_cap2', 'Уточняем загрузку', 'Как часто из-за перегруза появляются задержки, падает качество или вам приходится работать на износ?', '', [opt('no','Практически никогда'), opt('sometimes','Иногда'), opt('regular','Регулярно'), opt('unknown','Не знаю / не отслеживаю')]),
+
+    // HYBRID / общие ресурсы
+    build_base: q('build_base', 'Что уже есть', 'Вы запускаете это полностью с нуля или у вас уже есть работающий бизнес, похожий товар или услуга, откуда можно использовать часть готового процесса?', 'Например, у вас уже есть клиенты, площадка, оплата, доставка или запись, а новым является только сам товар, цена или часть процесса.', [
+      opt('from_scratch','Полностью с нуля'),
+      opt('existing','Есть работающая основа — часть процесса уже используется в других продажах'),
+      opt('unknown','Не уверен(а)'),
+    ]),
+    hybrid_changed: multiQ('hybrid_changed', 'Что изменилось', 'Что именно здесь новое или заметно изменилось по сравнению с тем, что у вас уже работало?', 'Отметьте только изменившиеся части. То, что не отметили, инструмент не будет автоматически перестраивать с нуля.', [
+      opt('offer','Сам товар / услуга или обещанный результат'),
+      opt('price','Цена, состав предложения или себестоимость'),
+      opt('audience','Кому продаёте или по какому поводу покупают'),
+      opt('channel','Где люди вас находят'),
+      opt('route','Как заказывают, записываются или платят'),
+      opt('fulfillment','Как вы выполняете заказ или оказываете услугу'),
+      opt('capacity','Нагрузка, материалы, оборудование, команда или другие ресурсы'),
+      opt('unknown','Не могу точно разделить — лучше перепроверить всё новое'),
+    ]),
+    shared_resources: multiQ('shared_resources', 'Общие ресурсы бизнеса', 'Что из этого одновременно нужно и этому направлению, и другим вашим товарам или услугам?', 'Это нужно, чтобы не советовать рост одного направления за счёт перегруза или потерь в другом. Если ничего общего нет — так и отметьте.', [
+      opt('time','Ваше личное время'),
+      opt('production','Производство или оборудование'),
+      opt('room','Помещение или рабочие слоты'),
+      opt('team','Помощники / команда / поддержка'),
+      opt('delivery','Доставка'),
+      opt('materials','Общие материалы или товарный запас'),
+      opt('cash','Деньги на закупку или выполнение до оплаты'),
+      opt('none','Ничего из этого не является общим ограничением'),
+      opt('unknown','Не знаю'),
+    ]),
+    shared_impact: q('shared_impact', 'Общие ресурсы бизнеса', 'Если заказов именно по этому направлению станет больше, что вероятнее всего произойдёт с остальной работой?', 'Смотрите на обычный рабочий режим, а не на несколько дней, которые можно выдержать на пределе.', [
+      opt('fine','Ничего существенного — общего ресурса хватает'),
+      opt('other_suffer','Начну отказывать или задерживать заказы в других направлениях'),
+      opt('current_suffer','Пострадают сроки или качество уже принятых заказов'),
+      opt('overload','Придётся регулярно перерабатывать или работать на износ'),
+      opt('cash','Не хватит денег одновременно профинансировать все заказы'),
+      opt('unknown','Не знаю'),
+    ]),
 
     // BUILD
     build_demand: q('build_demand', 'Новый продукт: проверяем спрос', 'Что уже подтверждает, что людям нужен этот новый продукт или услуга?', 'Сильные признаки — запрос, попытка записаться, бронь, предзаказ или оплата. Одних слов «классная идея» недостаточно.', [opt('yes','Есть реальные действия со стороны потенциальных покупателей'), opt('weak','Есть только интерес или положительные слова, но без действий'), opt('no','Пока нет даже явного интереса'), opt('unknown','Не знаю / ещё не проверял(а)')]),
@@ -964,7 +1024,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const history = getHistory();
     const modes = [
       { id: 'full', title: 'Проверить текущие продажи', text: 'Короткий скан всей системы, затем вопросы только по подозрительным участкам.' },
-      { id: 'build', title: 'Проверить новый продукт или услугу', text: 'Для товара или услуги, которые вы только запускаете или пока продаёте редко.' },
+      { id: 'build', title: 'Проверить новый или сильно изменённый продукт', text: 'Подойдёт и для запуска с нуля, и для нового направления внутри уже работающего бизнеса.' },
       { id: 'followup', title: 'Проверить прошлое изменение', text: history.length ? `Есть сохранённый результат от ${formatDate(history[0].date)}.` : 'Появится после первой сохранённой проверки.', disabled: !history.length },
     ];
     modes.forEach(m => {
@@ -990,14 +1050,12 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       state.path = ['fu_done', 'fu_effect', 'fu_guardrail'];
     } else {
       state.path = mode === 'build'
-        ? ['scope_name', 'scope_model', 'scope_route', 'scope_period', 'period_integrity', 'period_context']
-        : ['scope_goal', 'scope_name', 'scope_model', 'scope_route', 'scope_period', 'period_integrity', 'period_context'];
+        ? ['scope_name', 'scope_model', 'scope_route', 'scope_period', 'period_integrity', 'period_context', 'build_base']
+        : ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_period', 'period_integrity', 'period_context'];
       if (mode === 'build') state.answers.scope_goal = 'launch';
       if (mode === 'full') {
-        state.path.push('mode_sales', 'gate_legal', 'gate_fulfillment', 'gate_capacity', 'gate_economics',
+        state.path.push('mode_sales', 'gate_legal', 'gate_fulfillment', 'gate_capacity', 'gate_economics', 'shared_resources',
           'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data');
-      } else {
-        state.path.push('gate_legal','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity');
       }
     }
     renderQuestion();
@@ -2134,6 +2192,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function resolve(value) { return typeof value === 'function' ? value(state) : value; }
   function sectionName(id) {
     if (id.startsWith('scope') || id.startsWith('period') || id.startsWith('mode')) return 'Контекст';
+    if (id.startsWith('hybrid') || id.startsWith('build_base')) return 'Что можно сохранить из уже работающего';
+    if (id.startsWith('shared')) return 'Общие ресурсы';
     if (id.startsWith('gate')) return 'Защитная проверка';
     if (id.startsWith('core')) return 'Общий скан';
     if (id.startsWith('deep')) return 'Уточнение';
