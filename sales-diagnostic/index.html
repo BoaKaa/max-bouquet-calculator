@@ -368,7 +368,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.0';
 
   const app = document.getElementById('app');
   const resetButton = document.getElementById('resetButton');
@@ -886,6 +886,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     p_current_volume: numberQ('p_current_volume', 'Уточняем цифрами', 'Сколько таких заказов, клиентов или участников вы сейчас обычно обслуживаете за этот отрезок?', 'Берите обычную нагрузку, а не праздничный пик.', 'Например: 12', 'count'),
     p_sustainable_volume: numberQ('p_sustainable_volume', 'Уточняем цифрами', 'Сколько вы реально можете обслужить за тот же отрезок без постоянных авралов и падения качества?', 'Не разовый максимум, а объём, который можно повторять.', 'Например: 15', 'count'),
 
+    p_renewal_due: numberQ('p_renewal_due', 'Уточняем цифрами', 'У скольких участников за выбранный период реально наступил срок продления?', 'Не считайте новых участников, которые ещё не дошли до своей первой даты продления.', 'Например: 20', 'count'),
+    p_renewed: numberQ('p_renewed', 'Уточняем цифрами', 'Сколько из них продлило подписку?', '', 'Например: 12', 'count'),
+
     p_market_people: numberQ('p_market_people', 'Уточняем цифрами', 'Скольким людям, которым это реально могло быть нужно, вы сделали конкретное предложение на обычных условиях?', 'Не считайте общие просмотры. Нужны люди, которым предложение действительно показывали как возможную покупку.', 'Например: 20', 'count'),
     p_market_actions: numberQ('p_market_actions', 'Уточняем цифрами', 'Сколько из них сделали реальный шаг к покупке?', 'Написали по делу, записались, забронировали, оформили предзаказ или оплатили.', 'Например: 5', 'count'),
 
@@ -1358,7 +1361,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       BUILD_ACCESS:['p_market_people','p_market_actions'],
       BUILD_MARKET_TEST:['p_market_people','p_market_actions'],
       BUILD_ECONOMICS:['p_revenue','p_direct_costs','p_hours'],
-      BUILD_CAPACITY:['p_capacity_period','p_current_volume','p_sustainable_volume']
+      BUILD_CAPACITY:['p_capacity_period','p_current_volume','p_sustainable_volume'],
+      SUB_RENEWAL:['p_renewal_due','p_renewed']
     };
     return map[code] || [];
   }
@@ -1661,6 +1665,7 @@ function finalizePrecision() {
     ['p_problems','p_completed','Число проблемных выполнений не может быть больше общего числа выполненных заказов или услуг.'],
     ['p_value_problems','p_value_total','Число проблем с результатом не может быть больше числа случаев, по которым у вас вообще есть информация.'],
     ['p_repeat_returned','p_repeat_eligible','Число вернувшихся клиентов не может быть больше числа клиентов, у которых был реальный повод вернуться.'],
+    ['p_renewed','p_renewal_due','Число продлений не может быть больше числа участников, у которых наступил срок продления.'],
     ['p_market_actions','p_market_people','Число реальных шагов к покупке не может быть больше числа людей, которым сделали предложение.']
   ];
   for (const [numId, denId, msg] of invalidPairs) {
@@ -1760,6 +1765,13 @@ function finalizePrecision() {
       result.dont = 'Не увеличивайте поток заказов, пока не освободите или не увеличите ресурс.';
     }
     result.metric = `Текущая загрузка: ${fmtNumber(a.p_current_volume,0)}; устойчивый объём: ${fmtNumber(a.p_sustainable_volume,0)} за ${period}.`;
+  }
+
+  if (Number.isFinite(a.p_renewal_due) && Number.isFinite(a.p_renewed)) {
+    summary = `За выбранный период до срока продления дошло ${fmtNumber(a.p_renewal_due,0)} участников; продлило ${fmtNumber(a.p_renewed,0)}${a.p_renewal_due > 0 ? ` (${percentPart(a.p_renewed,a.p_renewal_due)})` : ''}.`;
+    result.precisionSummary = summary;
+    result.precisionCaveat = 'Это показатель именно тех участников, у кого наступил срок продления. Не смешивайте его с новыми участниками и не сравнивайте разные группы без учёта периода и условий.';
+    result.metric = `Исходная точка: ${fmtNumber(a.p_renewed,0)} продлений из ${fmtNumber(a.p_renewal_due,0)} наступивших сроков продления.`;
   }
 
   if (Number.isFinite(a.p_market_people) && Number.isFinite(a.p_market_actions)) {
@@ -1994,6 +2006,11 @@ function finalizePrecision() {
     }
     if (!strongKnown && a.core_data === 'feelings' && unknownCount >= 3) return 'Слишком много ключевых ответов сейчас основано на ощущениях. Сначала нужен один факт, который отделит разные причины.';
     if (!strongKnown && a.core_access === 'unknown' && a.core_demand === 'unknown') return 'Непонятно одновременно, есть ли реальный спрос и есть ли у вас доступ к нему. Эти две причины требуют разных действий.';
+    if (a.scope_model === 'SUBSCRIPTION' && ['renewals','less_churn','reactivate_members'].includes(a.scope_target) && ['na','unknown'].includes(a.core_repeat)) {
+      return a.core_repeat === 'na'
+        ? 'До первого срока продления ещё никто не дошёл. Сейчас нельзя честно оценить продление или отток — сначала нужен первый реальный цикл продления.'
+        : 'Вы не знаете, сколько участников продлевает подписку. Для цели, связанной с продлением или оттоком, этот факт меняет следующее действие.';
+    }
 
     // These unknowns matter only if the likely next action is to create more volume.
     const growthCandidate = !top || ['A','D'].includes(top.zone);
@@ -2070,7 +2087,7 @@ function finalizePrecision() {
   
   function resultScopeText(code) {
     const a = state.answers;
-    const name = a.scope_name ? `«${a.scope_name}»` : 'выбранного товара или услуги';
+    const name = a.scope_name ? `«${a.scope_name}»` : 'выбранного направления';
     const provenMap = {
       ACCESS: 'По вашим ответам именно в выбранном пути продаж новых потенциальных покупателей приходит мало или нерегулярно.',
       DISTRIBUTION: 'Можно уверенно сказать, что на выбранной площадке или в выбранном способе показа снизилась видимость. Это ещё не доказывает проблему со спросом вообще.',
@@ -2734,7 +2751,7 @@ function finalizePrecision() {
   
   function confidenceFor(code) {
     const a = state.answers;
-    if (state.mode === 'build') return 'Средняя';
+    if (state.mode === 'build' || state.mode === 'hybrid') return 'Средняя';
     const directEvidence =
       (code === 'FULFILLMENT' && a.gate_fulfillment === 'regular' && meaningful(a.deep_f1).length) ||
       (code === 'CAPACITY' && ['overload','limit'].includes(a.gate_capacity) && a.deep_cap1 && a.deep_cap1 !== 'unknown') ||
@@ -2744,7 +2761,10 @@ function finalizePrecision() {
       (code === 'OFFER' && ['no','mostly_no'].includes(a.core_offer) && meaningful(a.deep_o1).length) ||
       (code === 'FIT' && ['half','bad'].includes(a.core_fit) && meaningful(a.deep_fit1).length) ||
       (code === 'VALUE_FAILURE' && a.deep_v2 === 'yes' && a.deep_v3 && a.deep_v3 !== 'unknown') ||
-      (code === 'ECONOMICS' && a.gate_economics === 'negative');
+      (code === 'ECONOMICS' && a.gate_economics === 'negative') ||
+      (code === 'RECOVERY_FAILURE' && a.post_recovery === 'often_unresolved') ||
+      (code === 'SUB_RENEWAL' && ['yes','partly'].includes(a.sub_cancel_known) && meaningful(a.sub_cancel_reason).length) ||
+      (code === 'REACTIVATION_GAP' && a.post_reactivation === 'many');
     if (directEvidence && a.core_data !== 'feelings') return 'Высокая';
     if (a.core_data === 'facts' || a.core_data === 'mixed' || code === 'LEGAL_SAFETY_BLOCKER') return 'Средняя';
     return 'Низкая';
