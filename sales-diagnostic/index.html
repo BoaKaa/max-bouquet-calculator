@@ -1607,6 +1607,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       const add = [];
       if (!state.path.includes('deep_r2')) add.push('deep_r2');
       if (!state.path.includes('deep_r3')) add.push('deep_r3');
+      if (['repeat','stable','income','unknown'].includes(state.answers.scope_goal) && !state.path.includes('post_reactivation')) add.push('post_reactivation');
       if (add.length) state.path.splice(state.index + 1, 0, ...add);
     }
 
@@ -1621,10 +1622,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       if (goodEnoughForReferral && ['new_sales','stable','unknown'].includes(a.scope_goal) && !state.path.includes('post_referral')) extra.push('post_referral');
 
       if (a.scope_model === 'SUBSCRIPTION') {
-        const renewalRelevant = repeatPossible || ['renewals','less_churn','reactivate_members'].includes(a.scope_target);
-        if (renewalRelevant && !state.path.includes('sub_cancel_known')) extra.push('sub_cancel_known');
-      } else if (repeatPossible && ['repeat','stable','income','unknown'].includes(a.scope_goal) && !state.path.includes('post_reactivation')) {
-        extra.push('post_reactivation');
+        if (repeatPossible && !state.path.includes('sub_cancel_known')) extra.push('sub_cancel_known');
       }
 
       if (extra.length) state.path.splice(state.index + 1, 0, ...extra);
@@ -2615,9 +2613,23 @@ function finalizePrecision() {
       out.metric = 'Заказы/услуги без серьёзного сбоя; отдельно — число и причина задержек, переделок, жалоб.';
     }
 
+    if (code === 'FULFILLMENT' && model === 'SUBSCRIPTION') {
+      out.title = 'Сначала стабилизируйте то, что обещано участникам подписки';
+      out.summary = 'Есть повторяющиеся проблемы с доступом, сервисом, поддержкой или другим обещанным элементом подписки.';
+      out.action = numbered(
+        'Возьмите последние реальные случаи, где участник не получил обещанное нормально или вовремя.',
+        'Найдите одну повторяющуюся причину и исправьте именно её: доступ, сервис, поддержку, расписание, технический процесс или нагрузку.',
+        'До исправления не увеличивайте поток новых участников.'
+      );
+      out.metric = 'Участник-периоды без серьёзного сбоя + повторяющаяся причина проблем.';
+      out.dont = 'Не увеличивайте набор, пока действующим участникам регулярно не удаётся предоставить обещанный сервис.';
+    }
+
     if (code === 'VALUE_FAILURE') {
       const reason = a.deep_v3;
       if (model === 'SUBSCRIPTION') {
+        out.title = 'Исправьте то, из-за чего участник не получает обещанную пользу';
+        out.summary = 'Подписка может работать технически нормально, но часть участников не получает той регулярной пользы, ради которой продолжает платить.';
         const subFixes = {
           expectation:'Сверьте обещание подписки с тем, что участник реально получает регулярно, и уберите из обещания то, что не подтверждается.',
           usage:'Сначала выясните, почему участник не использует подписку регулярно: нет понятного повода вернуться, слишком сложно выбрать нужное или формат не встроился в его задачу.',
