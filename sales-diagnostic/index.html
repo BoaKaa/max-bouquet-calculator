@@ -1501,6 +1501,8 @@ function precisionContradiction(message) {
     dont:'Не исправляйте процесс только потому, что первоначальный ответ звучал тревожно, если реальные случаи этого не подтверждают.',
     decisionRule:'Когда качественный ответ и фактические случаи совпадут, используйте обновлённый вывод.',
     why:[message],
+    proven:'Сейчас можно уверенно сказать только то, что качественный ответ и введённые вами фактические случаи расходятся.',
+    boundary:'Пока это противоречие не снято, прежний вывод нельзя считать надёжным основанием для изменения бизнеса.',
     secondary:base.secondary || [],
     date:new Date().toISOString()
   };
@@ -2563,7 +2565,7 @@ function finalizePrecision() {
     document.getElementById('resultTitle').textContent = result.title;
     document.getElementById('resultSummary').textContent = result.summary;
     const badge = document.getElementById('confidenceBadge');
-    badge.textContent = result.followup ? 'Повторная проверка' : `${result.kind || 'Вывод'} · уверенность: ${result.confidence.toLowerCase()}`;
+    badge.textContent = result.followup ? 'Повторная проверка' : ((result.kind || 'Вывод') + (result.precisionRefined ? ' · уточнено цифрами' : '') + ' · уверенность: ' + result.confidence.toLowerCase());
     const why = document.getElementById('resultWhy');
     result.why.forEach(x => { const d=document.createElement('div'); d.className='reason'; d.textContent=x; why.appendChild(d); });
     document.getElementById('resultProven').textContent = result.proven || '';
@@ -2653,7 +2655,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, adaptResultToModel, chooseDeepBranches, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, adaptResultToModel, chooseDeepBranches, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
