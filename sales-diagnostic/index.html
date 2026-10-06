@@ -876,6 +876,32 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     ]),
 
     // BUILD
+    build_econ_plausibility: dynamicQ('build_econ_plausibility', 'Новый продукт: сначала проверяем здравый смысл по деньгам',
+      s => s.answers.scope_model === 'SUBSCRIPTION'
+        ? 'До первых продаж у вас есть хотя бы грубый расчёт: после прямых расходов на участника остаётся сумма, ради которой имеет смысл тратить время на этот формат?'
+        : 'До первых продаж у вас есть хотя бы грубый расчёт: после прямых расходов остаётся сумма, ради которой имеет смысл тратить время на такую продажу?',
+      'Здесь не нужны точные CAC, LTV и большая финансовая модель. Достаточно примерной цены, неизбежных прямых расходов и реалистичной оценки вашего времени.',
+      () => [
+        opt('yes','Да, по грубой оценке экономика выглядит нормальной'),
+        opt('plausible','Похоже на то, но расчёт пока очень приблизительный'),
+        opt('no','Нет — уже сейчас видно, что цена не покрывает расходы или работа не имеет смысла по времени'),
+        opt('unknown','Не считал(а) даже примерно'),
+      ]),
+    build_pilot_capacity: dynamicQ('build_pilot_capacity', 'Новый продукт: можно ли безопасно провести небольшой тест',
+      s => ({
+        PRODUCT:'Если появится небольшой тестовый объём реальных заказов, сможете ли вы выполнить обещанное без заведомого аврала и провала качества?',
+        APPOINTMENT:'Если появится несколько первых реальных записей, сможете ли вы провести их нормально и в обещанные сроки?',
+        EXPERT:'Если появится первый реальный клиент или небольшой тестовый объём, сможете ли вы выполнить обещанный объём работы без заведомого перегруза?',
+        EDUCATION:'Если появятся первые реальные участники, сможете ли вы предоставить обещанные материалы, занятия и поддержку?',
+        SUBSCRIPTION:'Если появятся первые реальные участники, сможете ли вы предоставить обещанный доступ, сервис и поддержку?'
+      }[s.answers.scope_model] || 'Сможете ли вы нормально выполнить небольшой реальный тест этого предложения?'),
+      'Речь пока не о большом росте. Нужно понять только одно: можно ли безопасно провести небольшой платный тест и получить реальные данные.',
+      () => [
+        opt('yes','Да, небольшой тест точно смогу выполнить нормально'),
+        opt('plausible','Скорее да, если объём будет небольшим'),
+        opt('no','Нет — даже небольшой тест уже упирается в серьёзное ограничение'),
+        opt('unknown','Не могу пока оценить'),
+      ]),
     build_demand: q('build_demand', 'Новый продукт: проверяем спрос', 'Что уже подтверждает, что людям нужен этот новый продукт или услуга?', 'Сильные признаки — запрос, попытка записаться, бронь, предзаказ или оплата. Одних слов «классная идея» недостаточно.', [opt('yes','Есть реальные действия со стороны потенциальных покупателей'), opt('weak','Есть только интерес или положительные слова, но без действий'), opt('no','Пока нет даже явного интереса'), opt('unknown','Не знаю / ещё не проверял(а)')]),
     build_offer: q('build_offer', 'Новый продукт: предложение', 'Можно ли уже понятно объяснить покупателю: кому это нужно, что он получит, сколько стоит и на каких условиях?', '', COMMON_SCALE),
     build_route: dynamicQ('build_route', 'Новый продукт: путь покупки',
@@ -889,6 +915,14 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       '', () => COMMON_SCALE),
     build_access: q('build_access', 'Новый продукт: доступ', 'Понятно ли, где вы покажете это предложение людям, у которых реально есть такая потребность?', 'Не просто «буду вести соцсети», а конкретное место или способ добраться до нужных людей.', COMMON_SCALE),
     build_market: q('build_market', 'Новый продукт: проверяем реальную покупку', 'Что уже произошло после того, как вы показали предложение людям, которым оно действительно может быть нужно?', '', [opt('paid','Была оплата, предзаказ или бронь'), opt('action','Была заявка или другой реальный шаг без оплаты'), opt('no','Реальных шагов к покупке не было'), opt('unknown','Не знаю / ещё не проверял(а)')]),
+    build_market_quality: q('build_market_quality', 'Новый продукт: проверяем качество доказательства', 'Кто сделал этот реальный шаг к покупке и на каких условиях?', 'Одна покупка знакомого или большая скидка — полезный сигнал, но это слабее, чем покупка нового подходящего клиента на обычных условиях.', [
+      opt('target_normal','Новый подходящий покупатель — на обычной цене и обычных условиях'),
+      opt('mixed_target','Были разные случаи, но среди них есть новый подходящий покупатель на обычных условиях'),
+      opt('warm_existing','Постоянный клиент или подписчик, который уже хорошо меня знает'),
+      opt('friend_support','Друг, родственник или человек, который мог купить в основном ради поддержки'),
+      opt('special_terms','Покупка была на большой скидке, бесплатно или на особых условиях'),
+      opt('unknown','Не могу уверенно определить'),
+    ]),
     build_fulfillment: dynamicQ('build_fulfillment', 'Новый продукт: выполнение',
       s => ({
         PRODUCT:'Как прошёл первый реальный заказ от подтверждения до получения клиентом?',
@@ -1448,6 +1482,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function hybridPlausibilityQuestions(changed) {
+    const xs = Array.isArray(changed) ? changed : [];
+    if (!xs.length || xs.includes('unknown')) return ['build_econ_plausibility','build_pilot_capacity'];
+    const out = [];
+    if (xs.some(v => ['offer','price','channel','route','fulfillment','capacity'].includes(v))) out.push('build_econ_plausibility');
+    if (xs.some(v => ['offer','fulfillment','capacity'].includes(v))) out.push('build_pilot_capacity');
+    return out;
+  }
+
   function hybridBuildQuestions(changed) {
     const xs = Array.isArray(changed) ? changed : [];
     const all = ['build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'];
@@ -1513,6 +1556,12 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       return;
     }
 
+    if (currentId === 'gate_legal' && ['yes','maybe','unknown'].includes(state.answers.gate_legal)) {
+      state.result = makeResult('LEGAL_SAFETY_BLOCKER');
+      renderResult(state.result);
+      return;
+    }
+
     // A current business with no repeatable sales moves to BUILD or HYBRID,
     // but we first ask what can be inherited from what already works.
     if (state.mode === 'full' && currentId === 'mode_sales' && state.answers.mode_sales !== 'repeatable') {
@@ -1530,14 +1579,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       } else {
         state.mode = 'build';
         state.path = state.path.slice(0, state.index + 1).concat([
-          'gate_legal','shared_resources','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
+          'gate_legal','shared_resources','build_econ_plausibility','build_pilot_capacity','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
         ]);
       }
     }
 
     if (state.mode === 'hybrid' && currentId === 'hybrid_changed') {
+      const plausibility = hybridPlausibilityQuestions(state.answers.hybrid_changed);
       const checks = hybridBuildQuestions(state.answers.hybrid_changed);
-      state.path = state.path.slice(0, state.index + 1).concat(['gate_legal','shared_resources', ...checks]);
+      state.path = state.path.slice(0, state.index + 1).concat(['gate_legal','shared_resources', ...plausibility, ...checks]);
     }
 
     // Ask about impact on the rest of the business only when resources are actually shared.
@@ -1546,6 +1596,10 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       if (shared.length && !state.path.includes('shared_impact')) {
         state.path.splice(state.index + 1, 0, 'shared_impact');
       }
+    }
+
+    if ((state.mode === 'build' || state.mode === 'hybrid') && currentId === 'build_market' && ['paid','action'].includes(state.answers.build_market) && !state.path.includes('build_market_quality')) {
+      state.path.splice(state.index + 1, 0, 'build_market_quality');
     }
 
     // Stop early in BUILD/HYBRID: the first failed meaningful gate is the current job.
@@ -1675,21 +1729,25 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   function buildEarlyResult(currentId) {
     const a = state.answers;
-    if (currentId === 'gate_legal' && a.gate_legal === 'yes') return 'LEGAL_SAFETY_BLOCKER';
+    if (currentId === 'gate_legal' && ['yes','maybe','unknown'].includes(a.gate_legal)) return 'LEGAL_SAFETY_BLOCKER';
     const fail = {
+      build_econ_plausibility: () => !['yes','plausible'].includes(a.build_econ_plausibility),
+      build_pilot_capacity: () => !['yes','plausible'].includes(a.build_pilot_capacity),
       build_demand: () => !['yes'].includes(a.build_demand),
       build_offer: () => !['yes','mostly'].includes(a.build_offer),
       build_route: () => !['yes','mostly'].includes(a.build_route),
       build_access: () => !['yes','mostly'].includes(a.build_access),
       build_market: () => !['paid','action'].includes(a.build_market),
+      build_market_quality: () => !['target_normal','mixed_target'].includes(a.build_market_quality),
       build_fulfillment: () => a.build_fulfillment !== 'yes',
       build_value: () => a.build_value !== 'yes',
       build_economics: () => !['yes','maybe'].includes(a.build_economics),
       build_capacity: () => !['yes','small'].includes(a.build_capacity),
     };
     const codes = {
+      build_econ_plausibility:'BUILD_ECONOMICS', build_pilot_capacity:'BUILD_CAPACITY',
       build_demand:'BUILD_DEMAND', build_offer:'BUILD_OFFER', build_route:'BUILD_ROUTE', build_access:'BUILD_ACCESS',
-      build_market:'BUILD_MARKET_TEST', build_fulfillment:'BUILD_FULFILLMENT', build_value:'BUILD_VALUE', build_economics:'BUILD_ECONOMICS', build_capacity:'BUILD_CAPACITY'
+      build_market:'BUILD_MARKET_TEST', build_market_quality:'BUILD_MARKET_TEST', build_fulfillment:'BUILD_FULFILLMENT', build_value:'BUILD_VALUE', build_economics:'BUILD_ECONOMICS', build_capacity:'BUILD_CAPACITY'
     };
     return fail[currentId] && fail[currentId]() ? codes[currentId] : '';
   }
@@ -1970,15 +2028,18 @@ function finalizePrecision() {
 
   function diagnoseBuild() {
     const a = state.answers;
-    if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
+    if (['yes','maybe','unknown'].includes(a.gate_legal)) return makeResult('LEGAL_SAFETY_BLOCKER');
     if (['other_suffer','current_suffer','overload'].includes(a.shared_impact)) return makeResult('CAPACITY');
     if (a.shared_impact === 'cash') return makeResult('ECONOMICS');
     const buildChecks = [
+      ['build_econ_plausibility', v => ['yes','plausible'].includes(v), 'BUILD_ECONOMICS'],
+      ['build_pilot_capacity', v => ['yes','plausible'].includes(v), 'BUILD_CAPACITY'],
       ['build_demand', v => v === 'yes', 'BUILD_DEMAND'],
       ['build_offer', v => ['yes','mostly'].includes(v), 'BUILD_OFFER'],
       ['build_route', v => ['yes','mostly'].includes(v), 'BUILD_ROUTE'],
       ['build_access', v => ['yes','mostly'].includes(v), 'BUILD_ACCESS'],
       ['build_market', v => ['paid','action'].includes(v), 'BUILD_MARKET_TEST'],
+      ['build_market_quality', v => ['target_normal','mixed_target'].includes(v), 'BUILD_MARKET_TEST'],
       ['build_fulfillment', v => v === 'yes', 'BUILD_FULFILLMENT'],
       ['build_value', v => v === 'yes', 'BUILD_VALUE'],
       ['build_economics', v => ['yes','maybe'].includes(v), 'BUILD_ECONOMICS'],
@@ -2201,7 +2262,7 @@ function finalizePrecision() {
 
   function resultKindFor(code) {
     const a = state.answers;
-    if (code === 'LEGAL_SAFETY_BLOCKER') return 'Сначала решить это';
+    if (code === 'LEGAL_SAFETY_BLOCKER') return a.gate_legal === 'yes' ? 'Сначала решить это' : 'Сначала проверить это';
     if (code === 'FULFILLMENT' && a.gate_fulfillment === 'regular') return 'Сначала решить это';
     if (code === 'ECONOMICS' && a.gate_economics === 'negative') return 'Сначала решить это';
     if (code === 'CAPACITY' && a.gate_capacity === 'overload') return 'Сначала решить это';
@@ -2359,6 +2420,13 @@ function finalizePrecision() {
     const scope = a.scope_name ? `«${a.scope_name}»` : 'этого предложения';
 
     if (code === 'LEGAL_SAFETY_BLOCKER') {
+      if (a.gate_legal === 'unknown') {
+        out.title = 'Сначала выясните, какие обязательные требования относятся к этой продаже';
+        out.summary = 'Сейчас вы не уверены, какие правила безопасности, документы или обязательные требования относятся именно к этому товару или услуге. До роста это лучше прояснить.';
+      } else if (a.gate_legal === 'maybe') {
+        out.title = 'Сначала проверьте сомнение по обязательным требованиям';
+        out.summary = 'У вас есть конкретное сомнение по безопасности или правилам продажи. Сначала получите однозначный ответ, а уже потом усиливайте продажи.';
+      }
       out.action = numbered('Сформулируйте один конкретный вопрос: какое требование относится именно к вашему товару/услуге и способу продажи.', 'Проверьте его по актуальному официальному или профильному источнику; не ориентируйтесь только на чужие посты и пересказы.', 'Если требование относится к вам — исправьте процесс и сохраните подтверждение того, как оно выполняется. После этого повторите проверку продаж.');
       out.metric = 'Есть однозначный ответ по требованию и понятный способ его выполнения в вашем процессе.';
     }
@@ -2830,12 +2898,29 @@ function finalizePrecision() {
     }
 
     if (code === 'BUILD_MARKET_TEST') {
-      out.action = numbered(
-        `Предложите ${scope} реальному покупателю на нормальных условиях.`,
-        'Не заменяйте продажу опросом «нравится ли идея» и не давайте такую скидку, которая полностью меняет экономику.',
-        'После результата запишите: кто купил/отказался, для какой задачи и на каких условиях.'
-      );
-      out.metric = 'Реальная бронь, заказ, предоплата/оплата или конкретный отказ на реальных условиях.';
+      if (a.build_market_quality && !['target_normal','mixed_target'].includes(a.build_market_quality)) {
+        out.title = 'Проверьте покупку на человеке, который действительно похож на вашего обычного покупателя';
+        out.summary = a.build_market_quality === 'special_terms'
+          ? 'Реальный шаг уже был, но особые условия или большая скидка могли сильно изменить решение о покупке.'
+          : a.build_market_quality === 'friend_support'
+            ? 'Реальный шаг уже был, но покупка знакомого или родственника ещё слабо доказывает, что предложение купит обычный покупатель.'
+            : a.build_market_quality === 'warm_existing'
+              ? 'Реальный шаг уже был, но человек уже хорошо вас знал и доверял вам. Для нового предложения нужно проверить, сработает ли оно и на менее тёплом подходящем покупателе.'
+              : 'Реальный шаг к покупке есть, но пока непонятно, насколько этот случай похож на обычную будущую продажу.';
+        out.action = numbered(
+          `Покажите ${scope} новому человеку, которому оно реально подходит, на обычной цене и обычных условиях.`,
+          'Не меняйте одновременно продукт, цену и способ продажи — иначе будет непонятно, что именно проверили.',
+          'Запишите реальный результат: купил / сделал серьёзный шаг / отказался и почему.'
+        );
+        out.metric = 'Реальное действие нового подходящего покупателя на обычной цене и условиях.';
+      } else {
+        out.action = numbered(
+          `Предложите ${scope} реальному покупателю на нормальных условиях.`,
+          'Не заменяйте продажу опросом «нравится ли идея» и не давайте такую скидку, которая полностью меняет экономику.',
+          'После результата запишите: кто купил/отказался, для какой задачи и на каких условиях.'
+        );
+        out.metric = 'Реальная бронь, заказ, предоплата/оплата или конкретный отказ на реальных условиях.';
+      }
     }
 
     if (code === 'BUILD_FULFILLMENT') {
@@ -2849,13 +2934,43 @@ function finalizePrecision() {
     }
 
     if (code === 'BUILD_ECONOMICS') {
-      out.action = numbered('Возьмите уже выполненную тестовую продажу.', 'Посчитайте: сумма от клиента минус прямые расходы; отдельно запишите всё ваше время — подготовку, выполнение и поддержку.', 'Если результат отрицательный или слишком слабый, не масштабируйте: сначала меняйте цену, состав продукта или самый дорогой/долгий этап.');
-      out.metric = 'Деньги после прямых расходов + фактическое время на одну тестовую продажу.';
+      if (['no','unknown'].includes(a.build_econ_plausibility) && state.path.includes('build_econ_plausibility')) {
+        out.title = a.build_econ_plausibility === 'no'
+          ? 'Не проверяйте спрос, пока предложение уже на бумаге не сходится по деньгам'
+          : 'Сначала сделайте грубый расчёт экономики нового предложения';
+        out.summary = a.build_econ_plausibility === 'no'
+          ? 'По вашей оценке уже сейчас видно, что цена не покрывает неизбежные расходы или такая работа не имеет смысла по затраченному времени.'
+          : 'До первого платного теста не нужна сложная финансовая модель, но нужно хотя бы понять, есть ли правдоподобный путь к нормальной экономике.';
+        out.action = numbered(
+          'Запишите предполагаемую цену или платёж от клиента.',
+          'Вычтите неизбежные прямые расходы и отдельно оцените, сколько вашего времени потребует выполнение.',
+          'Если даже грубая оценка не оставляет приемлемого результата — меняйте цену, состав предложения или способ выполнения до теста спроса. Если выглядит правдоподобно — переходите к небольшому реальному тесту.'
+        );
+        out.metric = 'Предполагаемая цена − неизбежные прямые расходы + реалистичная оценка вашего времени.';
+        out.dont = 'Не тратьте деньги на привлечение к предложению, которое уже в грубом расчёте выглядит структурно убыточным.';
+      } else {
+        out.action = numbered('Возьмите уже выполненную тестовую продажу.', 'Посчитайте: сумма от клиента минус прямые расходы; отдельно запишите всё ваше время — подготовку, выполнение и поддержку.', 'Если результат отрицательный или слишком слабый, не масштабируйте: сначала меняйте цену, состав продукта или самый дорогой/долгий этап.');
+        out.metric = 'Деньги после прямых расходов + фактическое время на одну тестовую продажу.';
+      }
     }
 
     if (code === 'BUILD_CAPACITY') {
-      out.action = numbered('Представьте несколько таких продаж подряд и назовите ресурс, который закончится первым: время, слот, материалы, оборудование, доставка, поддержка или деньги на закупку.', 'Оцените не аварийный максимум, а объём, который можно повторять без ночных авралов и падения качества.', 'До роста заказов исправьте именно это узкое место или ограничьте приём тем объёмом, который реально можете выполнить нормально.');
-      out.metric = 'Сколько таких заказов вы можете повторять без задержек, снижения качества и ухудшения заработка.';
+      if (['no','unknown'].includes(a.build_pilot_capacity) && state.path.includes('build_pilot_capacity')) {
+        out.title = a.build_pilot_capacity === 'no'
+          ? 'Сначала сделайте возможным хотя бы небольшой реальный тест'
+          : 'Сначала оцените, сможете ли нормально выполнить небольшой платный тест';
+        out.summary = 'До проверки спроса не нужен большой производственный резерв. Но вы должны хотя бы понимать, что несколько первых реальных продаж можно выполнить без заведомого срыва обещаний.';
+        out.action = numbered(
+          'Возьмите небольшой тестовый объём, который был бы реалистичен для этого формата.',
+          'Проверьте, что для него хватает времени, материалов/слотов, оборудования, поддержки и денег на выполнение.',
+          'Если уже здесь есть жёсткое ограничение — сначала уменьшите тест, измените формат или освободите нужный ресурс.'
+        );
+        out.metric = 'Небольшой тестовый объём, который можно выполнить в обещанный срок и качество без заведомого перегруза.';
+        out.dont = 'Не создавайте спрос, который вы уже сейчас понимаете, что не сможете нормально выполнить.';
+      } else {
+        out.action = numbered('Представьте несколько таких продаж подряд и назовите ресурс, который закончится первым: время, слот, материалы, оборудование, доставка, поддержка или деньги на закупку.', 'Оцените не аварийный максимум, а объём, который можно повторять без ночных авралов и падения качества.', 'До роста заказов исправьте именно это узкое место или ограничьте приём тем объёмом, который реально можете выполнить нормально.');
+        out.metric = 'Сколько таких заказов вы можете повторять без задержек, снижения качества и ухудшения заработка.';
+      }
     }
 
     if (code === 'NO_CRITICAL_CONSTRAINT_FOUND') {
