@@ -588,7 +588,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       opt('unknown', 'Не знаю / не отслеживаю'),
     ]),
     core_offer: q('core_offer', 'Проверяем продажи целиком', 'Новый человек до переписки может понять, что вы продаёте, цену или диапазон, срок и основные условия?', 'Представьте человека, который впервые открыл вашу страницу, карточку или объявление.', COMMON_SCALE),
-    core_fit: dynamicQ('core_fit', 'Проверяем продажи целиком', s => `Из тех, кто обращается по поводу «${s.answers.scope_name || 'этого товара или услуги'}», сколько людей в принципе могут стать вашими покупателями?`, 'То есть человеку нужно именно то, что вы продаёте, и ему подходят важные условия: цена, срок, формат, география, ограничения или противопоказания — если они есть.', () => [
+    core_fit: dynamicQ('core_fit', 'Проверяем продажи целиком', s => `Среди людей, которые обращаются именно по поводу «${s.answers.scope_name || 'этого предложения'}», какая часть действительно может у вас купить?`, 'То есть человеку нужно именно то, что вы продаёте, и ему подходят важные условия: цена, срок, формат, география, ограничения или противопоказания — если они есть.', () => [
       opt('yes', 'Почти все'), opt('most', 'Большинство'), opt('half', 'Примерно половина'), opt('bad', 'Меньше половины'), opt('unknown', 'Не знаю / не отслеживаю'),    ]),
     core_access: q('core_access', 'Проверяем продажи целиком', 'Насколько регулярно к вам приходят новые люди, которым действительно нужен ваш товар или услуга и подходят основные условия?', 'Не считайте просто просмотры и подписчиков. Речь именно о новых потенциальных покупателях.', [
       opt('regular', 'Регулярно — есть хотя бы один понятный источник'),
@@ -714,7 +714,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     // Conversion
     deep_c1: multiQ('deep_c1', 'Уточняем покупку', 'Где при оформлении возникают реальные сложности?', 'Можно отметить несколько пунктов. Выбирайте только то, что действительно случалось.', [
-      opt('availability','Наличие'), opt('price','Цена'), opt('choice','Выбор'), opt('chat','Долгая переписка'), opt('form','Форма'), opt('booking','Запись'), opt('slots','Свободные слоты'), opt('handoff','Переход между площадками'), opt('payment','Оплата'), opt('confirm','Подтверждение'), opt('reschedule','Перенос'), opt('unknown','Не знаю'),
+      opt('availability','Наличие'), opt('price','Цена'), opt('choice','Выбор'), opt('chat','Долгая переписка'), opt('form','Форма'), opt('booking','Запись'), opt('slots','Свободные слоты'), opt('handoff','Переход между площадками'), opt('payment','Оплата'), opt('confirm','Подтверждение'), opt('reschedule','Перенос'), opt('other','Другое'), opt('none','Явного лишнего шага не вижу'), opt('unknown','Не знаю'),
     ]),
     deep_c2: q('deep_c2', 'Уточняем покупку', 'Есть ли в оформлении шаг, который заставляет клиента делать лишнее и не помогает вам нормально выполнить заказ?', 'Например, повторно сообщать те же данные, переходить между несколькими площадками или ждать ручного подтверждения там, где оно не нужно.', [opt('yes','Да'), opt('maybe','Возможно'), opt('no','Нет'), opt('unknown','Не знаю')]),
 
@@ -738,7 +738,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       SUBSCRIPTION: s.answers.deep_s2 === 'rare' ? 'Что чаще всего мешает участнику получить первую реальную пользу от подписки?' : 'Что чаще всего мешает начать пользоваться подпиской?',
     }[s.answers.scope_model] || 'Что чаще всего мешает начать получение?'), 'Если причины не известны — так и отметьте. Лучше честное «не знаю», чем догадка.', s => ({
       PRODUCT: [opt('production','Заказ не готов вовремя'), opt('delivery','Доставка / выдача'), opt('contact','Не удаётся связаться или уточнить детали'), opt('client_delay','Клиент сам откладывает получение'), opt('other','Другое'), opt('unknown','Не знаю')],
-      APPOINTMENT: [opt('forgot','Забывают / не подтверждают визит'), opt('plans','Меняются планы'), opt('wait','Слишком долго ждать записи'), opt('conditions','Неясны условия переноса / отмены'), opt('doubts','Перед визитом появляются сомнения или страх'), opt('price','Останавливает цена / предоплата'), opt('other','Другое'), opt('unknown','Не знаю')],
+      APPOINTMENT: [opt('forgot','Забывают / не подтверждают визит'), opt('plans','Меняются планы'), opt('wait','Слишком долго ждать записи'), opt('access','Неудобно добираться / мешает место или дорога'), opt('conditions','Неясны условия переноса / отмены'), opt('doubts','Перед визитом появляются сомнения или страх'), opt('price','Останавливает цена / предоплата'), opt('other','Другое'), opt('unknown','Не знаю')],
       EXPERT: [opt('prep','Не готова нужная информация / подготовка'), opt('schedule','Не удаётся согласовать время'), opt('client_delay','Клиент откладывает старт'), opt('my_delay','Я сам(а) откладываю старт из-за загрузки'), opt('materials','Ждём материалы / доступы / данные'), opt('other','Другое'), opt('unknown','Не знаю')],
       EDUCATION: s.answers.deep_s2 === 'rare'
         ? [opt('next_step','Непонятно, что сделать на практике'), opt('theory','Слишком много теории до применения'), opt('hard','Первое практическое действие слишком сложное'), opt('time','Не хватает времени'), opt('support','Нужна помощь / обратная связь'), opt('other','Другое'), opt('unknown','Не знаю')]
@@ -750,7 +750,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     // Fulfillment
     deep_f1: multiQ('deep_f1', 'Уточняем выполнение', 'Что из этого реально создаёт проблемы после того, как заказ или запись приняты?', 'Можно отметить несколько повторяющихся причин. Не отмечайте то, что только теоретически может случиться.', [
-      opt('deadline','Сроки'), opt('quality','Качество'), opt('supply','Закупка / наличие'), opt('rework','Переделки'), opt('delivery','Доставка'), opt('equipment','Оборудование'), opt('errors','Ошибки'), opt('communication','Коммуникация'), opt('support','Поддержка'), opt('overload','Перегруз'), opt('none','Ничего системного'),
+      opt('deadline','Сроки'), opt('quality','Качество'), opt('supply','Закупка / наличие'), opt('rework','Переделки'), opt('delivery','Доставка'), opt('equipment','Оборудование'), opt('errors','Ошибки'), opt('communication','Коммуникация'), opt('support','Поддержка'), opt('overload','Перегруз'), opt('none','Ничего системного'), opt('unknown','Не знаю / не могу определить'),
     ]),
     deep_f2: q('deep_f2', 'Уточняем выполнение', 'Когда заказов или клиентов становится больше, перечисленные выше проблемы возникают чаще?', '', [opt('yes','Да'), opt('no','Нет'), opt('unknown','Не знаю')]),
 
@@ -821,10 +821,10 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     // Economics
     deep_e1: dynamicQ('deep_e1', 'Уточняем деньги', s => ({ PRODUCT: 'Есть ли товары или типы заказов, которые после расходов и вашего времени приносят заметно меньше других?', APPOINTMENT: 'Есть ли услуги, которые после расходов и вашего времени приносят заметно меньше других?', EXPERT: 'Есть ли форматы работы, которые после расходов и вашего времени приносят заметно меньше других?', EDUCATION: 'Есть ли курсы или форматы обучения, которые после расходов и вашего времени приносят заметно меньше других?', SUBSCRIPTION: 'Есть ли тарифы или группы участников, которые после поддержки, сервисов и вашего времени приносят заметно меньше других?' }[s.answers.scope_model] || 'Есть ли виды продаж, которые после расходов и вашего времени приносят заметно меньше других?'), 'Например, более дорогой заказ может занимать намного больше времени и в итоге оставлять меньше денег.', () => [opt('yes','Да'), opt('maybe','Возможно'), opt('no','Нет'), opt('unknown','Не знаю')]),
     deep_e2: q('deep_e2', 'Уточняем деньги', 'Если таких продаж станет больше, вы уверены, что заработаете больше, а не просто будете больше работать?', '', [opt('yes','Да'), opt('likely','Скорее да'), opt('unknown','Не уверен'), opt('no','Скорее нет')]),
-    deep_e3: dynamicQ('deep_e3', 'Уточняем расчёт', 'Что из этого вы обычно не учитываете в расчёте или оцениваете на глаз?', 'Можно отметить несколько пунктов. Выбирайте только то, что действительно не входит в ваш обычный расчёт.', s => ({
+    deep_e3: dynamicMultiQ('deep_e3', 'Уточняем расчёт', 'Что из этого вы обычно не учитываете в расчёте или оцениваете на глаз?', 'Можно отметить несколько пунктов. Выбирайте только то, что действительно не входит в ваш обычный расчёт.', s => ({
       PRODUCT: [opt('materials','Материалы / продукты'), opt('packaging','Упаковка'), opt('delivery','Доставка'), opt('fees','Комиссии'), opt('rework','Брак / переделки / списания'), opt('acquisition','Реклама / привлечение'), opt('time','Моё время'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')],
       APPOINTMENT: [opt('consumables','Расходники'), opt('fees','Комиссии'), opt('room','Переменные расходы места / кабинета'), opt('noshow','Потерянные слоты / неявки'), opt('acquisition','Реклама / привлечение'), opt('time','Моё время'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')],
-      EXPERT: [opt('prep','Подготовка'), opt('delivery','Само оказание услуги'), opt('support','Поддержка после'), opt('fees','Комиссии'), opt('acquisition','Привлечение'), opt('time','Моё время целиком'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')],
+      EXPERT: [opt('prep','Подготовка'), opt('delivery','Само оказание услуги'), opt('support','Поддержка после'), opt('scope_creep','Дополнительная работа сверх согласованного объёма'), opt('fees','Комиссии'), opt('acquisition','Привлечение'), opt('time','Моё время целиком'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')],
       EDUCATION: [opt('platform','Платформа / сервисы'), opt('fees','Комиссии'), opt('acquisition','Реклама / привлечение'), opt('support','Поддержка / кураторы'), opt('live','Эфиры / проверки'), opt('refunds','Возвраты'), opt('time','Время автора'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')],
       SUBSCRIPTION: [opt('platform','Платформа / сервисы'), opt('fees','Комиссии / платежи'), opt('acquisition','Привлечение'), opt('support','Поддержка участников'), opt('live','Эфиры / встречи / активности'), opt('refunds','Возвраты'), opt('time','Моё время'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')],
     }[s.answers.scope_model] || [opt('time','Моё время'), opt('none','Всё основное учитываю'), opt('unknown','Не знаю')])),
@@ -1296,6 +1296,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function q(id, eyebrow, title, help, options) { return { id, type: 'single', eyebrow, title, help, options }; }
   function dynamicQ(id, eyebrow, title, help, optionsFn) { return { id, type: 'single', eyebrow, title, help, optionsFn }; }
   function multiQ(id, eyebrow, title, help, options) { return { id, type: 'multi', eyebrow, title, help, options }; }
+  function dynamicMultiQ(id, eyebrow, title, help, optionsFn) { return { id, type: 'multi', eyebrow, title, help, optionsFn }; }
   function textQ(id, eyebrow, title, help, placeholder) { return { id, type: 'text', eyebrow, title, help, placeholder }; }
   function numberQ(id, eyebrow, title, help, placeholder, numericKind = 'count') { return { id, type: 'number', eyebrow, title, help, placeholder, numericKind }; }
   function dynamicNumberQ(id, eyebrow, title, help, placeholder, numericKind = 'count') { return { id, type: 'number', eyebrow, title, help, placeholder, numericKind }; }
@@ -1507,6 +1508,11 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const currentId = state.path[state.index];
     if (!isAnswered(currentId)) return;
 
+    if (state.mode === 'followup' && currentId === 'fu_done' && state.answers.fu_done === 'no') {
+      finalizeFollowup();
+      return;
+    }
+
     // A current business with no repeatable sales moves to BUILD or HYBRID,
     // but we first ask what can be inherited from what already works.
     if (state.mode === 'full' && currentId === 'mode_sales' && state.answers.mode_sales !== 'repeatable') {
@@ -1579,21 +1585,63 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       state.path.splice(state.index + 1, 0, 'deep_v3');
     }
 
+    if (currentId === 'deep_s1') {
+      const learningModel = ['EDUCATION','SUBSCRIPTION'].includes(state.answers.scope_model);
+      if (learningModel) {
+        if (!state.path.includes('deep_s2')) state.path.splice(state.index + 1, 0, 'deep_s2');
+      } else if (['some','many'].includes(state.answers.deep_s1) && !state.path.includes('deep_s2')) {
+        state.path.splice(state.index + 1, 0, 'deep_s2');
+      }
+    }
+
+    if (currentId === 'deep_s2') {
+      const learningModel = ['EDUCATION','SUBSCRIPTION'].includes(state.answers.scope_model);
+      const a = state.answers;
+      const needCause = learningModel
+        ? (['half','few'].includes(a.deep_s1) || (a.deep_s1 === 'most' && ['some','rare'].includes(a.deep_s2)))
+        : ['yes','partly'].includes(a.deep_s2);
+      if (needCause && !state.path.includes('deep_s3')) state.path.splice(state.index + 1, 0, 'deep_s3');
+    }
+
+    if (currentId === 'deep_r1' && ['yes','sometimes'].includes(state.answers.deep_r1)) {
+      const add = [];
+      if (!state.path.includes('deep_r2')) add.push('deep_r2');
+      if (!state.path.includes('deep_r3')) add.push('deep_r3');
+      if (add.length) state.path.splice(state.index + 1, 0, ...add);
+    }
+
     if (currentId === 'core_repeat') {
       const a = state.answers;
       const extra = [];
       const hasProblemToRecover = ['sometimes','regular'].includes(a.gate_fulfillment) || ['mostly','issues','no'].includes(a.core_value);
       const goodEnoughForReferral = ['yes','mostly'].includes(a.core_value);
       const repeatPossible = ['rare','sometimes'].includes(a.core_repeat);
+
       if (hasProblemToRecover && !state.path.includes('post_recovery')) extra.push('post_recovery');
       if (goodEnoughForReferral && ['new_sales','stable','unknown'].includes(a.scope_goal) && !state.path.includes('post_referral')) extra.push('post_referral');
-      if (repeatPossible && ['repeat','stable','income','unknown'].includes(a.scope_goal) && !state.path.includes('post_reactivation')) extra.push('post_reactivation');
-      if (a.scope_model === 'SUBSCRIPTION' && ['rare','sometimes'].includes(a.core_repeat)) {
-        if (!state.path.includes('sub_cancel_known')) extra.push('sub_cancel_known');
-        if (!state.path.includes('sub_cancel_reason')) extra.push('sub_cancel_reason');
-        if (!state.path.includes('post_reactivation')) extra.push('post_reactivation');
+
+      if (a.scope_model === 'SUBSCRIPTION') {
+        const renewalRelevant = repeatPossible || ['renewals','less_churn','reactivate_members'].includes(a.scope_target);
+        if (renewalRelevant && !state.path.includes('sub_cancel_known')) extra.push('sub_cancel_known');
+      } else if (repeatPossible && ['repeat','stable','income','unknown'].includes(a.scope_goal) && !state.path.includes('post_reactivation')) {
+        extra.push('post_reactivation');
       }
+
       if (extra.length) state.path.splice(state.index + 1, 0, ...extra);
+    }
+
+    if (currentId === 'sub_cancel_known') {
+      if (['yes','partly'].includes(state.answers.sub_cancel_known)) {
+        if (!state.path.includes('sub_cancel_reason')) state.path.splice(state.index + 1, 0, 'sub_cancel_reason');
+      } else if (state.answers.scope_target === 'reactivate_members' && !state.path.includes('post_reactivation')) {
+        state.path.splice(state.index + 1, 0, 'post_reactivation');
+      }
+    }
+
+    if (currentId === 'sub_cancel_reason') {
+      const reasons = meaningful(state.answers.sub_cancel_reason);
+      const shouldAskReactivation = state.answers.scope_target === 'reactivate_members' || reasons.some(v => ['temporary','fit'].includes(v));
+      if (shouldAskReactivation && !state.path.includes('post_reactivation')) state.path.splice(state.index + 1, 0, 'post_reactivation');
     }
 
     if (currentId === 'deep_f2' && state.answers.deep_f2 === 'yes' && meaningful(state.answers.deep_f1).includes('overload') && !state.path.includes('deep_cap1')) {
@@ -1658,10 +1706,10 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       A: ['deep_a1','deep_a2','deep_a3','deep_a4'],
       T: ['deep_t1','deep_t2'],
       C: ['deep_c1','deep_c2'],
-      S: ['deep_s1','deep_s2','deep_s3'],
+      S: ['deep_s1'],
       F: ['deep_f1','deep_f2'],
       V: ['deep_v1','deep_v2'],
-      R: ['deep_r1','deep_r2','deep_r3'],
+      R: ['deep_r1'],
       E: ['deep_e1','deep_e2','deep_e3'],
       CAP: ['deep_cap1','deep_cap2'],
       REC: [],
@@ -1686,7 +1734,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const valueContradicted = a.deep_v2 === 'no' && meaningful(a.deep_v1).some(v => ['repeat','feedback','observable','usage','progress'].includes(v)) && !meaningful(a.deep_v1).includes('complaints');
     pushCandidate(list, 'V', valueContradicted ? 0 : severity(a.core_value, { no:4, issues:3 }), 90);
 
-    const economicsContradicted = a.deep_e1 === 'no' && ['yes','likely'].includes(a.deep_e2) && ['none'].includes(a.deep_e3);
+    const economicsContradicted = a.deep_e1 === 'no' && ['yes','likely'].includes(a.deep_e2) && Array.isArray(a.deep_e3) && a.deep_e3.includes('none');
     pushCandidate(list, 'E', economicsContradicted ? 0 : severity(a.gate_economics, { negative:4, low:3 }), 88);
     pushCandidate(list, 'CAP', severity(a.gate_capacity, { overload:4, limit:3 }), 86);
 
@@ -1974,7 +2022,7 @@ function finalizePrecision() {
     if (['issues','no'].includes(a.core_value) && a.deep_v2 === 'no' && positiveValueEvidence) {
       return 'Ответы о результате клиента расходятся: общий скан показывает заметные проблемы, а уточнение не находит повторяющейся причины и содержит положительные сигналы результата.';
     }
-    if (['negative','low'].includes(a.gate_economics) && a.deep_e1 === 'no' && ['yes','likely'].includes(a.deep_e2) && a.deep_e3 === 'none') {
+    if (['negative','low'].includes(a.gate_economics) && a.deep_e1 === 'no' && ['yes','likely'].includes(a.deep_e2) && Array.isArray(a.deep_e3) && a.deep_e3.includes('none')) {
       return 'Ответы об экономике противоречат друг другу: сначала указано, что денег остаётся мало/есть убыток, а уточнение говорит, что слабых позиций нет, рост продаж увеличит заработок и основные расходы учитываются.';
     }
     return '';
@@ -2328,7 +2376,7 @@ function finalizePrecision() {
         out.summary = 'В ответах есть противоречие: регулярные проблемы заявлены, но конкретная повторяющаяся причина не нашлась.';
         out.action = numbered('Возьмите последние доступные выполненные заказы/услуги.', 'Для каждого отметьте: обещанный срок/результат, фактический срок/результат, была ли переделка или жалоба.', 'Если один и тот же сбой повторяется — вернитесь к проверке уже с этой конкретной причиной.');
         out.metric = 'Фактические задержки, переделки, ошибки и жалобы по выполненным продажам.';
-      } else if (['negative','low'].includes(a.gate_economics) && a.deep_e1 === 'no' && a.deep_e3 === 'none') {
+      } else if (['negative','low'].includes(a.gate_economics) && a.deep_e1 === 'no' && Array.isArray(a.deep_e3) && a.deep_e3.includes('none')) {
         out.title = 'Сначала перепроверьте экономику на реальной продаже';
         out.summary = 'Общий ответ говорит о слабой экономике, а уточнение — что основные расходы учтены и слабых позиций нет.';
         out.action = numbered('Возьмите одну типичную завершённую продажу.', 'Запишите сумму от клиента, прямые расходы и всё фактическое время.', 'Сравните результат со своим минимально приемлемым заработком/нагрузкой и только потом решайте, есть ли экономическая проблема.');
@@ -2509,6 +2557,7 @@ function finalizePrecision() {
           forgot:'Добавьте одно понятное напоминание/подтверждение перед визитом и сравните долю пришедших.',
           plans:'Сделайте перенос простым и заранее объясните, как отменить или перенести запись.',
           wait:'Перед записью показывайте ближайшую реальную дату; отдельно проверьте, чаще ли срываются записи с долгим ожиданием.',
+          access:'Отдельно отмечайте, сколько срывов связано с дорогой, местом или невозможностью добраться. Если причина повторяется, точнее объясните адрес/маршрут или предложите другой доступный формат только там, где это реально возможно.',
           conditions:'До подтверждения записи напишите короткие правила отмены и переноса.',
           doubts:'Перед визитом дайте короткую проверенную информацию: как проходит услуга, как подготовиться и какие есть важные ограничения.',
           price:'Показывайте полную цену и условия предоплаты до окончательного подтверждения записи.'
@@ -2673,7 +2722,7 @@ function finalizePrecision() {
 
     if (code === 'ECONOMICS') {
       const sharedCash = a.shared_impact === 'cash';
-      const missingMap = { materials:'материалы/продукты', packaging:'упаковку', delivery:'доставку', fees:'комиссии', rework:'брак/переделки/списания', acquisition:'привлечение', time:'ваше время', consumables:'расходники', room:'переменные расходы места/кабинета', noshow:'потерянные слоты', prep:'подготовку', support:'поддержку после продажи', platform:'платформу/сервисы', live:'эфиры/проверки', refunds:'возвраты' };
+      const missingMap = { materials:'материалы/продукты', packaging:'упаковку', delivery:'доставку', fees:'комиссии', rework:'брак/переделки/списания', acquisition:'привлечение', time:'ваше время', consumables:'расходники', room:'переменные расходы места/кабинета', noshow:'потерянные слоты', prep:'подготовку', support:'поддержку после продажи', scope_creep:'дополнительную работу сверх согласованного объёма', platform:'платформу/сервисы', live:'эфиры/проверки', refunds:'возвраты' };
       const missing = labelList(meaningful(a.deep_e3), missingMap);
       if (sharedCash) {
         out.title = 'Не увеличивайте это направление, пока не хватает денег одновременно на все заказы';
