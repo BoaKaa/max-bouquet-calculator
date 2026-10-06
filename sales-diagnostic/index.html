@@ -1153,15 +1153,32 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     nextButton.addEventListener('click', goNext);
 
     const current = state.answers[id];
-    if (question.type === 'text') {
+    if (question.type === 'text' || question.type === 'number') {
       const input = document.createElement('input');
-      input.className = 'text-input'; input.type = 'text'; input.placeholder = question.placeholder || '';
-      input.value = current || '';
+      input.className = 'text-input';
+      input.type = question.type === 'number' ? 'text' : 'text';
+      input.inputMode = question.type === 'number' ? 'decimal' : 'text';
+      input.placeholder = question.placeholder || '';
+      input.value = current ?? '';
       input.autocomplete = 'off';
-      input.addEventListener('input', () => { state.answers[id] = input.value.trim(); nextButton.disabled = !state.answers[id]; });
-      input.addEventListener('keydown', e => { if (e.key === 'Enter' && state.answers[id]) goNext(); });
+      const updateInput = () => {
+        const raw = input.value.trim();
+        if (question.type === 'number') {
+          const normalized = raw.replace(',', '.').replace(/\s+/g, '');
+          const num = normalized === '' ? null : Number(normalized);
+          const valid = num !== null && Number.isFinite(num) && num >= 0 && (question.numericKind !== 'count' || Number.isInteger(num));
+          if (valid) state.answers[id] = num;
+          else delete state.answers[id];
+          nextButton.disabled = !valid;
+        } else {
+          state.answers[id] = raw;
+          nextButton.disabled = !raw;
+        }
+      };
+      input.addEventListener('input', updateInput);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter' && isAnswered(id)) goNext(); });
       answerArea.appendChild(input);
-      nextButton.disabled = !current;
+      nextButton.disabled = !isAnswered(id);
       setTimeout(() => input.focus(), 0);
     } else {
       const options = question.optionsFn ? question.optionsFn(state) : question.options;
@@ -1206,6 +1223,44 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     if (xs.includes('capacity')) add('build_economics','build_capacity');
     const order = all;
     return order.filter(id => out.includes(id));
+  }
+
+  function precisionQuestionsFor(code) {
+    const map = {
+      ACCESS:['p_inquiries','p_fit','p_orders'],
+      FIT:['p_inquiries','p_fit','p_orders'],
+      OFFER:['p_inquiries','p_fit','p_orders'],
+      DECISION_GAP:['p_inquiries','p_fit','p_orders'],
+      PURCHASE_FRICTION:['p_inquiries','p_fit','p_orders'],
+      START_FAILURE:['p_confirmed','p_started'],
+      ACTIVATION_FAILURE:['p_confirmed','p_started'],
+      FIRST_VALUE_GAP:['p_confirmed','p_started'],
+      FULFILLMENT:['p_completed','p_problems'],
+      VALUE_FAILURE:['p_value_total','p_value_problems'],
+      NEXT_CYCLE:['p_repeat_eligible','p_repeat_returned'],
+      CUSTOMER_MEMORY_GAP:['p_repeat_eligible','p_repeat_returned'],
+      ECONOMICS:['p_revenue','p_direct_costs','p_hours'],
+      CAPACITY:['p_capacity_period','p_current_volume','p_sustainable_volume'],
+      DEMAND_WEAK:['p_market_people','p_market_actions'],
+      DEMAND_UNCLEAR:['p_market_people','p_market_actions'],
+      BUILD_DEMAND:['p_market_people','p_market_actions'],
+      BUILD_ACCESS:['p_market_people','p_market_actions'],
+      BUILD_MARKET_TEST:['p_market_people','p_market_actions'],
+      BUILD_ECONOMICS:['p_revenue','p_direct_costs','p_hours'],
+      BUILD_CAPACITY:['p_capacity_period','p_current_volume','p_sustainable_volume']
+    };
+    return map[code] || [];
+  }
+
+  function startPrecision(result) {
+    const path = precisionQuestionsFor(result.code);
+    if (!path.length) return;
+    state.precisionBase = result;
+    state.precisionOriginMode = state.mode;
+    state.mode = 'precision';
+    state.path = path;
+    state.index = 0;
+    renderQuestion();
   }
 
   function goNext() {
@@ -1410,6 +1465,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   function finalizeDiagnosis() {
     if (state.mode === 'followup') return finalizeFollowup();
+    if (state.mode === 'precision') return finalizePrecision();
     const diagnosis = (state.mode === 'build' || state.mode === 'hybrid') ? diagnoseBuild() : diagnoseFull();
     state.result = diagnosis;
     renderResult(diagnosis);
@@ -2405,6 +2461,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     if (id.startsWith('core')) return 'Общий скан';
     if (id.startsWith('deep')) return 'Уточнение';
     if (id.startsWith('build')) return 'Новый продукт';
+    if (id.startsWith('p_')) return 'Уточняем цифрами';
     if (id.startsWith('fu')) return 'Повторная проверка';
     return '';
   }
