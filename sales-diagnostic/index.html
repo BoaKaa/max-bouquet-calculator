@@ -717,6 +717,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       APPOINTMENT: [opt('expectation','Ожидание результата было другим'), opt('quality','Качество выполнения'), opt('aftercare','Не хватает понятных рекомендаций после услуги'), opt('fit','Услуга / процедура плохо подходила клиенту'), opt('communication','Не совпали ожидания из-за коммуникации'), opt('other','Другое'), opt('unknown','Не знаю')],
       EXPERT: [opt('expectation','Ожидали другой результат'), opt('actionability','После работы непонятно, что делать дальше'), opt('depth','Не хватило глубины / объёма'), opt('fit','Задача плохо подходила формату услуги'), opt('support','Не хватило оговорённой поддержки'), opt('other','Другое'), opt('unknown','Не знаю')],
       EDUCATION: [opt('expectation','Ожидали другой результат'), opt('practice','Не хватает практического применения'), opt('clarity','Материал трудно понять'), opt('support','Не хватает обещанной поддержки'), opt('fit','Курс плохо подходит уровню / задаче'), opt('other','Другое'), opt('unknown','Не знаю')],
+      SUBSCRIPTION: [opt('expectation','Ожидали другую пользу от подписки'), opt('usage','Не получается регулярно пользоваться'), opt('value','Пользуются, но не видят достаточной пользы'), opt('support','Не хватает обещанной поддержки / сервиса'), opt('fit','Подписка плохо подходит текущей задаче'), opt('other','Другое'), opt('unknown','Не знаю')],
     }[s.answers.scope_model] || [opt('other','Другое'), opt('unknown','Не знаю')])),
 
     // Repeat
@@ -1538,7 +1539,10 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       REACT: [],
       ADV: [],
     };
-    return selected.flatMap(z => deepMap[z] || []);
+    return selected.flatMap(z => {
+      if (z === 'R' && state.answers.scope_model === 'SUBSCRIPTION') return [];
+      return deepMap[z] || [];
+    });
   }
 
   function collectCandidates() {
@@ -1573,8 +1577,11 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     pushCandidate(list, 'O', offerContradicted ? 0 : severity(a.core_offer, { no:4, mostly_no:3 }), 70);
     pushCandidate(list, 'A', severity(a.core_access, { none:4, unstable:3 }), 68);
     pushCandidate(list, 'D', severity(a.core_demand, { rare:4 }), 66);
-    pushCandidate(list, 'R', severity(a.core_repeat, { rare:3 }), 45);
-    pushCandidate(list, 'REC', severity(a.post_recovery, { often_unresolved:4 }), 84);
+    const repeatSeverity = a.scope_model === 'SUBSCRIPTION'
+      ? severity(a.core_repeat, { rare:3, sometimes:2 })
+      : severity(a.core_repeat, { rare:3 });
+    pushCandidate(list, 'R', repeatSeverity, 45);
+    pushCandidate(list, 'REC', severity(a.post_recovery, { often_unresolved:3 }), 84);
     pushCandidate(list, 'REACT', severity(a.post_reactivation, { many:1 }), 28);
     pushCandidate(list, 'ADV', severity(a.post_referral, { no:1 }), 22);
 
@@ -1930,7 +1937,7 @@ function finalizePrecision() {
 
   function diagnoseStart() {
     const a = state.answers;
-    if (a.scope_model === 'EDUCATION') {
+    if (['EDUCATION','SUBSCRIPTION'].includes(a.scope_model)) {
       if (a.deep_s1 === 'most' && a.deep_s2 === 'most') return 'DATA_GAP';
       if (a.deep_s1 === 'few') return 'ACTIVATION_FAILURE';
       if (a.deep_s2 === 'rare') return 'FIRST_VALUE_GAP';
