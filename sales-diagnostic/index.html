@@ -1502,6 +1502,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       R: ['deep_r1','deep_r2','deep_r3'],
       E: ['deep_e1','deep_e2','deep_e3'],
       CAP: ['deep_cap1','deep_cap2'],
+      REC: [],
+      REACT: [],
+      ADV: [],
     };
     return selected.flatMap(z => deepMap[z] || []);
   }
@@ -1539,6 +1542,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     pushCandidate(list, 'A', severity(a.core_access, { none:4, unstable:3 }), 68);
     pushCandidate(list, 'D', severity(a.core_demand, { rare:4 }), 66);
     pushCandidate(list, 'R', severity(a.core_repeat, { rare:3 }), 45);
+    pushCandidate(list, 'REC', severity(a.post_recovery, { often_unresolved:4 }), 84);
+    pushCandidate(list, 'REACT', severity(a.post_reactivation, { many:1 }), 28);
+    pushCandidate(list, 'ADV', severity(a.post_referral, { no:1 }), 22);
 
     const goalBoost = { new_sales:['A','D','O','FIT','T','C'], stable:['A','R','CAP'], income:['E','CAP','O'], overload:['CAP','F','E'], repeat:['R','V'], unknown:[] };
     const targetBoost = {
@@ -1829,6 +1835,9 @@ function finalizePrecision() {
     if (zone === 'F') code = diagnoseFulfillment();
     if (zone === 'V') code = diagnoseValue();
     if (zone === 'R') code = diagnoseRepeat();
+    if (zone === 'REC') code = 'RECOVERY_FAILURE';
+    if (zone === 'REACT') code = 'REACTIVATION_GAP';
+    if (zone === 'ADV') code = 'ADVOCACY_GAP';
     if (zone === 'E') code = 'ECONOMICS';
     if (zone === 'CAP') code = 'CAPACITY';
 
@@ -1912,10 +1921,22 @@ function finalizePrecision() {
 
   function diagnoseRepeat() {
     const a = state.answers;
+    if (a.scope_model === 'SUBSCRIPTION') {
+      if (a.core_repeat === 'na') return 'NO_CRITICAL_CONSTRAINT_FOUND';
+      if (a.sub_cancel_known === 'no' || a.sub_cancel_known === 'unknown' || meaningful(a.sub_cancel_reason).length === 0) return 'DATA_GAP';
+      const reasons = meaningful(a.sub_cancel_reason);
+      if (reasons.includes('no_value')) return 'VALUE_FAILURE';
+      if (reasons.includes('service')) return 'FULFILLMENT';
+      if (reasons.includes('no_usage') || reasons.includes('technical')) return 'SUB_RENEWAL';
+      if (reasons.includes('fit')) return a.post_reactivation === 'many' ? 'REACTIVATION_GAP' : 'SUB_RENEWAL';
+      if (reasons.includes('temporary') && ['many','some'].includes(a.post_reactivation)) return 'REACTIVATION_GAP';
+      return 'SUB_RENEWAL';
+    }
     if (a.deep_r1 === 'no' || a.core_repeat === 'na') return 'NO_CRITICAL_CONSTRAINT_FOUND';
     if (a.deep_r1 === 'unknown') return 'DATA_GAP';
     if (a.deep_r3 === 'unknown') return 'DATA_GAP';
     if (a.deep_r3 === 'no' && !['impossible','unknown'].includes(a.deep_r2)) return 'CUSTOMER_MEMORY_GAP';
+    if (a.post_reactivation === 'many') return 'REACTIVATION_GAP';
     return 'NEXT_CYCLE';
   }
 
