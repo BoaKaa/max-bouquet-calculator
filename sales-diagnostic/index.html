@@ -1027,9 +1027,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     p_repeat_eligible: numberQ('p_repeat_eligible', 'Уточняем цифрами', 'У скольких прошлых клиентов за выбранный период действительно был естественный повод купить снова?', 'Не считайте всех старых клиентов подряд — только тех, кому повтор реально был нужен или уместен.', 'Например: 10', 'count'),
     p_repeat_returned: numberQ('p_repeat_returned', 'Уточняем цифрами', 'Сколько из этих клиентов действительно вернулось?', '', 'Например: 4', 'count'),
 
-    p_revenue: dynamicNumberQ('p_revenue', 'Уточняем цифрами', s => s.answers.scope_model === 'SUBSCRIPTION'
-      ? 'Сколько участник платит за один обычный платёжный период?'
-      : 'Сколько клиент платит за одну типичную продажу?', 'Введите сумму в той валюте, в которой обычно считаете. Знак валюты писать не нужно.', 'Например: 3500', 'decimal'),
+    p_revenue: dynamicNumberQ('p_revenue', 'Уточняем цифрами', s => {
+      const preSaleBuild = ['build','hybrid'].includes(s.precisionOriginMode) && ['no','unknown'].includes(s.answers.build_econ_plausibility);
+      if (preSaleBuild) return s.answers.scope_model === 'SUBSCRIPTION'
+        ? 'Какую цену за один платёжный период вы планируете поставить?'
+        : 'Какую цену вы планируете поставить за такую продажу?';
+      return s.answers.scope_model === 'SUBSCRIPTION'
+        ? 'Сколько участник платит за один обычный платёжный период?'
+        : 'Сколько клиент платит за одну типичную продажу?';
+    }, 'Введите сумму в той валюте, в которой обычно считаете. Знак валюты писать не нужно.', 'Например: 3500', 'decimal'),
     p_direct_costs: dynamicNumberQ('p_direct_costs', 'Уточняем цифрами', s => s.answers.scope_model === 'SUBSCRIPTION'
       ? 'Сколько прямых расходов приходится на одного участника за такой платёжный период?'
       : 'Сколько прямых расходов приходится на такую продажу?', 'Учитывайте только расходы, которые появляются или заметно растут из-за этой продажи или участника.', 'Например: 1400', 'decimal'),
@@ -1904,6 +1910,43 @@ function finalizePrecision() {
       renderResult(state.result);
       return;
     }
+  }
+
+  const zeroEvidence = [
+    ['p_completed', ['FULFILLMENT'], 'За выбранный период нет ни одного выполненного заказа или услуги. По этим цифрам нельзя проверить вывод о проблемах выполнения.'],
+    ['p_value_total', ['VALUE_FAILURE'], 'За выбранный период нет ни одного случая, по которому известен результат клиента. По этим цифрам нельзя проверить вывод о клиентском результате.'],
+    ['p_repeat_eligible', ['NEXT_CYCLE','CUSTOMER_MEMORY_GAP'], 'За выбранный период не было клиентов с реальным поводом купить снова. По этому периоду нельзя оценить повторные покупки.'],
+    ['p_renewal_due', ['SUB_RENEWAL'], 'За выбранный период ни у одного участника не наступил срок продления. По этому периоду нельзя оценить продление.'],
+    ['p_market_people', ['BUILD_DEMAND','BUILD_ACCESS','BUILD_MARKET_TEST','DEMAND_WEAK','DEMAND_UNCLEAR'], 'В выбранном периоде предложение не было показано ни одному подходящему человеку. Это ещё не проверка спроса — сначала нужно провести сам тест.']
+  ];
+  for (const [denId, codes, msg] of zeroEvidence) {
+    if (codes.includes(base.code) && Number.isFinite(a[denId]) && a[denId] === 0) {
+      state.mode = state.precisionOriginMode || 'full';
+      state.result = precisionContradiction(msg);
+      state.result.title = 'По этим цифрам вывод пока нельзя проверить';
+      state.result.summary = msg;
+      state.result.precisionSummary = msg;
+      state.result.precisionCaveat = 'Нужен ненулевой реальный знаменатель за сопоставимый период. Не превращайте отсутствие наблюдений в процент или вывод о качестве процесса.';
+      renderResult(state.result);
+      return;
+    }
+  }
+
+  if (['OFFER','DECISION_GAP','PURCHASE_FRICTION','FIT'].includes(base.code) && Number.isFinite(a.p_inquiries) && a.p_inquiries > 0 && Number.isFinite(a.p_fit) && a.p_fit === 0) {
+    const fitResult = makeResult('FIT');
+    state.mode = state.precisionOriginMode || 'full';
+    state.result = {
+      ...fitResult,
+      precisionRefined:true,
+      title:'Сначала разберитесь, почему среди обращений нет подходящих покупателей',
+      summary:`По вашим цифрам было ${fmtNumber(a.p_inquiries,0)} обращений, но ни одно из них не относилось к людям, которым вы реально могли продать на текущих условиях. Поэтому оценивать оформление или сомнения перед покупкой по этой группе рано.`,
+      precisionSummary:`${fmtNumber(a.p_inquiries,0)} обращений → 0 подходящих потенциальных покупателей.`,
+      precisionCaveat:'Сначала выясните повторяющуюся причину неподходящих обращений: задача, цена, срок, формат, география или ограничения. Только после этого имеет смысл оценивать дальнейшую конверсию.',
+      metric:`Подходящие потенциальные покупатели среди новых обращений. Исходная точка: 0 из ${fmtNumber(a.p_inquiries,0)}.`,
+      date:new Date().toISOString()
+    };
+    renderResult(state.result);
+    return;
   }
 
   let result = { ...base, precisionRefined:true, date:new Date().toISOString() };
