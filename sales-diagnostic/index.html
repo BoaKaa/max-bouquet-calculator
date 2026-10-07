@@ -368,7 +368,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.9.0-dev';
+  const APP_VERSION = '1.9.1-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -1175,17 +1175,18 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     deep_cap2: q('deep_cap2', 'Уточняем загрузку', 'Как часто из-за перегруза появляются задержки, падает качество или вам приходится работать на износ?', '', [opt('no','Практически никогда'), opt('sometimes','Иногда'), opt('regular','Регулярно'), opt('unknown','Не знаю / не отслеживаю')]),
 
     // HYBRID / общие ресурсы
-    build_base: dynamicQ('build_base', 'Что уже есть',
-      s => 'Для «' + (s.answers.scope_name || 'этого предложения') + '» у вас уже есть что-то готовое из других работающих продаж — например, знакомая аудитория, площадка, способ оплаты, оборудование или процесс выполнения?',
-      'Речь именно о том, что уже проверено в других реальных продажах и можно использовать здесь, а не только о планах.',
+    inheritance_entry: dynamicQ('inheritance_entry', 'Что можно взять из уже работающих продаж',
+      s => 'Для «' + (s.answers.scope_name || 'этого предложения') + '» можно использовать что-то уже проверенное в ваших реальных продажах?',
+      'Учитывайте только то, что уже действительно работало: аудиторию, канал, способ заказа, выполнение, оборудование или другой проверенный элемент.',
       () => [
-        opt('from_scratch','Нет — для этого запуска всё основное нужно строить и проверять с нуля'),
-        opt('existing','Да — часть уже работающего процесса можно использовать и здесь'),
-        opt('unknown','Не уверен(а), что из прежнего действительно подойдёт'),
+        opt('from_scratch','Нет — существенную часть нужно проверить с нуля'),
+        opt('existing','Да — есть проверенная основа, которую можно перенести'),
+        opt('almost_all','Да — почти всё работает так же, новое только небольшое изменение'),
+        opt('unknown','Не уверен(а), что именно можно безопасно перенести'),
       ]),
-    hybrid_changed: dynamicMultiQ('hybrid_changed', 'Что нужно проверить заново',
-      s => '«' + (s.answers.scope_name || 'Выбранное предложение') + '»: что здесь нельзя просто взять из уже работающих продаж и нужно проверить отдельно?',
-      'Например: если способ оплаты и оборудование уже проверены, но товар, цена и покупатели новые — отметьте только товар, цену и покупателей.',
+    inheritance_map: dynamicMultiQ('inheritance_map', 'Что здесь действительно новое',
+      s => '«' + (s.answers.scope_name || 'Выбранное предложение') + '»: какие части новые, заметно изменились или пока непонятно, можно ли их перенести?',
+      'Отмечайте только то, что нельзя уверенно считать прежним работающим процессом. Если почти всё осталось тем же — выберите только одно небольшое изменение.',
       s => ({
         PRODUCT:[
           opt('offer','Сам товар, его состав или результат для покупателя'),
@@ -1381,6 +1382,14 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     // BUILD
     // BUILD
+    build_test_type: q('build_test_type', 'Как будете проверять предложение', 'Какой следующий реальный шаг вы собираетесь сделать?', 'Это нужно, чтобы не требовать полноценную продажу там, где вы пока только проверяете интерес, и не пропустить обязательные требования перед реальным заказом.', [
+      opt('research','Поговорить с подходящими людьми / проверить задачу без продажи'),
+      opt('waitlist','Собрать заявки или лист ожидания без оплаты'),
+      opt('preorder','Предложить бронь / предзаказ / предоплату'),
+      opt('payment','Предложить полноценную оплату и реальное выполнение'),
+      opt('unknown','Пока не определил(а) способ проверки'),
+    ]),
+
     build_econ_plausibility: dynamicQ('build_econ_plausibility', 'До первых продаж: деньги',
       s => s.answers.scope_model === 'SUBSCRIPTION'
         ? '«' + (s.answers.scope_name || 'Выбранная подписка') + '»: если участник заплатит предполагаемую цену, после расходов на его обслуживание и вашего времени останется приемлемый заработок?'
@@ -1446,7 +1455,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         opt('unknown','Пока не могу оценить'),
       ])),
 
-    build_demand: dynamicQ('build_demand', 'До запуска: есть ли сама потребность',
+    build_market_context: dynamicQ('build_market_context', 'До запуска: есть ли сама потребность',
       s => ({
         PRODUCT:'До того как проверять именно «' + (s.answers.scope_name || 'этот товар') + '», вы уже видели, что люди ищут или покупают похожие товары для той же задачи или повода?',
         APPOINTMENT:'До того как проверять именно «' + (s.answers.scope_name || 'эту услугу') + '», вы уже видели, что люди ищут или записываются на похожую услугу?',
@@ -1560,6 +1569,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         opt('no','Реальных шагов к покупке не было'),
         opt('unknown','Ещё не показывал(а) предложение подходящим людям'),
       ])),
+
+    build_market_sample: numberQ('build_market_sample', 'Проверяем реальный тест', 'Скольким подходящим людям вы показали одно и то же конкретное предложение на этих условиях?', 'Нужен фактический знаменатель. Ноль или несколько случайных показов не доказывают слабый спрос.', 'Например: 8', 'count'),
+
+    build_market_audience: q('build_market_audience', 'Проверяем качество теста', 'Это были в основном люди, которым предложение действительно могло подходить и которые реально могли купить на этих условиях?', 'Если аудитория была случайной или купить было невозможно, отсутствие действий не является выводом о спросе.', [
+      opt('yes','Да, в основном подходящие люди и купить было реально'),
+      opt('mixed','Смешанная аудитория — подходящие были, но не большинство'),
+      opt('no','Нет, аудитория была в основном случайной / неподходящей'),
+      opt('unknown','Не могу уверенно определить'),
+    ]),
 
     build_market_quality: dynamicQ('build_market_quality', 'Новое предложение: насколько показателен первый интерес',
       'Возьмите самый сильный случай из тех, кто уже сделал шаг к покупке. Кто это был и на каких условиях?',
@@ -2280,6 +2298,45 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  const BUILD_PHASE = Object.freeze({
+    B0: 'B0_TEST_FEASIBILITY',
+    B1: 'B1_TEST_READINESS',
+    B2: 'B2_MARKET_EVIDENCE',
+    B3: 'B3_DELIVERY_VALIDATION',
+  });
+
+  function shouldAskScopeRoute(s = state) {
+    return [DIAGNOSTIC_MODE.FULL, DIAGNOSTIC_MODE.HYBRID].includes(s.mode);
+  }
+
+  function shouldAskScopeGeography(s = state) {
+    const goal = s.answers.scope_goal;
+    const model = s.answers.scope_model;
+    if (['PRODUCT','APPOINTMENT'].includes(model) && ['new_sales','stable'].includes(goal)) return true;
+    if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(s.mode) && ['PRODUCT','APPOINTMENT'].includes(model)) return true;
+    return false;
+  }
+
+  function currentBuildPhase(s = state) {
+    const a = s.answers;
+    if (!a.build_offer || !a.build_route || !a.build_access) return BUILD_PHASE.B1;
+    if (!a.build_market || ['unknown','no'].includes(a.build_market)) return BUILD_PHASE.B2;
+    return BUILD_PHASE.B3;
+  }
+
+  function shouldAskSharedResources(s = state) {
+    const a = s.answers;
+    const realCommitment = ['preorder','payment'].includes(a.build_test_type) || a.build_market === 'paid';
+    if (!realCommitment) return false;
+    const changed = Array.isArray(a.inheritance_map) ? a.inheritance_map : [];
+    return changed.includes('capacity') || a.inheritance_entry !== 'almost_all';
+  }
+
+  function shouldAskSharedImpact(s = state) {
+    const shared = meaningful(s.answers.shared_resources);
+    return shouldAskSharedResources(s) && shared.length > 0 && !shared.includes('none');
+  }
+
   function hybridPlausibilityQuestions(changed) {
     const xs = Array.isArray(changed) ? changed : [];
     if (!xs.length || xs.includes('unknown')) return ['build_econ_plausibility','build_pilot_capacity'];
@@ -2291,19 +2348,31 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   function hybridBuildQuestions(changed) {
     const xs = Array.isArray(changed) ? changed : [];
-    const all = ['build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'];
-    if (!xs.length || xs.includes('unknown')) return all;
+    if (!xs.length || xs.includes('unknown')) return ['build_offer','build_route','build_access','build_market_context','build_market'];
     const out = [];
     const add = (...ids) => ids.forEach(id => { if (!out.includes(id)) out.push(id); });
-    if (xs.includes('offer')) add('build_demand','build_offer','build_market','build_fulfillment','build_value');
-    if (xs.includes('price')) add('build_offer','build_market','build_economics');
-    if (xs.includes('audience')) add('build_demand','build_access','build_market');
+    if (xs.includes('offer')) add('build_offer','build_market');
+    if (xs.includes('price')) add('build_offer','build_market');
+    if (xs.includes('audience')) add('build_access','build_market_context','build_market');
     if (xs.includes('channel')) add('build_access','build_market');
     if (xs.includes('route')) add('build_route','build_market');
     if (xs.includes('fulfillment')) add('build_fulfillment','build_value');
     if (xs.includes('capacity')) add('build_economics','build_capacity');
-    const order = all;
-    return order.filter(id => out.includes(id));
+    return out;
+  }
+
+  function baseBuildRoute() {
+    return [
+      'build_test_type',
+      'gate_legal',
+      'build_econ_plausibility',
+      'build_pilot_capacity',
+      'build_offer',
+      'build_route',
+      'build_access',
+      'build_market_context',
+      'build_market'
+    ];
   }
 
   function precisionQuestionsFor(code) {
@@ -2373,51 +2442,57 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       setDiagnosticMode(nextMode);
       state.deepAdded = false;
 
+      const scoped = [];
+      if (shouldAskScopeRoute(state)) scoped.push('scope_route');
+      if (shouldAskScopeGeography(state)) scoped.push('scope_geography');
+
       if (nextMode === DIAGNOSTIC_MODE.FULL) {
         state.path = state.path.slice(0, state.index + 1).concat([
-          // scope_route/geography remain compatibility questions in this foundation
-          // commit; v1.9.1 will make them conditional per Question Library v2.
-          'scope_route','scope_geography',
+          ...scoped,
           'scope_period','period_integrity','period_context',
-          'gate_legal','gate_fulfillment','gate_capacity','gate_economics','shared_resources',
+          'gate_legal','gate_fulfillment','gate_capacity','gate_economics',
           'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data'
         ]);
-      } else if (nextMode === DIAGNOSTIC_MODE.HYBRID) {
-        state.answers.build_base = 'existing'; // temporary adapter until inheritance_entry/map land in v1.9.1
-        state.path = state.path.slice(0, state.index + 1).concat(['scope_route','scope_geography','hybrid_changed']);
       } else {
-        state.path = state.path.slice(0, state.index + 1).concat(['scope_route','scope_geography','build_base']);
+        state.path = state.path.slice(0, state.index + 1).concat([...scoped, 'inheritance_entry']);
       }
     }
 
-    if ((state.mode === 'build' || state.mode === 'hybrid') && currentId === 'build_base') {
-      if (state.answers.build_base === 'existing') {
+    if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(state.mode) && currentId === 'inheritance_entry') {
+      const inherited = state.answers.inheritance_entry;
+      if (['existing','almost_all','unknown'].includes(inherited)) {
         setDiagnosticMode(DIAGNOSTIC_MODE.HYBRID);
-        state.path = state.path.slice(0, state.index + 1).concat(['hybrid_changed']);
+        state.path = state.path.slice(0, state.index + 1).concat(['inheritance_map']);
       } else {
         setDiagnosticMode(DIAGNOSTIC_MODE.BUILD);
-        state.path = state.path.slice(0, state.index + 1).concat([
-          'gate_legal','shared_resources','build_econ_plausibility','build_pilot_capacity','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
-        ]);
+        state.path = state.path.slice(0, state.index + 1).concat(baseBuildRoute());
       }
     }
 
-    if (state.mode === 'hybrid' && currentId === 'hybrid_changed') {
-      const plausibility = hybridPlausibilityQuestions(state.answers.hybrid_changed);
-      const checks = hybridBuildQuestions(state.answers.hybrid_changed);
-      state.path = state.path.slice(0, state.index + 1).concat(['gate_legal','shared_resources', ...plausibility, ...checks]);
+    if (state.mode === DIAGNOSTIC_MODE.HYBRID && currentId === 'inheritance_map') {
+      const changed = state.answers.inheritance_map;
+      const plausibility = hybridPlausibilityQuestions(changed);
+      const checks = hybridBuildQuestions(changed);
+      state.path = state.path.slice(0, state.index + 1).concat(['build_test_type','gate_legal', ...plausibility, ...checks]);
     }
 
-    // Ask about impact on the rest of the business only when resources are actually shared.
-    if (currentId === 'shared_resources') {
-      const shared = meaningful(state.answers.shared_resources);
-      if (shared.length && !state.path.includes('shared_impact')) {
-        state.path.splice(state.index + 1, 0, 'shared_impact');
+    // Shared resources are conditional and separate from pilot capacity.
+    if (['build_pilot_capacity','build_market'].includes(currentId) && shouldAskSharedResources(state) && !state.path.includes('shared_resources')) {
+      state.path.splice(state.index + 1, 0, 'shared_resources');
+    }
+    if (currentId === 'shared_resources' && shouldAskSharedImpact(state) && !state.path.includes('shared_impact')) {
+      state.path.splice(state.index + 1, 0, 'shared_impact');
+    }
+
+    if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(state.mode) && currentId === 'build_market') {
+      if (['paid','action'].includes(state.answers.build_market) && !state.path.includes('build_market_quality')) {
+        state.path.splice(state.index + 1, 0, 'build_market_quality');
+      } else if (state.answers.build_market === 'no') {
+        const add = [];
+        if (!state.path.includes('build_market_sample')) add.push('build_market_sample');
+        if (!state.path.includes('build_market_audience')) add.push('build_market_audience');
+        if (add.length) state.path.splice(state.index + 1, 0, ...add);
       }
-    }
-
-    if ((state.mode === 'build' || state.mode === 'hybrid') && currentId === 'build_market' && ['paid','action'].includes(state.answers.build_market) && !state.path.includes('build_market_quality')) {
-      state.path.splice(state.index + 1, 0, 'build_market_quality');
     }
 
     // Stop early in BUILD/HYBRID: the first failed meaningful gate is the current job.
@@ -2548,15 +2623,19 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function buildEarlyResult(currentId) {
     const a = state.answers;
     if (currentId === 'gate_legal' && ['yes','maybe','unknown'].includes(a.gate_legal)) return 'LEGAL_SAFETY_BLOCKER';
+    if (currentId === 'build_market' && a.build_market === 'unknown') return 'BUILD_MARKET_TEST';
+    if (currentId === 'build_market' && a.build_market === 'no') return '';
+    if (currentId === 'build_market_audience' && ['no','mixed','unknown'].includes(a.build_market_audience)) return 'BUILD_MARKET_TEST';
+    if (currentId === 'build_market_audience' && a.build_market_audience === 'yes') {
+      return Number.isFinite(a.build_market_sample) && a.build_market_sample > 0 ? 'BUILD_DEMAND' : 'BUILD_MARKET_TEST';
+    }
     const fail = {
       build_econ_plausibility: () => !['yes','plausible'].includes(a.build_econ_plausibility),
       build_pilot_capacity: () => !['yes','plausible'].includes(a.build_pilot_capacity),
-      build_demand: () => !['yes'].includes(a.build_demand),
       build_offer: () => !['yes','mostly'].includes(a.build_offer),
       build_route: () => !['yes','mostly'].includes(a.build_route),
       build_access: () => !['yes','mostly'].includes(a.build_access),
-      build_market: () => !['paid','action'].includes(a.build_market),
-      build_market_quality: () => !['target_normal','mixed_target'].includes(a.build_market_quality),
+      build_market_quality: () => false,
       build_fulfillment: () => a.build_fulfillment !== 'yes',
       build_value: () => a.build_value !== 'yes',
       build_economics: () => !['yes','maybe'].includes(a.build_economics),
@@ -2564,7 +2643,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     };
     const codes = {
       build_econ_plausibility:'BUILD_ECONOMICS', build_pilot_capacity:'BUILD_CAPACITY',
-      build_demand:'BUILD_DEMAND', build_offer:'BUILD_OFFER', build_route:'BUILD_ROUTE', build_access:'BUILD_ACCESS',
+      build_offer:'BUILD_OFFER', build_route:'BUILD_ROUTE', build_access:'BUILD_ACCESS',
       build_market:'BUILD_MARKET_TEST', build_market_quality:'BUILD_MARKET_TEST', build_fulfillment:'BUILD_FULFILLMENT', build_value:'BUILD_VALUE', build_economics:'BUILD_ECONOMICS', build_capacity:'BUILD_CAPACITY'
     };
     return fail[currentId] && fail[currentId]() ? codes[currentId] : '';
@@ -2895,12 +2974,11 @@ function finalizePrecision() {
     const buildChecks = [
       ['build_econ_plausibility', v => ['yes','plausible'].includes(v), 'BUILD_ECONOMICS'],
       ['build_pilot_capacity', v => ['yes','plausible'].includes(v), 'BUILD_CAPACITY'],
-      ['build_demand', v => v === 'yes', 'BUILD_DEMAND'],
       ['build_offer', v => ['yes','mostly'].includes(v), 'BUILD_OFFER'],
       ['build_route', v => ['yes','mostly'].includes(v), 'BUILD_ROUTE'],
       ['build_access', v => ['yes','mostly'].includes(v), 'BUILD_ACCESS'],
-      ['build_market', v => ['paid','action'].includes(v), 'BUILD_MARKET_TEST'],
-      ['build_market_quality', v => ['target_normal','mixed_target'].includes(v), 'BUILD_MARKET_TEST'],
+      ['build_market', v => v !== 'unknown', 'BUILD_MARKET_TEST'],
+      ['build_market_quality', v => true, 'BUILD_MARKET_TEST'],
       ['build_fulfillment', v => v === 'yes', 'BUILD_FULFILLMENT'],
       ['build_value', v => v === 'yes', 'BUILD_VALUE'],
       ['build_economics', v => ['yes','maybe'].includes(v), 'BUILD_ECONOMICS'],
@@ -2909,6 +2987,12 @@ function finalizePrecision() {
     for (const [id, pass, code] of buildChecks) {
       if (!state.path.includes(id)) continue;
       if (!pass(a[id])) return makeResult(code);
+    }
+    if (a.build_market === 'no') {
+      const validAudience = a.build_market_audience === 'yes';
+      const hasSample = Number.isFinite(a.build_market_sample) && a.build_market_sample > 0;
+      if (!validAudience || !hasSample) return makeResult('BUILD_MARKET_TEST');
+      return makeResult('BUILD_DEMAND');
     }
     return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', [
       state.mode === 'hybrid'
@@ -4249,7 +4333,7 @@ function finalizePrecision() {
   function resolve(value) { return typeof value === 'function' ? value(state) : value; }
   function sectionName(id) {
     if (id.startsWith('scope') || id.startsWith('period') || id.startsWith('mode')) return 'Контекст';
-    if (id.startsWith('hybrid') || id.startsWith('build_base')) return 'Что можно сохранить из уже работающего';
+    if (id.startsWith('hybrid') || id.startsWith('inheritance_entry')) return 'Что можно сохранить из уже работающего';
     if (id.startsWith('shared')) return 'Общие ресурсы';
     if (id.startsWith('gate')) return 'Защитная проверка';
     if (id.startsWith('core')) return 'Общий скан';
