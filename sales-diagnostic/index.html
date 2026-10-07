@@ -3084,12 +3084,32 @@ function finalizePrecision() {
   state.mode = state.precisionOriginMode || DIAGNOSTIC_MODE.FULL;
 
   if (evaluation.outcome === PRECISION_OUTCOME.INVALID_INPUT) {
-    const result = {...base, precisionRefined:true, precisionSnapshot:snapshot, precisionSummary:evaluation.message, precisionCaveat:'Исправьте ввод и запустите проверку цифрами снова. Предыдущий диагноз пока не подтверждён и не отменён.', confidence:confidenceBefore, confidenceLabel:confidenceLabel(confidenceBefore)};
+    const result = {
+      ...base,
+      precisionRefined:false,
+      precisionOutcome:evaluation.outcome,
+      precisionSnapshot:snapshot,
+      precisionAvailable:true,
+      precisionSummary:evaluation.message,
+      precisionCaveat:'Исправьте ввод и запустите проверку цифрами снова. Предыдущий диагноз пока не подтверждён и не отменён.',
+      confidence:confidenceBefore,
+      confidenceLabel:confidenceLabel(confidenceBefore)
+    };
     state.result=result; renderResult(result); return;
   }
 
   if (evaluation.outcome === PRECISION_OUTCOME.INCOMPARABLE_DATA) {
-    const result = {...base, precisionRefined:true, precisionSnapshot:snapshot, precisionSummary:evaluation.message, precisionCaveat:'Нужны числа из того же scope/period/route. Не смешивайте разные версии предложения или разные условия.', confidence:CONFIDENCE.PRELIMINARY, confidenceLabel:confidenceLabel(CONFIDENCE.PRELIMINARY)};
+    const result = {
+      ...base,
+      precisionRefined:false,
+      precisionOutcome:evaluation.outcome,
+      precisionSnapshot:snapshot,
+      precisionAvailable:true,
+      precisionSummary:evaluation.message,
+      precisionCaveat:'Нужны числа из того же scope/period/route. Когда появятся сопоставимые данные, проверку можно повторить.',
+      confidence:CONFIDENCE.PRELIMINARY,
+      confidenceLabel:confidenceLabel(CONFIDENCE.PRELIMINARY)
+    };
     state.result=result; renderResult(result); return;
   }
 
