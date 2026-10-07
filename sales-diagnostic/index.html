@@ -1304,6 +1304,7 @@ button:focus-visible, input:focus-visible {
           opt('route','Как покупатель оформляет и оплачивает заказ'),
           opt('fulfillment','Как вы изготавливаете, комплектуете или передаёте заказ'),
           opt('capacity','Сколько таких заказов вы можете нормально выполнить'),
+          opt('none','Ничего существенного — остальное можно использовать как раньше'),
           opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
         ],
         APPOINTMENT:[
@@ -1314,6 +1315,7 @@ button:focus-visible, input:focus-visible {
           opt('route','Как клиент выбирает время, записывается и оплачивает'),
           opt('fulfillment','Как проходит сама услуга'),
           opt('capacity','Сколько таких записей вы можете нормально провести'),
+          opt('none','Ничего существенного — остальное можно использовать как раньше'),
           opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
         ],
         EXPERT:[
@@ -1324,6 +1326,7 @@ button:focus-visible, input:focus-visible {
           opt('route','Как согласовываете объём, условия и оплату'),
           opt('fulfillment','Как выполняете работу после оплаты'),
           opt('capacity','Сколько клиентов или проектов можете нормально вести'),
+          opt('none','Ничего существенного — остальное можно использовать как раньше'),
           opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
         ],
         EDUCATION:[
@@ -1334,6 +1337,7 @@ button:focus-visible, input:focus-visible {
           opt('route','Как человек оформляет и оплачивает участие'),
           opt('fulfillment','Как предоставляются материалы, занятия и поддержка'),
           opt('capacity','Сколько участников вы можете нормально обучать и поддерживать'),
+          opt('none','Ничего существенного — остальное можно использовать как раньше'),
           opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
         ],
         SUBSCRIPTION:[
@@ -1344,6 +1348,7 @@ button:focus-visible, input:focus-visible {
           opt('route','Как человек вступает, оплачивает и получает доступ'),
           opt('fulfillment','Как вы предоставляете доступ, сервис и поддержку'),
           opt('capacity','Сколько активных участников вы можете нормально обслуживать'),
+          opt('none','Ничего существенного — остальное можно использовать как раньше'),
           opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
         ],
       }[s.answers.scope_model] || [
@@ -1354,7 +1359,8 @@ button:focus-visible, input:focus-visible {
         opt('route','Как человек оформляет и оплачивает покупку'),
         opt('fulfillment','Как вы выполняете обещанное после продажи'),
         opt('capacity','Какой объём вы можете нормально обслужить'),
-        opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
+        opt('none','Ничего существенного — остальное можно использовать как раньше'),
+          opt('unknown','Не могу отделить одно от другого — лучше перепроверить всё новое'),
       ])),
 
     shared_resources: dynamicMultiQ('shared_resources', 'Есть ли общие ресурсы с другой работой',
@@ -2999,11 +3005,19 @@ button:focus-visible, input:focus-visible {
   }
 
   function shouldAskScopeGeography(s = state) {
-    const goal = s.answers.scope_goal;
     const model = s.answers.scope_model;
-    if (['PRODUCT','APPOINTMENT'].includes(model) && ['new_sales','stable'].includes(goal)) return true;
+    // In FULL geography is not an entry question. Ask it only after Access /
+    // Distribution becomes decision-relevant. BUILD/HYBRID may need location
+    // earlier because it can determine where the market test is possible.
     if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(s.mode) && ['PRODUCT','APPOINTMENT'].includes(model)) return true;
     return false;
+  }
+
+  function shouldAskFullAccessGeography(s = state) {
+    return s.mode === DIAGNOSTIC_MODE.FULL &&
+      ['PRODUCT','APPOINTMENT'].includes(s.answers.scope_model) &&
+      ['new_sales','stable'].includes(s.answers.scope_goal) &&
+      !s.answers.scope_geography;
   }
 
   function currentBuildPhase(s = state) {
@@ -3028,7 +3042,7 @@ button:focus-visible, input:focus-visible {
 
   function hybridPlausibilityQuestions(changed) {
     const xs = Array.isArray(changed) ? changed : [];
-    if (!xs.length || xs.includes('unknown')) return ['build_econ_plausibility','build_pilot_capacity'];
+    if (!xs.length || xs.includes('unknown') || xs.includes('none')) return [];
     const out = [];
     if (xs.some(v => ['offer','price','route','fulfillment','capacity'].includes(v))) out.push('build_econ_plausibility');
     if (xs.some(v => ['offer','fulfillment','capacity'].includes(v))) out.push('build_pilot_capacity');
@@ -3037,7 +3051,7 @@ button:focus-visible, input:focus-visible {
 
   function hybridBuildQuestions(changed) {
     const xs = Array.isArray(changed) ? changed : [];
-    if (!xs.length || xs.includes('unknown')) return ['build_offer','build_route','build_access','build_market_context','build_market'];
+    if (!xs.length || xs.includes('unknown') || xs.includes('none')) return [];
     const out = [];
     const add = (...ids) => ids.forEach(id => { if (!out.includes(id)) out.push(id); });
     if (xs.includes('offer')) add('build_offer','build_market');
@@ -3184,6 +3198,20 @@ button:focus-visible, input:focus-visible {
 
     if (state.mode === DIAGNOSTIC_MODE.HYBRID && currentId === 'inheritance_map') {
       const changed = state.answers.inheritance_map;
+      if (Array.isArray(changed) && changed.includes('none')) {
+        state.result = makeResult('NO_CRITICAL_CONSTRAINT_FOUND', [
+          'Вы не отметили существенных изменений, которые нужно перепроверять отдельно. Уже работающие части не признаны проблемой автоматически.'
+        ]);
+        renderResult(state.result);
+        return;
+      }
+      if (Array.isArray(changed) && changed.includes('unknown')) {
+        state.result = makeResult('DATA_GAP', [
+          'Сейчас нельзя отделить, что действительно можно перенести из прежних продаж, а что изменилось. Полная перепроверка всего подряд дала бы лишние вопросы и не помогла выбрать первый шаг.'
+        ]);
+        renderResult(state.result);
+        return;
+      }
       const plausibility = hybridPlausibilityQuestions(changed);
       const checks = hybridBuildQuestions(changed);
       state.path = state.path.slice(0, state.index + 1).concat(['build_test_type','gate_legal', ...plausibility, ...checks]);
@@ -3313,7 +3341,12 @@ button:focus-visible, input:focus-visible {
         const deeper = chooseDiscriminatorQuestions();
         if (deeper.length) {
           state.deepAdded = true;
-          state.path.push(...deeper);
+          const expanded = [...deeper];
+          if (expanded.some(id => id.startsWith('deep_a')) && shouldAskFullAccessGeography(state) && !expanded.includes('scope_geography')) {
+            const afterFirstAccess = Math.max(0, expanded.findIndex(id => id.startsWith('deep_a')) + 1);
+            expanded.splice(afterFirstAccess, 0, 'scope_geography');
+          }
+          state.path.push(...expanded);
           state.index++;
           renderQuestion();
           return;
