@@ -1973,11 +1973,15 @@ button:focus-visible, input:focus-visible {
       opt('stopped','Проверку пришлось остановить раньше из-за риска или вреда'),
       opt('unknown','Не могу определить')
     ]),
-    fu_measurement_valid: q('fu_measurement_valid', 'Можно ли доверять сравнению', 'Можно ли по этим наблюдениям честно сравнить результат с тем, что было до изменения?', 'Данные должны относиться к сопоставимому scope и не быть испорчены пропусками или изменением способа измерения.', [
+    fu_measurement_valid: q('fu_measurement_valid', 'Можно ли доверять сравнению', 'Можно ли по этим наблюдениям честно сравнить результат с тем, что было до изменения?', 'Данные должны относиться к сопоставимому предложению и не быть испорчены пропусками или изменением способа измерения.', [
       opt('yes','Да, сравнение достаточно надёжное'),
       opt('no','Нет, данные или условия несопоставимы'),
       opt('unknown','Не уверен(а)')
     ]),
+    fu_data_gap_branch: dynamicQ('fu_data_gap_branch', 'Что показал недостающий факт',
+      'Какой вывод теперь лучше всего подтверждает собранная информация?',
+      'Выберите не желаемый вариант, а тот, который реально следует из нового факта.',
+      () => dataGapBranchOptions()),
     fu_effect: q('fu_effect', 'Что произошло с главным показателем', 'Что произошло с основной метрикой, которую вы договорились измерять?', 'Смотрите на заранее выбранный показатель, а не на общее впечатление.', [
       opt('better','Достигнут критерий успеха / заметное нужное улучшение'),
       opt('worse','Результат стал хуже'),
@@ -3145,7 +3149,13 @@ button:focus-visible, input:focus-visible {
           finalizeFollowup();
           return;
         }
-        state.path = state.path.slice(0, state.index + 1).concat(['fu_effect']);
+        const previousCode = state.followupBase?.result?.primaryCode || state.followupBase?.result?.code || state.followupBase?.experimentPlan?.primaryCode;
+        state.path = state.path.slice(0, state.index + 1).concat([
+          previousCode === 'DATA_GAP' ? 'fu_data_gap_branch' : 'fu_effect'
+        ]);
+      } else if (currentId === 'fu_data_gap_branch') {
+        finalizeFollowup();
+        return;
       } else if (currentId === 'fu_effect') {
         state.path = state.path.slice(0, state.index + 1).concat(['fu_guardrail']);
       }
@@ -4464,6 +4474,53 @@ function finalizePrecision() {
     return null;
   }
 
+  function dataGapBranchesFor(a = state.answers) {
+    if (a.core_access === 'unknown' && a.core_demand === 'unknown') {
+      return [
+        { id:'access', code:'ACCESS', label:'Подходящие люди есть, но они редко доходят до вашего предложения — проверять доступ и источник.' },
+        { id:'demand', code:'DEMAND_UNCLEAR', label:'Предложение видят подходящие люди, но реальных попыток купить почти нет — перепроверять спрос и ценность.' }
+      ];
+    }
+    if (a.gate_economics === 'unknown' && ['new_sales','income'].includes(a.scope_goal)) {
+      return [
+        { id:'economics_problem', code:'ECONOMICS', label:'Расчёт показал, что типичная продажа оставляет слишком мало денег или уходит в минус.' },
+        { id:'economics_ok', code:'REASSESS', label:'Экономика выглядит приемлемо — это ограничение снято, нужно пересчитать следующий участок.' }
+      ];
+    }
+    if (a.scope_model === 'SUBSCRIPTION' && ['renewals','less_churn','reactivate_members'].includes(a.scope_target) && a.core_repeat === 'na') {
+      return [
+        { id:'renewal_problem', code:'SUB_RENEWAL', label:'Срок продления уже наступил, и есть реальные непродления — проверять причину удержания.' },
+        { id:'renewal_ok', code:'REASSESS', label:'Наступившие продления проходят нормально — искать следующее ограничение.' }
+      ];
+    }
+    return [
+      { id:'resolved', code:'REASSESS', label:'Новый факт снял прежнюю неопределённость — пересчитать диагноз с обновлёнными данными.' }
+    ];
+  }
+
+  function dataGapBranchOptions() {
+    const base = state.followupBase?.result || state.followupBase || {};
+    const branches = Array.isArray(base.dataGapBranches) && base.dataGapBranches.length
+      ? base.dataGapBranches
+      : dataGapBranchesFor(state.followupBase?.answers || state.answers);
+    return [
+      ...branches.map((branch,index) => opt('branch_' + index, branch.label)),
+      opt('still_unclear','Факт всё ещё не помогает выбрать между разными действиями'),
+      opt('invalid','Данные получены в несопоставимых условиях или им нельзя доверять')
+    ];
+  }
+
+  function selectedDataGapBranch() {
+    const value = state.answers.fu_data_gap_branch;
+    const match = /^branch_(\d+)$/.exec(value || '');
+    if (!match) return null;
+    const base = state.followupBase?.result || state.followupBase || {};
+    const branches = Array.isArray(base.dataGapBranches) && base.dataGapBranches.length
+      ? base.dataGapBranches
+      : dataGapBranchesFor(state.followupBase?.answers || state.answers);
+    return branches[Number(match[1])] || null;
+  }
+
   function makeResult(code, extraWhy = []) {
     const base = adaptResultToModel(code, resultLibrary[code] || resultLibrary.NO_CRITICAL_CONSTRAINT_FOUND);
     const scopeText = resultScopeText(code);
@@ -4501,6 +4558,7 @@ function finalizePrecision() {
       precisionFields,
       optionalOpportunity:optionalOpportunityFor(code),
       guardrails:guardrailsFor(code),
+      dataGapBranches: code === 'DATA_GAP' ? dataGapBranchesFor(state.answers) : null,
 
       // compatibility adapter for current render / history while v1.10.x migrates UI
       code,
@@ -5419,6 +5477,28 @@ function finalizePrecision() {
     if (a.fu_measurement_valid === 'unknown') {
       return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Нельзя уверенно определить, пригодно ли сравнение для решения.' };
     }
+
+    const previousCode = state.followupBase?.result?.primaryCode || state.followupBase?.result?.code || state.followupBase?.experimentPlan?.primaryCode;
+    if (previousCode === 'DATA_GAP' && a.fu_data_gap_branch) {
+      if (a.fu_data_gap_branch === 'invalid') {
+        return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Новый факт получен в условиях, по которым нельзя честно выбрать ветку решения.' };
+      }
+      if (a.fu_data_gap_branch === 'still_unclear') {
+        return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Собранный факт всё ещё не различает конкурирующие действия.' };
+      }
+      const branch = selectedDataGapBranch();
+      if (branch) {
+        return {
+          outcome:FOLLOWUP_OUTCOME.R_PLUS,
+          code:FOLLOWUP_CODE.REDIRECTED,
+          decision:'REDIAGNOSE',
+          reason:'Недостающий факт собран и теперь позволяет выбрать следующую ветку решения.',
+          redirectCode:branch.code,
+          redirectLabel:branch.label
+        };
+      }
+    }
+
     if (redGuardrail) {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный защитный показатель.' };
     }
@@ -5459,6 +5539,25 @@ function finalizePrecision() {
         fromPrimaryCode:previousCode,
         toPrimaryCode:'LEGAL_SAFETY_BLOCKER',
         nextResult:makeResult('LEGAL_SAFETY_BLOCKER')
+      };
+    }
+
+    if (previousCode === 'DATA_GAP' && followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS && followupClass.redirectCode) {
+      let nextResult = null;
+      if (followupClass.redirectCode === 'REASSESS') {
+        nextResult = originMode === DIAGNOSTIC_MODE.FULL || originMode === 'full'
+          ? diagnoseFull()
+          : ([DIAGNOSTIC_MODE.BUILD,DIAGNOSTIC_MODE.HYBRID,'build','hybrid'].includes(originMode) ? diagnoseBuild() : null);
+        if (nextResult && (nextResult.primaryCode || nextResult.code) === 'DATA_GAP') nextResult = null;
+      } else {
+        nextResult = makeResult(followupClass.redirectCode);
+      }
+      return {
+        type:'RESOLVED_TO_NEXT',
+        fromPrimaryCode:previousCode,
+        toPrimaryCode:nextResult?.primaryCode || nextResult?.code || (followupClass.redirectCode === 'REASSESS' ? null : followupClass.redirectCode),
+        nextResult,
+        resolvedBranch:followupClass.redirectLabel || null
       };
     }
 
@@ -5614,6 +5713,7 @@ function finalizePrecision() {
       decision:cls.decision,
       stateTransition:transition.type,
       newPrimaryCode:transition.toPrimaryCode || null,
+      resolvedBranch:transition.resolvedBranch || null,
       confidenceAfter,
       nextAction:human.action,
       nextFollowupTrigger:
@@ -5899,7 +5999,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
