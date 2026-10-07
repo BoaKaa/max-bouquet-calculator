@@ -400,8 +400,11 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 (() => {
   'use strict';
 
-  const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.11.1-dev';
+  const LEGACY_STORAGE_KEY = 'salesDiagnosticHistoryV1';
+  const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
+  const HISTORY_SCHEMA_VERSION = 2;
+  const HISTORY_MAX_CYCLES = 20;
+  const APP_VERSION = '1.12.0-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -509,6 +512,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     precisionSnapshot: null,
     precisionExcludedZones: [],
     activeExperiment: null,
+    activeCycleId: null,
+    scopeId: null,
   };
 
   const opt = (value, label, hint = '') => ({ value, label, hint });
@@ -2227,18 +2232,257 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   function dynamicNumberQ(id, eyebrow, title, help, placeholder, numericKind = 'count') { return { id, type: 'number', eyebrow, title, help, placeholder, numericKind }; }
   function card(title, summary, action, metric, dont, next) { return { title, summary, action, metric, dont, next }; }
 
-  function getHistory() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+  function emptyHistoryStore() {
+    return {
+      schemaVersion:HISTORY_SCHEMA_VERSION,
+      cycles:[],
+      activeCycleIds:[],
+      lastActiveCycleId:null,
+      legacyMigratedAt:null,
+      updatedAt:new Date().toISOString()
+    };
   }
-  function saveHistory(item) {
+
+  function readLegacyHistory() {
     try {
-      const history = getHistory();
-      history.unshift(item);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, 12)));
+      const parsed = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function legacyCycleFromItem(item, index) {
+    const date = item?.date || item?.result?.date || new Date().toISOString();
+    return {
+      cycleId:'legacy_' + index + '_' + String(date).replace(/[^0-9]/g,'').slice(0,14),
+      scopeId:null,
+      schemaVersion:HISTORY_SCHEMA_VERSION,
+      legacyReadonly:true,
+      status:'LEGACY_READONLY',
+      createdAt:date,
+      updatedAt:date,
+      appVersion:item?.appVersion || 'legacy',
+      scope:{
+        name:item?.scope || item?.answers?.scope_name || '',
+        businessGoal:item?.answers?.scope_goal || item?.result?.businessGoal || null,
+        diagnosticTarget:item?.answers?.scope_target || item?.result?.diagnosticTarget || null,
+        diagnosticMode:item?.mode || item?.result?.diagnosticMode || null
+      },
+      answers:null,
+      result:item?.result || null,
+      precisionSnapshots:item?.result?.precisionSnapshot ? [item.result.precisionSnapshot] : [],
+      experimentPlan:item?.experimentPlan || item?.result?.experimentPlan || null,
+      followups:item?.result?.followupSnapshot ? [item.result.followupSnapshot] : [],
+      transition:item?.result?.stateTransition || null
+    };
+  }
+
+  function migrateLegacyHistory(store) {
+    if (store.legacyMigratedAt) return store;
+    const legacy = readLegacyHistory();
+    const knownResultIds = new Set(store.cycles.map(c => c.result?.resultId).filter(Boolean));
+    legacy.forEach((item,index) => {
+      const resultId = item?.result?.resultId;
+      if (resultId && knownResultIds.has(resultId)) return;
+      store.cycles.push(legacyCycleFromItem(item,index));
+    });
+    store.legacyMigratedAt = new Date().toISOString();
+    return store;
+  }
+
+  function loadHistoryStore() {
+    let store;
+    try {
+      const parsed = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || 'null');
+      store = parsed && parsed.schemaVersion === HISTORY_SCHEMA_VERSION && Array.isArray(parsed.cycles)
+        ? parsed
+        : emptyHistoryStore();
+    } catch {
+      store = emptyHistoryStore();
+    }
+    store = migrateLegacyHistory(store);
+    store.activeCycleIds = Array.isArray(store.activeCycleIds) ? store.activeCycleIds : [];
+    return store;
+  }
+
+  function isOpenCycleStatus(status) {
+    return [CYCLE_STATUS.DIAGNOSED,CYCLE_STATUS.PLANNED,CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(status);
+  }
+
+  function pruneHistoryStore(store) {
+    const active = store.cycles.filter(cycle => isOpenCycleStatus(cycle.status));
+    const closed = store.cycles
+      .filter(cycle => !isOpenCycleStatus(cycle.status))
+      .sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    const keptClosed = closed.slice(0, Math.max(0, HISTORY_MAX_CYCLES - active.length));
+    store.cycles = [...active, ...keptClosed].sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    store.activeCycleIds = store.cycles.filter(cycle => isOpenCycleStatus(cycle.status)).map(cycle => cycle.cycleId);
+    if (store.lastActiveCycleId && !store.cycles.some(c => c.cycleId === store.lastActiveCycleId)) store.lastActiveCycleId = null;
+    return store;
+  }
+
+  function writeHistoryStore(store) {
+    try {
+      store.updatedAt = new Date().toISOString();
+      pruneHistoryStore(store);
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(store));
       return true;
     } catch {
       return false;
     }
+  }
+
+  function cycleAdapter(cycle) {
+    if (!cycle) return null;
+    return {
+      cycleId:cycle.cycleId,
+      appVersion:cycle.appVersion,
+      date:cycle.updatedAt || cycle.createdAt,
+      mode:cycle.scope?.diagnosticMode || cycle.result?.diagnosticMode || null,
+      scope:cycle.scope?.name || '',
+      answers:cycle.answers || {},
+      result:cycle.result || null,
+      experimentPlan:cycle.experimentPlan || cycle.result?.experimentPlan || null,
+      cycleStatus:cycle.status,
+      precisionSnapshots:cycle.precisionSnapshots || [],
+      followups:cycle.followups || [],
+      transition:cycle.transition || null,
+      legacyReadonly:!!cycle.legacyReadonly
+    };
+  }
+
+  function getHistory() {
+    return loadHistoryStore().cycles.map(cycleAdapter);
+  }
+
+  function resolveCycleForItem(store, item) {
+    if (item?.cycleId) {
+      const direct = store.cycles.find(c => c.cycleId === item.cycleId);
+      if (direct) return direct;
+    }
+    const experimentId = item?.experimentPlan?.experimentId || item?.result?.followupSnapshot?.experimentId || item?.result?.experimentPlan?.experimentId;
+    if (experimentId) {
+      const byExperiment = store.cycles.find(c => c.experimentPlan?.experimentId === experimentId);
+      if (byExperiment) return byExperiment;
+    }
+    const resultId = item?.result?.resultId;
+    if (resultId) {
+      const byResult = store.cycles.find(c => c.result?.resultId === resultId);
+      if (byResult) return byResult;
+    }
+    return null;
+  }
+
+  function createCycleFromItem(item) {
+    const now = new Date().toISOString();
+    const cycleId = 'cycle_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+    const scopeId = state.scopeId || ('scope_' + Date.now() + '_' + Math.random().toString(36).slice(2,7));
+    state.scopeId = scopeId;
+    state.activeCycleId = cycleId;
+    return {
+      cycleId,
+      scopeId,
+      schemaVersion:HISTORY_SCHEMA_VERSION,
+      legacyReadonly:false,
+      status:item?.cycleStatus || CYCLE_STATUS.DIAGNOSED,
+      createdAt:item?.date || now,
+      updatedAt:now,
+      appVersion:item?.appVersion || APP_VERSION,
+      scope:{
+        name:item?.scope || item?.answers?.scope_name || '',
+        businessGoal:item?.result?.businessGoal || item?.answers?.scope_goal || null,
+        diagnosticTarget:item?.result?.diagnosticTarget || item?.answers?.scope_target || null,
+        diagnosticMode:item?.result?.diagnosticMode || item?.mode || null
+      },
+      answers:item?.answers ? {...item.answers} : {},
+      result:item?.result || null,
+      precisionSnapshots:item?.result?.precisionSnapshot ? [item.result.precisionSnapshot] : [],
+      experimentPlan:item?.experimentPlan || item?.result?.experimentPlan || null,
+      followups:item?.result?.followupSnapshot ? [item.result.followupSnapshot] : [],
+      transition:item?.result?.stateTransition || null
+    };
+  }
+
+  function mergeItemIntoCycle(cycle, item) {
+    cycle.updatedAt = new Date().toISOString();
+    cycle.appVersion = item?.appVersion || cycle.appVersion || APP_VERSION;
+    cycle.status = item?.cycleStatus || cycle.status;
+    if (item?.scope || item?.answers || item?.result) {
+      cycle.scope = {
+        ...(cycle.scope || {}),
+        name:item?.scope || item?.answers?.scope_name || cycle.scope?.name || '',
+        businessGoal:item?.result?.businessGoal || item?.answers?.scope_goal || cycle.scope?.businessGoal || null,
+        diagnosticTarget:item?.result?.diagnosticTarget || item?.answers?.scope_target || cycle.scope?.diagnosticTarget || null,
+        diagnosticMode:item?.result?.diagnosticMode || item?.mode || cycle.scope?.diagnosticMode || null
+      };
+    }
+    if (item?.answers) cycle.answers = {...item.answers};
+    if (item?.result) cycle.result = item.result;
+    const precision = item?.result?.precisionSnapshot;
+    if (precision && !(cycle.precisionSnapshots || []).some(x => x.precisionCode === precision.precisionCode)) {
+      cycle.precisionSnapshots = [...(cycle.precisionSnapshots || []), precision];
+    }
+    const experiment = item?.experimentPlan || item?.result?.experimentPlan;
+    if (experiment) cycle.experimentPlan = experiment;
+    const followup = item?.result?.followupSnapshot;
+    if (followup && !(cycle.followups || []).some(x => x.followupId === followup.followupId)) {
+      cycle.followups = [...(cycle.followups || []), followup];
+    }
+    if (item?.result?.stateTransition) cycle.transition = item.result.stateTransition;
+    return cycle;
+  }
+
+  function saveHistory(item) {
+    const store = loadHistoryStore();
+    let cycle = resolveCycleForItem(store,item);
+    if (cycle?.legacyReadonly) cycle = null;
+    if (!cycle) {
+      cycle = createCycleFromItem(item);
+      store.cycles.unshift(cycle);
+    } else {
+      mergeItemIntoCycle(cycle,item);
+      state.activeCycleId = cycle.cycleId;
+      state.scopeId = cycle.scopeId || state.scopeId;
+    }
+    if (isOpenCycleStatus(cycle.status)) store.lastActiveCycleId = cycle.cycleId;
+    else if (store.lastActiveCycleId === cycle.cycleId) store.lastActiveCycleId = null;
+    return writeHistoryStore(store);
+  }
+
+  function deleteCycle(cycleId) {
+    const store = loadHistoryStore();
+    const cycle = store.cycles.find(c => c.cycleId === cycleId);
+    if (!cycle || isOpenCycleStatus(cycle.status)) return false;
+    store.cycles = store.cycles.filter(c => c.cycleId !== cycleId);
+    return writeHistoryStore(store);
+  }
+
+  function clearClosedHistory() {
+    const store = loadHistoryStore();
+    store.cycles = store.cycles.filter(cycle => isOpenCycleStatus(cycle.status));
+    return writeHistoryStore(store);
+  }
+
+  function resumeCycle(cycleId) {
+    const store = loadHistoryStore();
+    const cycle = store.cycles.find(c => c.cycleId === cycleId);
+    if (!cycle || cycle.legacyReadonly) return false;
+    state.activeCycleId = cycle.cycleId;
+    state.scopeId = cycle.scopeId || null;
+    state.answers = {...(cycle.answers || {})};
+    state.businessGoal = cycle.scope?.businessGoal || state.answers.scope_goal || null;
+    state.diagnosticTarget = cycle.scope?.diagnosticTarget || state.answers.scope_target || null;
+    state.diagnosticMode = cycle.scope?.diagnosticMode || cycle.result?.diagnosticMode || null;
+    state.mode = state.diagnosticMode;
+    state.result = cycle.result || null;
+    state.activeExperiment = cycle.experimentPlan || null;
+    state.followupBase = cycleAdapter(cycle);
+    if (cycle.result) {
+      renderResult(cycle.result);
+      return true;
+    }
+    return false;
   }
 
   function showHome() {
@@ -2259,15 +2503,19 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.precisionSnapshot = null;
     state.precisionExcludedZones = [];
     state.activeExperiment = null;
+    state.activeCycleId = null;
+    state.scopeId = null;
     resetButton.hidden = true;
     const tpl = document.getElementById('homeTemplate').content.cloneNode(true);
     app.replaceChildren(tpl);
     const grid = document.getElementById('modeGrid');
-    const history = getHistory();
+    const store = loadHistoryStore();
+    const history = store.cycles.map(cycleAdapter);
+    const followupBase = latestFollowupBase();
     const modes = [
-      { id: 'full', title: 'Проверить текущие продажи', text: 'Короткий скан всей системы, затем вопросы только по подозрительным участкам.' },
-      { id: 'build', title: 'Проверить новый или сильно изменённый продукт', text: 'Подойдёт и для запуска с нуля, и для нового направления внутри уже работающего бизнеса.' },
-      { id: 'followup', title: 'Проверить прошлое изменение', text: history.length ? `Есть сохранённый результат от ${formatDate(history[0].date)}.` : 'Появится после первой сохранённой проверки.', disabled: !history.length },
+      { id: 'full', title: 'Проверить текущие продажи', text: 'Короткий скан системы по вашей текущей цели, затем только decision-critical вопросы.' },
+      { id: 'build', title: 'Проверить новый или сильно изменённый продукт', text: 'Для запуска с нуля или изменённого предложения внутри работающего бизнеса.' },
+      { id: 'followup', title: 'Проверить результат активного изменения', text: followupBase ? `Есть незавершённая проверка от ${formatDate(followupBase.date)}.` : 'Появится после запуска плана проверки.', disabled: !followupBase },
     ];
     modes.forEach(m => {
       const b = document.createElement('button');
@@ -2276,6 +2524,44 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       b.addEventListener('click', () => startMode(m.id));
       grid.appendChild(b);
     });
+
+    const recent = store.cycles.slice(0,6);
+    if (recent.length) {
+      const historyCard=document.createElement('article');
+      historyCard.className='card result-card';
+      historyCard.innerHTML='<h2>История решений</h2><p class="lead">Здесь сохраняются циклы диагностики и проверок, а не клиенты или заказы.</p>';
+      const list=document.createElement('div');
+      list.className='reason-list';
+      recent.forEach(cycle => {
+        const row=document.createElement('div');
+        row.className='reason';
+        const title=cycle.result?.userTitle || cycle.result?.title || (cycle.legacyReadonly ? 'Старый сохранённый результат' : 'Незавершённая диагностика');
+        const status=cycle.legacyReadonly ? 'Только чтение' : cycle.status;
+        row.innerHTML=`<div><strong>${title}</strong><div class="microcopy">${cycle.scope?.name || 'Без названия'} · ${formatDate(cycle.updatedAt || cycle.createdAt)} · ${status}</div></div>`;
+        if (!cycle.legacyReadonly && cycle.result) {
+          const resume=document.createElement('button');
+          resume.type='button'; resume.className='ghost-btn'; resume.textContent=isOpenCycleStatus(cycle.status)?'Продолжить':'Открыть';
+          resume.addEventListener('click',()=>resumeCycle(cycle.cycleId));
+          row.appendChild(resume);
+        }
+        list.appendChild(row);
+      });
+      historyCard.appendChild(list);
+
+      const historyActions=document.createElement('div');
+      historyActions.className='result-actions';
+      const clearButton=document.createElement('button');
+      clearButton.type='button'; clearButton.className='ghost-btn'; clearButton.textContent='Удалить завершённую историю';
+      clearButton.addEventListener('click',()=>{
+        if (window.confirm('Удалить завершённые циклы? Незавершённые проверки останутся.')) {
+          clearClosedHistory();
+          showHome();
+        }
+      });
+      historyActions.appendChild(clearButton);
+      historyCard.appendChild(historyActions);
+      app.appendChild(historyCard);
+    }
   }
 
   function setDiagnosticMode(mode) {
@@ -2312,24 +2598,13 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   }
 
   function latestFollowupBase() {
-    const history = getHistory();
-    const closedExperimentIds = new Set(
-      history
-        .filter(item => {
-          const snap = item?.result?.followupSnapshot;
-          if (!snap?.experimentId) return false;
-          const stillOpen = snap.followupCode === FOLLOWUP_CODE.NOT_EXECUTED ||
-            (snap.outcomeClass === FOLLOWUP_OUTCOME.R_ZERO && snap.decision === 'CONTINUE');
-          return !stillOpen;
-        })
-        .map(item => item.result.followupSnapshot.experimentId)
+    const store = loadHistoryStore();
+    const cycle = store.cycles.find(item =>
+      !item.legacyReadonly &&
+      item.experimentPlan?.experimentId &&
+      [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item.status)
     );
-    return history.find(item =>
-      item?.experimentPlan?.experimentId &&
-      !closedExperimentIds.has(item.experimentPlan.experimentId) &&
-      (item.experimentPlan.status === EXPERIMENT_STATUS.ACTIVE ||
-       [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item?.cycleStatus))
-    ) || history.find(item => item?.experimentPlan?.experimentId && !closedExperimentIds.has(item.experimentPlan.experimentId)) || null;
+    return cycle ? cycleAdapter(cycle) : null;
   }
 
   function startMode(mode) {
@@ -2341,11 +2616,16 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.businessGoal = null;
     state.diagnosticTarget = null;
     state.maturityState = null;
+    state.activeCycleId = null;
+    state.scopeId = mode === DIAGNOSTIC_MODE.FOLLOWUP ? null : ('scope_' + Date.now() + '_' + Math.random().toString(36).slice(2,7));
     resetButton.hidden = false;
 
     if (mode === DIAGNOSTIC_MODE.FOLLOWUP) {
       setDiagnosticMode(DIAGNOSTIC_MODE.FOLLOWUP);
       state.followupBase = latestFollowupBase();
+      if (!state.followupBase) return showHome();
+      state.activeCycleId = state.followupBase.cycleId || null;
+      state.scopeId = loadHistoryStore().cycles.find(c => c.cycleId === state.activeCycleId)?.scopeId || null;
       state.activeExperiment = state.followupBase?.experimentPlan || null;
       state.path = ['fu_done'];
     } else {
@@ -5218,6 +5498,7 @@ function finalizePrecision() {
           result.experimentPlan = activePlan;
           state.activeExperiment = activePlan;
           const item = {
+            cycleId:state.activeCycleId,
             appVersion:APP_VERSION,
             date:result.date,
             mode:state.mode,
@@ -5270,6 +5551,7 @@ function finalizePrecision() {
     saveButton.textContent = result.followup ? 'Сохранить проверку' : 'Сохранить результат';
     saveButton.addEventListener('click', () => {
       const item = {
+        cycleId: state.activeCycleId,
         appVersion: APP_VERSION,
         date: result.date,
         mode: state.mode,
@@ -5338,7 +5620,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, resumeCycle, clearClosedHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
