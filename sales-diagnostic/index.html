@@ -302,19 +302,19 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   <template id="resultTemplate">
     <section class="result-stack">
       <article class="card result-hero">
-        <div class="eyebrow">Что проверить первым</div>
+        <div class="eyebrow">Главное сейчас</div>
         <h1 id="resultTitle"></h1>
         <p class="result-summary" id="resultSummary"></p>
         <div class="confidence" id="confidenceBadge"></div>
       </article>
 
       <article class="card result-card">
-        <h2>Почему инструмент начал отсюда</h2>
+        <h2>Почему</h2>
         <div id="resultWhy" class="reason-list"></div>
       </article>
 
       <article class="card result-card">
-        <h2>Что этот вывод действительно означает</h2>
+        <h2>Что этот вывод означает</h2>
         <p id="resultProven"></p>
         <p class="microcopy" id="resultBoundary"></p>
       </article>
@@ -326,11 +326,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       </article>
 
       <article class="card result-card action-card">
-        <h2>Ваш следующий шаг</h2>
+        <h2>Что сделать первым</h2>
         <p id="resultAction" class="action-text"></p>
         <div class="metric-box">
-          <span>Что записывать / считать</span>
+          <span>Что измерить</span>
           <strong id="resultMetric"></strong>
+        </div>
+        <div class="metric-box">
+          <span>Когда оценивать</span>
+          <strong id="resultObservation"></strong>
         </div>
       </article>
 
@@ -340,17 +344,17 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       </article>
 
       <article class="card result-card" id="dontCard">
-        <h2>Пока не делайте</h2>
+        <h2>Пока не меняйте</h2>
         <p id="resultDont"></p>
       </article>
 
       <article class="card result-card" id="secondaryCard">
-        <h2>На что ещё стоит обратить внимание</h2>
+        <h2>Дополнительная возможность</h2>
         <div id="secondaryRisks" class="tag-list"></div>
       </article>
 
       <article class="card result-card next-card">
-        <h2>Когда проверить ситуацию снова</h2>
+        <h2>Что дальше</h2>
         <p id="resultNext"></p>
         <div class="result-actions">
           <button class="primary-btn" id="saveResultButton" type="button">Сохранить результат</button>
@@ -368,7 +372,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.9.2-dev';
+  const APP_VERSION = '1.10.0-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3363,19 +3367,221 @@ function finalizePrecision() {
     return { proven, boundary };
   }
 
+  function resultKindCodeFor(code) {
+    if (code === 'LEGAL_SAFETY_BLOCKER') return RESULT_KIND.SAFETY_BLOCKER;
+    if (['ECONOMICS','CAPACITY','FULFILLMENT'].includes(code)) return RESULT_KIND.HARD_OPERATING_BLOCKER;
+    if (code === 'DATA_GAP') return RESULT_KIND.DATA_NEEDED;
+    if (code === 'NO_CRITICAL_CONSTRAINT_FOUND') return RESULT_KIND.NO_CRITICAL_CONSTRAINT;
+    if (code.startsWith('BUILD_')) return RESULT_KIND.BUILD_NEXT_STEP;
+    if (code.startsWith('FOLLOWUP_') || code === 'FOLLOWUP') return RESULT_KIND.FOLLOWUP_RESULT;
+    return RESULT_KIND.PRIMARY_CONSTRAINT;
+  }
+
+  function confidenceLabel(value) {
+    return ({
+      [CONFIDENCE.HIGH]:'Высокая',
+      [CONFIDENCE.MEDIUM]:'Средняя',
+      [CONFIDENCE.PRELIMINARY]:'Предварительная'
+    })[value] || value || 'Предварительная';
+  }
+
+  function evidenceQuestionIdsFor(code) {
+    const map = {
+      LEGAL_SAFETY_BLOCKER:['gate_legal'],
+      ECONOMICS:['gate_economics','deep_e1','deep_e2','deep_e3'],
+      CAPACITY:['gate_capacity','deep_cap1','deep_cap2','shared_impact'],
+      FULFILLMENT:['gate_fulfillment','deep_f1','deep_f2'],
+      DEMAND_WEAK:['core_demand','deep_d1','deep_d2','deep_d3'],
+      DEMAND_UNCLEAR:['core_demand','core_access','deep_d1','deep_d2','deep_d3'],
+      ACCESS:['core_access','deep_a1','deep_a2','deep_a4'],
+      DISTRIBUTION:['core_access','deep_a2'],
+      OFFER:['core_offer','deep_o1','deep_o2'],
+      FIT:['core_fit','deep_fit1','deep_fit2'],
+      DECISION_GAP:['core_trust','deep_t1','deep_t2'],
+      PURCHASE_FRICTION:['core_conversion','deep_c1','deep_c2'],
+      START_FAILURE:['core_start','deep_s1','deep_s3'],
+      ACTIVATION_FAILURE:['core_start','deep_s1','deep_s2','deep_s3'],
+      FIRST_VALUE_GAP:['core_start','deep_s1','deep_s2','deep_s3'],
+      VALUE_FAILURE:['core_value','deep_v1','deep_v2','deep_v3'],
+      NEXT_CYCLE:['core_repeat','deep_r1','deep_r2','deep_r3'],
+      CUSTOMER_MEMORY_GAP:['core_repeat','deep_r1','deep_r2','deep_r3'],
+      RECOVERY_FAILURE:['post_recovery'],
+      SUB_RENEWAL:['core_repeat','sub_cancel_known','sub_cancel_reason'],
+      REACTIVATION_GAP:['post_reactivation','sub_cancel_reason'],
+      BUILD_OFFER:['build_offer'],
+      BUILD_ROUTE:['build_route'],
+      BUILD_ACCESS:['build_access'],
+      BUILD_MARKET_TEST:['build_market','build_market_sample','build_market_audience','build_market_quality'],
+      BUILD_DEMAND:['build_market','build_market_sample','build_market_audience'],
+      BUILD_FULFILLMENT:['build_fulfillment'],
+      BUILD_VALUE:['build_value'],
+      BUILD_ECONOMICS:['build_econ_plausibility','build_economics'],
+      BUILD_CAPACITY:['build_pilot_capacity','build_capacity','shared_impact']
+    };
+    return map[code] || [];
+  }
+
+  function buildEvidenceObjects(code, whyLines) {
+    const ids = evidenceQuestionIdsFor(code);
+    const a = state.answers;
+    return whyLines.map((label, index) => {
+      const questionId = ids.find(id => a[id] !== undefined && a[id] !== null) || ids[index] || null;
+      const value = questionId ? a[questionId] : null;
+      return {
+        type: 'USER_ESTIMATE',
+        questionId,
+        value,
+        label
+      };
+    });
+  }
+
+  function guardrailsFor(code) {
+    if (['LEGAL_SAFETY_BLOCKER','DATA_GAP','NO_CRITICAL_CONSTRAINT_FOUND'].includes(code)) return [];
+    if (['ECONOMICS','CAPACITY','FULFILLMENT','BUILD_ECONOMICS','BUILD_CAPACITY','BUILD_FULFILLMENT'].includes(code)) {
+      return ['money','quality','deadline','load','customer_result'];
+    }
+    return ['money','quality','load'];
+  }
+
+  function resultPlanFor(code, base) {
+    const plans = {
+      ACCESS:{
+        observationRule:'После следующей серии подходящих обращений из одного выбранного источника.',
+        successRule:'Источник даёт подходящие обращения и оплаченные заказы без ухудшения экономики и нагрузки.',
+        failureRule:'Подходящие обращения не появляются или источник не даёт нормальных оплаченных заказов.',
+        nextIfSuccess:'Сохранить рабочий источник и проверить, не переместилось ли ограничение ниже по пути покупки.',
+        nextIfFailure:'Не масштабировать источник; вернуться к выбору места показа или аудитории.'
+      },
+      DISTRIBUTION:{
+        observationRule:'После сопоставимого периода показа того же предложения.',
+        successRule:'Видимость восстановилась и вместе с ней вернулись подходящие обращения.',
+        failureRule:'Видимость восстановилась, но подходящие обращения не вернулись.',
+        nextIfSuccess:'Оставить изменение видимости и проверить следующий участок продаж.',
+        nextIfFailure:'Не продолжать лечить охват; проверить предложение, fit или другое downstream-ограничение.'
+      },
+      PURCHASE_FRICTION:{
+        observationRule:'После следующих случаев, когда подходящие люди уже решили купить или записаться.',
+        successRule:'Большая часть решивших купить завершает оформление без прежнего срыва.',
+        failureRule:'Потеря на том же шаге продолжает повторяться.',
+        nextIfSuccess:'Сохранить упрощение и проверить следующий bottleneck.',
+        nextIfFailure:'Проверить, действительно ли найден правильный шаг срыва.'
+      },
+      FULFILLMENT:{
+        observationRule:'После следующих выполненных заказов или услуг в обычной работе.',
+        successRule:'Повторяющийся серьёзный сбой перестал возникать без ухудшения качества и нагрузки.',
+        failureRule:'Тот же сбой продолжает повторяться.',
+        nextIfSuccess:'Только после стабилизации выполнения возвращаться к росту.',
+        nextIfFailure:'Не увеличивать поток; менять причину сбоя или проверять capacity.'
+      },
+      CAPACITY:{
+        observationRule:'После обычного рабочего периода с новым способом распределения нагрузки.',
+        successRule:'Появился реальный рабочий запас без регулярных переработок, задержек и падения качества.',
+        failureRule:'Перегруз или отсутствие запаса сохраняются.',
+        nextIfSuccess:'После появления запаса можно возвращаться к росту потока.',
+        nextIfFailure:'Не масштабировать объём; пересмотреть узкое место мощности.'
+      },
+      ECONOMICS:{
+        observationRule:'После расчёта следующей сопоставимой продажи или небольшой серии продаж на новых условиях.',
+        successRule:'Продажа оставляет приемлемую для владельца сумму после прямых расходов и времени.',
+        failureRule:'Продажа остаётся убыточной или не оправдывает затраты времени.',
+        nextIfSuccess:'Только после этого проверять рост объёма.',
+        nextIfFailure:'Не масштабировать; менять один экономический рычаг и пересчитывать.'
+      },
+      BUILD_MARKET_TEST:{
+        observationRule:'После заранее ограниченного реального показа одного и того же предложения подходящим людям.',
+        successRule:'Появились действия к покупке: предметное обращение, бронь, предзаказ или оплата.',
+        failureRule:'После адекватного теста подходящие люди не делают шага к покупке.',
+        nextIfSuccess:'Перейти к проверке реального выполнения и клиентского результата.',
+        nextIfFailure:'Перепроверить ценность/задачу предложения, а не масштабировать показ.'
+      },
+      BUILD_DEMAND:{
+        observationRule:'После повторного качественного market test с тем же понятным предложением и рабочим способом покупки.',
+        successRule:'Появляются реальные действия к покупке.',
+        failureRule:'После качественного повторного теста действий по-прежнему нет.',
+        nextIfSuccess:'Вернуться к B3 — fulfillment/value/economics.',
+        nextIfFailure:'Пересобрать задачу/ценность предложения до нового теста.'
+      },
+      DATA_GAP:{
+        observationRule:'Как только собран конкретный недостающий факт, который различает два действия.',
+        successRule:'Факт однозначно выбирает одну ветку решения.',
+        failureRule:'Факт всё ещё не различает действия — значит, вопрос был недостаточно decision-critical.',
+        nextIfSuccess:'Продолжить по выбранной ветке.',
+        nextIfFailure:'Не собирать данные бесконечно; пересобрать decision fork.'
+      }
+    };
+    const p = plans[code] || {};
+    return {
+      holdConstant:[base.dont].filter(Boolean),
+      metrics:[base.metric].filter(Boolean),
+      observationRule:p.observationRule || base.next || 'После следующего сопоставимого набора реальных случаев.',
+      successRule:p.successRule || 'Основной показатель улучшается без ухудшения защитных показателей.',
+      failureRule:p.failureRule || 'Основной показатель не улучшается или ухудшается важный guardrail.',
+      nextIfSuccess:p.nextIfSuccess || base.next || 'Сохранить полезное изменение и провести короткую новую диагностику.',
+      nextIfFailure:p.nextIfFailure || 'Не масштабировать изменение и вернуться к следующей вероятной причине.'
+    };
+  }
+
+  function optionalOpportunityFor(primaryCode) {
+    const a = state.answers;
+    if (['LEGAL_SAFETY_BLOCKER','ECONOMICS','CAPACITY','FULFILLMENT','DATA_GAP'].includes(primaryCode)) return null;
+    if (primaryCode !== 'REACTIVATION_GAP' && a.scope_target !== 'reactivate_members' && a.post_reactivation === 'many') {
+      return { code:'REACTIVATION_GAP', title:'Есть подходящие бывшие клиенты для отдельной проверки возвращения.' };
+    }
+    if (primaryCode !== 'ADVOCACY_GAP' && a.post_referral === 'no' && ['yes','mostly'].includes(a.core_value)) {
+      return { code:'ADVOCACY_GAP', title:'Довольным клиентам можно упростить рекомендацию — но это не главный приоритет.' };
+    }
+    return null;
+  }
+
   function makeResult(code, extraWhy = []) {
     const base = adaptResultToModel(code, resultLibrary[code] || resultLibrary.NO_CRITICAL_CONSTRAINT_FOUND);
     const scopeText = resultScopeText(code);
+    const why = [...buildWhy(code), ...extraWhy].slice(0, 4);
+    const confidence = confidenceFor(code);
+    const plan = resultPlanFor(code, base);
+    const precisionFields = precisionQuestionsFor(code);
+    const resultKind = resultKindCodeFor(code);
+
     return {
+      // v2 stable contract
+      resultId:'result_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      diagnosticMode:state.diagnosticMode || state.mode,
+      businessGoal:state.businessGoal || state.answers.scope_goal || null,
+      diagnosticTarget:state.diagnosticTarget || state.answers.scope_target || null,
+      resultKind,
+      primaryCode:code,
+      userTitle:base.title,
+      userSummary:base.summary,
+      evidence:buildEvidenceObjects(code, why),
+      confidence,
+      action:base.action,
+      holdConstant:plan.holdConstant,
+      metrics:plan.metrics,
+      observationRule:plan.observationRule,
+      successRule:plan.successRule,
+      failureRule:plan.failureRule,
+      nextIfSuccess:plan.nextIfSuccess,
+      nextIfFailure:plan.nextIfFailure,
+      precisionAvailable:
+        precisionFields.length > 0 &&
+        confidence !== CONFIDENCE.HIGH &&
+        ![RESULT_KIND.SAFETY_BLOCKER, RESULT_KIND.DATA_NEEDED].includes(resultKind) &&
+        !['BUILD_OFFER','BUILD_ROUTE','BUILD_ACCESS'].includes(code),
+      precisionFields,
+      optionalOpportunity:optionalOpportunityFor(code),
+      guardrails:guardrailsFor(code),
+
+      // compatibility adapter for current render / history while v1.10.x migrates UI
       code,
       ...base,
       ...scopeText,
-      kind: resultKindFor(code),
-      confidence: confidenceFor(code),
-      decisionRule: decisionRuleFor(code),
-      why: [...buildWhy(code), ...extraWhy].slice(0, 4),
-      secondary: secondaryRisks(code),
-      date: new Date().toISOString(),
+      kind:resultKindFor(code),
+      confidenceLabel:confidenceLabel(confidence),
+      decisionRule:decisionRuleFor(code),
+      why,
+      secondary:secondaryRisks(code),
+      date:new Date().toISOString(),
     };
   }
 
@@ -4225,7 +4431,7 @@ function finalizePrecision() {
   
   function confidenceFor(code) {
     const a = state.answers;
-    if (state.mode === 'build' || state.mode === 'hybrid') return 'Средняя';
+    if (state.mode === 'build' || state.mode === 'hybrid') return CONFIDENCE.MEDIUM;
     const directEvidence =
       (code === 'FULFILLMENT' && a.gate_fulfillment === 'regular' && meaningful(a.deep_f1).length) ||
       (code === 'CAPACITY' && ['overload','limit'].includes(a.gate_capacity) && a.deep_cap1 && a.deep_cap1 !== 'unknown') ||
@@ -4239,9 +4445,9 @@ function finalizePrecision() {
       (code === 'RECOVERY_FAILURE' && a.post_recovery === 'often_unresolved') ||
       (code === 'SUB_RENEWAL' && ['yes','partly'].includes(a.sub_cancel_known) && meaningful(a.sub_cancel_reason).length) ||
       (code === 'REACTIVATION_GAP' && a.post_reactivation === 'many');
-    if (directEvidence) return 'Высокая';
-    if (code === 'LEGAL_SAFETY_BLOCKER') return 'Средняя';
-    return 'Предварительная';
+    if (directEvidence) return CONFIDENCE.HIGH;
+    if (code === 'LEGAL_SAFETY_BLOCKER') return CONFIDENCE.MEDIUM;
+    return CONFIDENCE.PRELIMINARY;
   }
 
   function finalizeFollowup() {
@@ -4313,16 +4519,23 @@ function finalizePrecision() {
     document.getElementById('resultTitle').textContent = result.title;
     document.getElementById('resultSummary').textContent = result.summary;
     const badge = document.getElementById('confidenceBadge');
-    badge.textContent = result.followup ? 'Повторная проверка' : ((result.kind || 'Вывод') + (result.precisionRefined ? ' · уточнено цифрами' : '') + ' · уверенность: ' + result.confidence.toLowerCase());
+    badge.textContent = result.followup
+      ? 'Повторная проверка'
+      : ((result.kind || 'Вывод') + (result.precisionRefined ? ' · уточнено цифрами' : '') + ' · уверенность: ' + (result.confidenceLabel || confidenceLabel(result.confidence)).toLowerCase());
     const why = document.getElementById('resultWhy');
     result.why.forEach(x => { const d=document.createElement('div'); d.className='reason'; d.textContent=x; why.appendChild(d); });
     document.getElementById('resultProven').textContent = result.proven || '';
     document.getElementById('resultBoundary').textContent = result.boundary || '';
     document.getElementById('resultAction').textContent = result.action;
-    document.getElementById('resultMetric').textContent = result.metric;
-    document.getElementById('resultDont').textContent = result.dont;
-    document.getElementById('resultDecisionRule').textContent = result.decisionRule || 'После изменения посмотрите, стало ли лучше по главному результату и не ухудшились ли деньги, качество и нагрузка.';
-    document.getElementById('resultNext').textContent = result.next;
+    document.getElementById('resultMetric').textContent = (result.metrics || [result.metric]).filter(Boolean).join(' · ');
+    document.getElementById('resultObservation').textContent = result.observationRule || result.next || '';
+    document.getElementById('resultDont').textContent = (result.holdConstant || [result.dont]).filter(Boolean).join(' ');
+    document.getElementById('resultDecisionRule').textContent =
+      'Если успех: ' + (result.successRule || 'основной показатель улучшился без вреда') +
+      ' Если нет: ' + (result.failureRule || 'результат не улучшился или появился вред') + '.';
+    document.getElementById('resultNext').textContent =
+      'При успехе: ' + (result.nextIfSuccess || result.next || '') +
+      ' При неуспехе: ' + (result.nextIfFailure || 'вернуться к диагностике и выбрать другую причину.');
 
     const precisionCard = document.getElementById('precisionCard');
     if (result.precisionSummary) {
@@ -4333,12 +4546,16 @@ function finalizePrecision() {
 
     const secCard = document.getElementById('secondaryCard');
     const sec = document.getElementById('secondaryRisks');
-    if (!result.secondary?.length) secCard.hidden = true;
-    else result.secondary.forEach(x => { const t=document.createElement('span'); t.className='tag'; t.textContent=x; sec.appendChild(t); });
+    if (!result.optionalOpportunity) secCard.hidden = true;
+    else {
+      const t=document.createElement('span');
+      t.className='tag';
+      t.textContent=result.optionalOpportunity.title;
+      sec.appendChild(t);
+    }
 
     const precisionButton = document.getElementById('precisionResultButton');
-    const precisionPath = precisionQuestionsFor(result.code);
-    if (!result.followup && !result.precisionRefined && precisionPath.length) {
+    if (!result.followup && !result.precisionRefined && result.precisionAvailable) {
       precisionButton.hidden = false;
       precisionButton.addEventListener('click', () => startPrecision(result));
     }
@@ -4380,7 +4597,8 @@ function finalizePrecision() {
 
   function resultText(r) {
   const precision = r.precisionSummary ? `\n\nЧто показывают ваши цифры:\n${r.precisionSummary}\n${r.precisionCaveat || ''}` : '';
-  return `${r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать:\n${r.action}\n\nЧто смотреть:\n${r.metric}\n\nПока не делать:\n${r.dont}\n\nЧто дальше:\n${r.next}`;
+  const opportunity = r.optionalOpportunity ? `\n\nДополнительная возможность:\n${r.optionalOpportunity.title}` : '';
+  return `${r.userTitle || r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nУверенность:\n${r.confidenceLabel || confidenceLabel(r.confidence)}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать первым:\n${r.action}\n\nПока не менять:\n${(r.holdConstant || [r.dont]).filter(Boolean).join(' ')}\n\nЧто измерить:\n${(r.metrics || [r.metric]).filter(Boolean).join(' · ')}\n\nКогда оценивать:\n${r.observationRule || r.next || ''}\n\nКак принять решение:\nЕсли успех: ${r.successRule || ''}\nЕсли нет: ${r.failureRule || ''}\n\nЧто дальше:\nПри успехе: ${r.nextIfSuccess || r.next || ''}\nПри неуспехе: ${r.nextIfFailure || ''}${opportunity}`;
 }
 
   function isAnswered(id) {
@@ -4403,7 +4621,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
