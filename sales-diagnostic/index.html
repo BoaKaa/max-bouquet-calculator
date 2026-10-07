@@ -3116,7 +3116,10 @@ function finalizePrecision() {
     // Weak economics must be clarified before scaling acquisition.
     if (a.scope_goal === 'new_sales' && a.gate_economics === 'low') return makeResult('ECONOMICS');
 
-    const zone = candidates[0]?.zone;
+    // Opportunities are never allowed to win the primary slot unless the target
+    // explicitly promoted them to TARGET_CRITICAL in collectCandidates().
+    const primaryCandidates = candidates.filter(x => x.tier < CANDIDATE_TIER.OPPORTUNITY);
+    const zone = primaryCandidates[0]?.zone;
     let code = 'NO_CRITICAL_CONSTRAINT_FOUND';
 
     if (zone === 'D') code = diagnoseDemand();
