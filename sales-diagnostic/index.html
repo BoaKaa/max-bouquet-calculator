@@ -3801,6 +3801,28 @@ function finalizePrecision() {
       if (!validAudience || !hasSample) return makeResult('BUILD_MARKET_TEST');
       return makeResult('BUILD_DEMAND');
     }
+
+    // Positive market evidence does not mean the BUILD cycle is finished.
+    // A non-paid action still needs a real purchase, and weak test quality
+    // (friend support / special terms / unknown) cannot validate general demand.
+    if (a.build_market === 'action') return makeResult('BUILD_MARKET_TEST');
+    if (a.build_market === 'paid') {
+      const quality = a.build_market_quality;
+      if (['friend_support','special_terms','unknown'].includes(quality)) return makeResult('BUILD_MARKET_TEST');
+      if (quality === 'warm_existing' && !state.path.some(id => ['build_fulfillment','build_value','build_economics','build_capacity'].includes(id))) {
+        return makeResult('BUILD_MARKET_TEST');
+      }
+
+      // A normal paid purchase from a suitable buyer advances from market
+      // evidence to delivery validation. If B3 fields are already present,
+      // the checks above decide whether fulfillment/value/economics/capacity
+      // is the next unconfirmed stage.
+      const hasDeliveryValidation = state.path.some(id => ['build_fulfillment','build_value','build_economics','build_capacity'].includes(id));
+      if (!hasDeliveryValidation && ['target_normal','mixed_target'].includes(quality)) {
+        return makeResult('BUILD_FULFILLMENT');
+      }
+    }
+
     return makeResult('NO_CRITICAL_CONSTRAINT_FOUND', [
       state.mode === 'hybrid'
         ? 'Перепроверены только изменившиеся части. Остальные элементы работающего процесса не пришлось строить заново.'
