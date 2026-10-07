@@ -514,6 +514,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     activeExperiment: null,
     activeCycleId: null,
     scopeId: null,
+    parentCycleId: null,
   };
 
   const opt = (value, label, hint = '') => ({ value, label, hint });
@@ -2274,7 +2275,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       precisionSnapshots:item?.result?.precisionSnapshot ? [item.result.precisionSnapshot] : [],
       experimentPlan:item?.experimentPlan || item?.result?.experimentPlan || null,
       followups:item?.result?.followupSnapshot ? [item.result.followupSnapshot] : [],
-      transition:item?.result?.stateTransition || null
+      transition:item?.result?.stateTransition || null,
+      parentCycleId:null,
+      nextCycleId:null
     };
   }
 
@@ -2400,7 +2403,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       precisionSnapshots:item?.result?.precisionSnapshot ? [item.result.precisionSnapshot] : [],
       experimentPlan:item?.experimentPlan || item?.result?.experimentPlan || null,
       followups:item?.result?.followupSnapshot ? [item.result.followupSnapshot] : [],
-      transition:item?.result?.stateTransition || null
+      transition:item?.result?.stateTransition || null,
+      parentCycleId:item?.parentCycleId || state.parentCycleId || null,
+      nextCycleId:null
     };
   }
 
@@ -2464,12 +2469,37 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     return writeHistoryStore(store);
   }
 
+  function exportHistory() {
+    const store = loadHistoryStore();
+    const payload = {
+      exportVersion:1,
+      exportedAt:new Date().toISOString(),
+      historySchemaVersion:store.schemaVersion,
+      cycles:store.cycles
+    };
+    try {
+      const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const link=document.createElement('a');
+      link.href=url;
+      link.download='sales-diagnostic-history.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function resumeCycle(cycleId) {
     const store = loadHistoryStore();
     const cycle = store.cycles.find(c => c.cycleId === cycleId);
     if (!cycle || cycle.legacyReadonly) return false;
     state.activeCycleId = cycle.cycleId;
     state.scopeId = cycle.scopeId || null;
+    state.parentCycleId = cycle.parentCycleId || null;
     state.answers = {...(cycle.answers || {})};
     state.businessGoal = cycle.scope?.businessGoal || state.answers.scope_goal || null;
     state.diagnosticTarget = cycle.scope?.diagnosticTarget || state.answers.scope_target || null;
@@ -2483,6 +2513,40 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       return true;
     }
     return false;
+  }
+
+  function startLinkedCycle(parentCycleId, nextResult) {
+    const store = loadHistoryStore();
+    const parent = store.cycles.find(c => c.cycleId === parentCycleId);
+    if (!parent || !nextResult) return false;
+    state.activeCycleId = null;
+    state.parentCycleId = parentCycleId;
+    state.scopeId = parent.scopeId || state.scopeId;
+    state.answers = {...(parent.answers || {})};
+    state.businessGoal = parent.scope?.businessGoal || null;
+    state.diagnosticTarget = parent.scope?.diagnosticTarget || null;
+    state.diagnosticMode = nextResult.diagnosticMode || parent.scope?.diagnosticMode || null;
+    state.mode = state.diagnosticMode;
+    state.result = nextResult;
+    const item = {
+      parentCycleId,
+      appVersion:APP_VERSION,
+      date:nextResult.date || new Date().toISOString(),
+      mode:state.mode,
+      scope:parent.scope?.name || '',
+      answers:state.answers,
+      result:nextResult,
+      experimentPlan:nextResult.experimentPlan || null,
+      cycleStatus:nextResult.experimentPlan ? CYCLE_STATUS.PLANNED : CYCLE_STATUS.DIAGNOSED
+    };
+    const saved = saveHistory(item);
+    if (!saved) return false;
+    const refreshed = loadHistoryStore();
+    const child = refreshed.cycles.find(c => c.cycleId === state.activeCycleId);
+    parent.nextCycleId = child?.cycleId || null;
+    writeHistoryStore(refreshed);
+    renderResult(nextResult);
+    return true;
   }
 
   function showHome() {
@@ -2505,6 +2569,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.activeExperiment = null;
     state.activeCycleId = null;
     state.scopeId = null;
+    state.parentCycleId = null;
     resetButton.hidden = true;
     const tpl = document.getElementById('homeTemplate').content.cloneNode(true);
     app.replaceChildren(tpl);
@@ -2544,12 +2609,30 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
           resume.addEventListener('click',()=>resumeCycle(cycle.cycleId));
           row.appendChild(resume);
         }
+        if (!cycle.legacyReadonly && !isOpenCycleStatus(cycle.status)) {
+          const del=document.createElement('button');
+          del.type='button'; del.className='ghost-btn'; del.textContent='Удалить';
+          del.addEventListener('click',()=>{
+            if (window.confirm('Удалить этот завершённый цикл из истории?')) {
+              deleteCycle(cycle.cycleId);
+              showHome();
+            }
+          });
+          row.appendChild(del);
+        }
         list.appendChild(row);
       });
       historyCard.appendChild(list);
 
       const historyActions=document.createElement('div');
       historyActions.className='result-actions';
+      const exportButton=document.createElement('button');
+      exportButton.type='button'; exportButton.className='ghost-btn'; exportButton.textContent='Экспортировать историю';
+      exportButton.addEventListener('click',()=>{
+        if (!exportHistory()) window.alert('Не удалось подготовить файл экспорта в этом браузере.');
+      });
+      historyActions.appendChild(exportButton);
+
       const clearButton=document.createElement('button');
       clearButton.type='button'; clearButton.className='ghost-btn'; clearButton.textContent='Удалить завершённую историю';
       clearButton.addEventListener('click',()=>{
@@ -5458,6 +5541,15 @@ function finalizePrecision() {
       'При успехе: ' + (result.nextIfSuccess || result.next || '') +
       ' При неуспехе: ' + (result.nextIfFailure || 'вернуться к диагностике и выбрать другую причину.');
 
+    if (result.followup && result.stateTransition?.nextResult && state.activeCycleId) {
+      const nextCycleButton=document.createElement('button');
+      nextCycleButton.type='button';
+      nextCycleButton.className='primary-btn';
+      nextCycleButton.textContent='Перейти к следующему циклу';
+      nextCycleButton.addEventListener('click',()=>startLinkedCycle(state.activeCycleId,result.stateTransition.nextResult));
+      document.getElementById('resultNext').after(nextCycleButton);
+    }
+
     const experimentCard = document.getElementById('experimentPlanCard');
     const experimentPlan = result.experimentPlan || experimentPlanFor(result);
     if (experimentPlan) {
@@ -5620,7 +5712,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, resumeCycle, clearClosedHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
