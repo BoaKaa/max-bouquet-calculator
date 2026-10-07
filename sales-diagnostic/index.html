@@ -128,6 +128,20 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 .mode-card span { color: var(--muted); font-size: 14px; grid-column: 1; }
 .mode-card .arrow { grid-column: 2; grid-row: 1 / span 2; font-size: 24px; color: var(--accent); }
 .mode-card[disabled] { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+button:focus-visible, input:focus-visible {
+  outline: 3px solid rgba(45,91,69,.28);
+  outline-offset: 3px;
+}
+.resume-card { border-color: #cbd9d1; background: #f8fbf9; }
+.resume-grid { display: grid; gap: 10px; margin-top: 14px; }
+.resume-row { display: grid; gap: 3px; padding: 10px 0; border-bottom: 1px solid #e5ece7; }
+.resume-row:last-child { border-bottom: 0; }
+.resume-row span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 800; }
+.history-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid #eeeae2; }
+.history-row:last-child { border-bottom: 0; }
+.history-row .history-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.history-meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.status-pill { display: inline-flex; align-items: center; width: fit-content; margin-top: 7px; padding: 5px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 750; }
 
 .wizard-card { overflow: hidden; }
 .progress-wrap { padding: 18px 22px 0; }
@@ -241,6 +255,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   .wizard-actions { position: sticky; bottom: 0; background: rgba(255,253,249,.96); backdrop-filter: blur(10px); }
   .primary-btn, .ghost-btn { flex: 1; }
   .result-actions .primary-btn, .result-actions .ghost-btn { flex: 1 1 100%; }
+  .history-row { grid-template-columns: 1fr; }
+  .history-row .history-actions { justify-content: stretch; }
+  .history-row .history-actions button { flex: 1 1 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -301,6 +318,15 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   <template id="resultTemplate">
     <section class="result-stack">
+      <article class="card result-card resume-card" id="resumeContextCard" hidden>
+        <div class="eyebrow">Вы вернулись к сохранённой проверке</div>
+        <h2 id="resumeContextTitle">Где вы остановились</h2>
+        <div class="resume-grid">
+          <div class="resume-row"><span>Что проверяли</span><strong id="resumeWhat"></strong></div>
+          <div class="resume-row"><span>Что делать сейчас</span><strong id="resumeNow"></strong></div>
+          <div class="resume-row"><span>Когда возвращаться</span><strong id="resumeWhen"></strong></div>
+        </div>
+      </article>
       <article class="card result-hero">
         <div class="eyebrow">Главное сейчас</div>
         <h1 id="resultTitle"></h1>
@@ -404,7 +430,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.12.0-dev';
+  const APP_VERSION = '1.12.1-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -515,6 +541,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     activeCycleId: null,
     scopeId: null,
     parentCycleId: null,
+    resumeContext: null,
   };
 
   const opt = (value, label, hint = '') => ({ value, label, hint });
@@ -2493,6 +2520,57 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     }
   }
 
+  function cycleStatusLabel(status, legacyReadonly = false) {
+    if (legacyReadonly || status === 'LEGACY_READONLY') return 'Старый результат — только просмотр';
+    return ({
+      [CYCLE_STATUS.DIAGNOSED]:'Диагноз готов, следующий шаг ещё не запущен',
+      [CYCLE_STATUS.PLANNED]:'План проверки готов',
+      [CYCLE_STATUS.ACTIVE]:'Проверка идёт',
+      [CYCLE_STATUS.WAITING_FOR_EVIDENCE]:'Нужно ещё немного наблюдений',
+      [CYCLE_STATUS.FOLLOWUP_DUE]:'Пора проверить результат',
+      [CYCLE_STATUS.COMPLETED]:'Цикл завершён',
+      [CYCLE_STATUS.CLOSED_WITHOUT_DECISION]:'Цикл закрыт без решения',
+      [CYCLE_STATUS.INVALIDATED]:'Проверка не подходит для вывода'
+    })[status] || 'Сохранённый цикл';
+  }
+
+  function followupDecisionLabel(decision) {
+    return ({
+      CONFIRM:'сохранить полезное изменение',
+      ROLLBACK:'остановить или откатить изменение',
+      CONTINUE:'продолжить наблюдение',
+      REDESIGN:'пересобрать следующую проверку',
+      REDIAGNOSE:'пересчитать текущий диагноз'
+    })[decision] || 'перейти к следующему решению';
+  }
+
+  function resumeContextForCycle(cycle) {
+    const plan = cycle.experimentPlan || cycle.result?.experimentPlan || null;
+    const result = cycle.result || {};
+    const status = cycle.status;
+    const what = plan?.changeOneThing || result.action || result.userTitle || result.title || 'Сохранённая проверка';
+    let now = 'Откройте сохранённый вывод и выберите следующий шаг.';
+    let when = result.observationRule || plan?.observationRule || result.next || 'Когда появятся новые факты, способные изменить решение.';
+
+    if (status === CYCLE_STATUS.PLANNED) {
+      now = 'План уже готов. Если он по-прежнему актуален, начните проверку и не добавляйте второе независимое изменение.';
+    } else if (status === CYCLE_STATUS.ACTIVE) {
+      now = 'Продолжайте только запланированную проверку и записывайте главный показатель и важные защитные сигналы.';
+      when = plan?.followupTrigger || plan?.observationRule || when;
+    } else if (status === CYCLE_STATUS.WAITING_FOR_EVIDENCE) {
+      now = 'Не меняйте гипотезу раньше времени. Доведите заранее выбранное условие наблюдения до конца, если это безопасно.';
+      when = plan?.followupTrigger || plan?.observationRule || when;
+    } else if (status === CYCLE_STATUS.FOLLOWUP_DUE) {
+      now = 'Условие наблюдения выполнено. Пора проверить результат изменения.';
+      when = 'Сейчас — через повторную проверку результата.';
+    } else if (!isOpenCycleStatus(status)) {
+      now = 'Этот цикл уже завершён. Используйте его как историю решения, а не как активный план.';
+      when = 'Новая проверка нужна только при новом решении или изменившихся условиях.';
+    }
+
+    return { status:cycleStatusLabel(status,cycle.legacyReadonly), what, now, when };
+  }
+
   function resumeCycle(cycleId) {
     const store = loadHistoryStore();
     const cycle = store.cycles.find(c => c.cycleId === cycleId);
@@ -2505,11 +2583,13 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.diagnosticTarget = cycle.scope?.diagnosticTarget || state.answers.scope_target || null;
     state.diagnosticMode = cycle.scope?.diagnosticMode || cycle.result?.diagnosticMode || null;
     state.mode = state.diagnosticMode;
-    state.result = cycle.result || null;
+    state.result = cycle.result ? {...cycle.result} : null;
+    if (state.result && cycle.experimentPlan) state.result.experimentPlan = cycle.experimentPlan;
     state.activeExperiment = cycle.experimentPlan || null;
     state.followupBase = cycleAdapter(cycle);
-    if (cycle.result) {
-      renderResult(cycle.result);
+    state.resumeContext = resumeContextForCycle(cycle);
+    if (state.result) {
+      renderResult(state.result);
       return true;
     }
     return false;
@@ -2571,6 +2651,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.activeCycleId = null;
     state.scopeId = null;
     state.parentCycleId = null;
+    state.resumeContext = null;
     resetButton.hidden = true;
     const tpl = document.getElementById('homeTemplate').content.cloneNode(true);
     app.replaceChildren(tpl);
@@ -2579,8 +2660,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const history = store.cycles.map(cycleAdapter);
     const followupBase = latestFollowupBase();
     const modes = [
-      { id: 'full', title: 'Проверить текущие продажи', text: 'Короткий скан системы по вашей текущей цели, затем только decision-critical вопросы.' },
-      { id: 'build', title: 'Проверить новый или сильно изменённый продукт', text: 'Для запуска с нуля или изменённого предложения внутри работающего бизнеса.' },
+      { id: 'full', title: 'Проверить текущие продажи', text: 'Короткая проверка по вашей текущей цели, затем только вопросы, которые могут изменить решение.' },
+      { id: 'build', title: 'Проверить новый или сильно изменённый продукт', text: 'Для запуска с нуля или заметно изменённого предложения внутри уже работающего бизнеса.' },
       { id: 'followup', title: 'Проверить результат активного изменения', text: followupBase ? `Есть незавершённая проверка от ${formatDate(followupBase.date)}.` : 'Появится после запуска плана проверки.', disabled: !followupBase },
     ];
     modes.forEach(m => {
@@ -2600,15 +2681,28 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       list.className='reason-list';
       recent.forEach(cycle => {
         const row=document.createElement('div');
-        row.className='reason';
+        row.className='history-row';
         const title=cycle.result?.userTitle || cycle.result?.title || (cycle.legacyReadonly ? 'Старый сохранённый результат' : 'Незавершённая диагностика');
-        const status=cycle.legacyReadonly ? 'Только чтение' : cycle.status;
-        row.innerHTML=`<div><strong>${title}</strong><div class="microcopy">${cycle.scope?.name || 'Без названия'} · ${formatDate(cycle.updatedAt || cycle.createdAt)} · ${status}</div></div>`;
+        const info=document.createElement('div');
+        const titleEl=document.createElement('strong');
+        titleEl.textContent=title;
+        const meta=document.createElement('div');
+        meta.className='history-meta';
+        meta.textContent=(cycle.scope?.name || 'Без названия') + ' · ' + formatDate(cycle.updatedAt || cycle.createdAt);
+        const status=document.createElement('span');
+        status.className='status-pill';
+        status.textContent=cycleStatusLabel(cycle.status,cycle.legacyReadonly);
+        info.append(titleEl,meta,status);
+        row.appendChild(info);
+
+        const actions=document.createElement('div');
+        actions.className='history-actions';
         if (!cycle.legacyReadonly && cycle.result) {
           const resume=document.createElement('button');
-          resume.type='button'; resume.className='ghost-btn'; resume.textContent=isOpenCycleStatus(cycle.status)?'Продолжить':'Открыть';
+          resume.type='button'; resume.className='ghost-btn';
+          resume.textContent=isOpenCycleStatus(cycle.status)?'Продолжить':'Открыть';
           resume.addEventListener('click',()=>resumeCycle(cycle.cycleId));
-          row.appendChild(resume);
+          actions.appendChild(resume);
         }
         if (!cycle.legacyReadonly && !isOpenCycleStatus(cycle.status)) {
           const del=document.createElement('button');
@@ -2619,8 +2713,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
               showHome();
             }
           });
-          row.appendChild(del);
+          actions.appendChild(del);
         }
+        if (actions.children.length) row.appendChild(actions);
         list.appendChild(row);
       });
       historyCard.appendChild(list);
@@ -2667,16 +2762,30 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   }
 
   function progressMeta(id) {
-    if (state.mode === DIAGNOSTIC_MODE.PRECISION) return { label:'Проверяем вывод цифрами', percent:75 };
-    if (state.mode === DIAGNOSTIC_MODE.FOLLOWUP) return { label:'Проверяем прошлое изменение', percent:70 };
-    if (/^(scope_|maturity_state)/.test(id)) return { label:'Что проверяем', percent:15 };
-    if (/^(period_|gate_|shared_)/.test(id)) return { label:'Что происходит сейчас', percent:35 };
-    if (/^core_/.test(id)) return { label:'Проверяем ключевой участок', percent:55 };
-    if (/^(deep_|post_|sub_)/.test(id)) return { label:'Уточняем причину', percent:75 };
+    if (state.mode === DIAGNOSTIC_MODE.PRECISION) {
+      const pct = Math.min(92, 58 + Math.round(((state.index + 1) / Math.max(1,state.path.length)) * 34));
+      return { label:'Проверяем вывод цифрами', percent:pct };
+    }
+    if (state.mode === DIAGNOSTIC_MODE.FOLLOWUP) {
+      const labels = {
+        fu_done:'Что было сделано',
+        fu_execution_match:'Проверяем чистоту изменения',
+        fu_sample_ready:'Хватило ли наблюдений',
+        fu_measurement_valid:'Можно ли доверять сравнению',
+        fu_effect:'Что произошло с главным показателем',
+        fu_guardrail:'Проверяем важные побочные эффекты'
+      };
+      const pct = Math.min(94, 18 + Math.round(((state.index + 1) / Math.max(1,state.path.length)) * 72));
+      return { label:labels[id] || 'Проверяем прошлое изменение', percent:pct };
+    }
+    if (/^(scope_|maturity_state)/.test(id)) return { label:'Что именно проверяем', percent:15 };
+    if (/^(period_|gate_|shared_)/.test(id)) return { label:'Проверяем важные ограничения', percent:35 };
+    if (/^core_/.test(id)) return { label:'Ищем участок, который мешает цели', percent:55 };
+    if (/^(deep_|post_|sub_)/.test(id)) return { label:'Уточняем причину', percent:78 };
     if (/^(build_|hybrid_|inheritance_)/.test(id)) {
       return state.mode === DIAGNOSTIC_MODE.HYBRID
-        ? { label:'Что нужно перепроверить', percent:60 }
-        : { label:'Проверяем следующий шаг запуска', percent:60 };
+        ? { label:'Проверяем только изменившиеся части', percent:62 }
+        : { label:'Проверяем следующий шаг запуска', percent:62 };
     }
     return { label:'Диагностика', percent:50 };
   }
@@ -2700,6 +2809,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.businessGoal = null;
     state.diagnosticTarget = null;
     state.maturityState = null;
+    state.resumeContext = null;
     state.activeCycleId = null;
     state.scopeId = mode === DIAGNOSTIC_MODE.FOLLOWUP ? null : ('scope_' + Date.now() + '_' + Math.random().toString(36).slice(2,7));
     resetButton.hidden = false;
@@ -2782,6 +2892,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         const b = document.createElement('button'); b.type = 'button'; b.className = 'option-card';
         const selected = question.type === 'multi' ? Array.isArray(current) && current.includes(o.value) : current === o.value;
         if (selected) b.classList.add('selected');
+        b.setAttribute('aria-pressed', selected ? 'true' : 'false');
         b.innerHTML = `<span class="option-dot" aria-hidden="true"></span><span class="option-text"><strong>${o.label}</strong>${o.hint ? `<small>${o.hint}</small>` : ''}</span>`;
         b.addEventListener('click', () => {
           const previous = JSON.stringify(state.answers[id]);
@@ -4143,7 +4254,7 @@ function finalizePrecision() {
       DATA_GAP:{
         observationRule:'Как только собран конкретный недостающий факт, который различает два действия.',
         successRule:'Факт однозначно выбирает одну ветку решения.',
-        failureRule:'Факт всё ещё не различает действия — значит, вопрос был недостаточно decision-critical.',
+        failureRule:'Факт всё ещё не помогает выбрать между разными действиями — значит, нужна другая проверка.',
         nextIfSuccess:'Продолжить по выбранной ветке.',
         nextIfFailure:'Не собирать данные бесконечно; пересобрать decision fork.'
       }
@@ -4245,7 +4356,7 @@ function finalizePrecision() {
       primaryCode:code,
       hypothesis:
         planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION
-          ? 'Если собрать decision-critical evidence в сопоставимых условиях, станет понятно, какая следующая ветка решения верна.'
+          ? 'Если собрать один решающий факт в сопоставимых условиях, станет понятно, какой следующий шаг выбрать.'
           : 'Если изменить именно найденный участок и не менять остальные существенные факторы, основной показатель должен измениться в ожидаемую сторону без неприемлемого вреда guardrails.',
       planType,
       changeOneThing,
@@ -5415,7 +5526,7 @@ function finalizePrecision() {
         : 'Сохраните проверенное изменение. Не масштабируйте его автоматически: сначала убедитесь, что экономика, качество и нагрузка остаются приемлемыми.',
       metric:primaryMetric,
       dont:'Не приписывайте результат невыполненным вспомогательным шагам и не добавляйте новые изменения без новой диагностики.',
-      next:moved ? 'Следующий цикл начинается с нового primary result.' : 'Проведите короткий State Transition Test и выберите следующий decision-critical шаг.'
+      next:moved ? 'Следующий цикл начинается с нового главного ограничения.' : 'Проверьте текущее состояние ещё раз и выберите следующий шаг, который действительно может изменить результат.'
     };
   }
 
@@ -5500,7 +5611,7 @@ function finalizePrecision() {
       why:[
         'Прошлый вывод: ' + (previousResult?.userTitle || previousResult?.title || 'сохранённый результат') + '.',
         cls.reason,
-        'Решение после проверки: ' + cls.decision + '.'
+        'Что делать дальше: ' + followupDecisionLabel(cls.decision) + '.'
       ],
       secondary:[],
       date:new Date().toISOString()
@@ -5521,8 +5632,17 @@ function finalizePrecision() {
   function renderResult(result) {
     const tpl = document.getElementById('resultTemplate').content.cloneNode(true);
     app.replaceChildren(tpl);
-    document.getElementById('resultTitle').textContent = result.title;
-    document.getElementById('resultSummary').textContent = result.summary;
+    document.getElementById('resultTitle').textContent = result.userTitle || result.title;
+    document.getElementById('resultSummary').textContent = result.userSummary || result.summary;
+
+    const resumeCard=document.getElementById('resumeContextCard');
+    if (state.resumeContext) {
+      resumeCard.hidden=false;
+      document.getElementById('resumeContextTitle').textContent=state.resumeContext.status;
+      document.getElementById('resumeWhat').textContent=state.resumeContext.what;
+      document.getElementById('resumeNow').textContent=state.resumeContext.now;
+      document.getElementById('resumeWhen').textContent=state.resumeContext.when;
+    }
     const badge = document.getElementById('confidenceBadge');
     badge.textContent = result.followup
       ? 'Повторная проверка'
@@ -5570,10 +5690,10 @@ function finalizePrecision() {
         experimentPlan.holdConstant.length ? experimentPlan.holdConstant.join(' ') : 'Не добавляйте второе независимое изменение во время этой проверки.';
       document.getElementById('experimentObservation').textContent = experimentPlan.observationRule || '';
       document.getElementById('experimentBranches').textContent =
-        'R+: ' + experimentPlan.successRule +
-        ' R−: ' + experimentPlan.failureRule +
-        ' R0: ' + experimentPlan.inconclusiveRule +
-        ' RX: ' + experimentPlan.invalidRule;
+        'Если сработало: ' + experimentPlan.successRule +
+        ' Если не сработало: ' + experimentPlan.failureRule +
+        ' Если данных пока мало: ' + experimentPlan.inconclusiveRule +
+        ' Если проверка получилась невалидной: ' + experimentPlan.invalidRule;
       document.getElementById('experimentEarlyStop').textContent =
         experimentPlan.earlyStopRule + ' ' + experimentPlan.followupTrigger;
 
@@ -5641,7 +5761,16 @@ function finalizePrecision() {
     }
 
     const saveButton = document.getElementById('saveResultButton');
-    saveButton.textContent = result.followup ? 'Сохранить проверку' : 'Сохранить результат';
+    if (result.followup) {
+      saveButton.textContent = 'Сохранить результат проверки';
+      saveButton.className = 'primary-btn';
+    } else if (result.experimentPlan) {
+      saveButton.textContent = 'Сохранить и вернуться позже';
+      saveButton.className = 'ghost-btn';
+    } else {
+      saveButton.textContent = 'Сохранить результат';
+      saveButton.className = 'primary-btn';
+    }
     saveButton.addEventListener('click', () => {
       const item = {
         cycleId: state.activeCycleId,
@@ -5672,7 +5801,9 @@ function finalizePrecision() {
         msg.textContent = 'Браузер не разрешил сохранить историю. Скопируйте результат, чтобы не потерять его.';
       }
     });
-    document.getElementById('restartResultButton').addEventListener('click', showHome);
+    const restartButton=document.getElementById('restartResultButton');
+    restartButton.textContent='На главную';
+    restartButton.addEventListener('click', showHome);
     document.getElementById('copyResultButton').addEventListener('click', async () => {
       const text = resultText(result);
       try {
@@ -5689,7 +5820,7 @@ function finalizePrecision() {
   function resultText(r) {
   const precision = r.precisionSummary ? `\n\nЧто показывают ваши цифры:\n${r.precisionSummary}\n${r.precisionCaveat || ''}` : '';
   const opportunity = r.optionalOpportunity ? `\n\nДополнительная возможность:\n${r.optionalOpportunity.title}` : '';
-  const plan = r.experimentPlan ? `\n\nПлан проверки:\nМеняем: ${r.experimentPlan.changeOneThing}\nКак выполнить:\n${r.experimentPlan.executionSteps.map((x,i)=>(i+1)+'. '+x).join('\n')}\nГлавный показатель: ${r.experimentPlan.primaryMetric || ''}\nКогда оценивать: ${r.experimentPlan.observationRule || ''}\nR+: ${r.experimentPlan.successRule}\nR−: ${r.experimentPlan.failureRule}\nR0: ${r.experimentPlan.inconclusiveRule}\nRX: ${r.experimentPlan.invalidRule}` : '';
+  const plan = r.experimentPlan ? `\n\nПлан проверки:\nМеняем: ${r.experimentPlan.changeOneThing}\nКак выполнить:\n${r.experimentPlan.executionSteps.map((x,i)=>(i+1)+'. '+x).join('\n')}\nГлавный показатель: ${r.experimentPlan.primaryMetric || ''}\nКогда оценивать: ${r.experimentPlan.observationRule || ''}\nЕсли сработало: ${r.experimentPlan.successRule}\nЕсли не сработало: ${r.experimentPlan.failureRule}\nЕсли данных мало: ${r.experimentPlan.inconclusiveRule}\nЕсли проверка невалидна: ${r.experimentPlan.invalidRule}` : '';
   return `${r.userTitle || r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nУверенность:\n${r.confidenceLabel || confidenceLabel(r.confidence)}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать первым:\n${r.action}\n\nПока не менять:\n${(r.holdConstant || [r.dont]).filter(Boolean).join(' ')}\n\nЧто измерить:\n${(r.metrics || [r.metric]).filter(Boolean).join(' · ')}\n\nКогда оценивать:\n${r.observationRule || r.next || ''}\n\nКак принять решение:\nЕсли успех: ${r.successRule || ''}\nЕсли нет: ${r.failureRule || ''}\n\nЧто дальше:\nПри успехе: ${r.nextIfSuccess || r.next || ''}\nПри неуспехе: ${r.nextIfFailure || ''}${plan}${opportunity}`;
 }
 
@@ -5713,7 +5844,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
