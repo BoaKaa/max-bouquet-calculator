@@ -3368,8 +3368,11 @@ function finalizePrecision() {
   }
 
   function resultKindCodeFor(code) {
+    const a = state.answers;
     if (code === 'LEGAL_SAFETY_BLOCKER') return RESULT_KIND.SAFETY_BLOCKER;
-    if (['ECONOMICS','CAPACITY','FULFILLMENT'].includes(code)) return RESULT_KIND.HARD_OPERATING_BLOCKER;
+    if (code === 'FULFILLMENT' && a.gate_fulfillment === 'regular') return RESULT_KIND.HARD_OPERATING_BLOCKER;
+    if (code === 'ECONOMICS' && (a.gate_economics === 'negative' || (a.scope_goal === 'new_sales' && a.gate_economics === 'low'))) return RESULT_KIND.HARD_OPERATING_BLOCKER;
+    if (code === 'CAPACITY' && (a.gate_capacity === 'overload' || (a.scope_goal === 'new_sales' && a.gate_capacity === 'limit'))) return RESULT_KIND.HARD_OPERATING_BLOCKER;
     if (code === 'DATA_GAP') return RESULT_KIND.DATA_NEEDED;
     if (code === 'NO_CRITICAL_CONSTRAINT_FOUND') return RESULT_KIND.NO_CRITICAL_CONSTRAINT;
     if (code.startsWith('BUILD_')) return RESULT_KIND.BUILD_NEXT_STEP;
@@ -3424,15 +3427,18 @@ function finalizePrecision() {
   function buildEvidenceObjects(code, whyLines) {
     const ids = evidenceQuestionIdsFor(code);
     const a = state.answers;
+    const availableIds = ids.filter(id => a[id] !== undefined && a[id] !== null);
     return whyLines.map((label, index) => {
-      const questionId = ids.find(id => a[id] !== undefined && a[id] !== null) || ids[index] || null;
+      const questionId = availableIds[index] || availableIds[0] || ids[index] || null;
       const value = questionId ? a[questionId] : null;
-      return {
-        type: 'USER_ESTIMATE',
-        questionId,
-        value,
-        label
-      };
+      const repeatedIds = new Set([
+        'gate_fulfillment','core_access','core_offer','core_fit','core_trust',
+        'core_conversion','core_start','core_value','core_repeat','post_recovery'
+      ]);
+      const type = typeof value === 'number'
+        ? 'NUMBER'
+        : (questionId && repeatedIds.has(questionId) ? 'REPEATED_OBSERVATION' : 'USER_ESTIMATE');
+      return { type, questionId, value, label };
     });
   }
 
