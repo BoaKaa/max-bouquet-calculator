@@ -2313,10 +2313,23 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   function latestFollowupBase() {
     const history = getHistory();
+    const closedExperimentIds = new Set(
+      history
+        .filter(item => {
+          const snap = item?.result?.followupSnapshot;
+          if (!snap?.experimentId) return false;
+          const stillOpen = snap.followupCode === FOLLOWUP_CODE.NOT_EXECUTED ||
+            (snap.outcomeClass === FOLLOWUP_OUTCOME.R_ZERO && snap.decision === 'CONTINUE');
+          return !stillOpen;
+        })
+        .map(item => item.result.followupSnapshot.experimentId)
+    );
     return history.find(item =>
-      item?.experimentPlan?.status === EXPERIMENT_STATUS.ACTIVE ||
-      [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item?.cycleStatus)
-    ) || history.find(item => item?.experimentPlan) || history[0] || null;
+      item?.experimentPlan?.experimentId &&
+      !closedExperimentIds.has(item.experimentPlan.experimentId) &&
+      (item.experimentPlan.status === EXPERIMENT_STATUS.ACTIVE ||
+       [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item?.cycleStatus))
+    ) || history.find(item => item?.experimentPlan?.experimentId && !closedExperimentIds.has(item.experimentPlan.experimentId)) || null;
   }
 
   function startMode(mode) {
@@ -4880,7 +4893,14 @@ function finalizePrecision() {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный guardrail.' };
     }
     if (a.fu_effect === 'better') {
-      return { outcome:FOLLOWUP_OUTCOME.R_PLUS, code:FOLLOWUP_CODE.CONFIRMED, decision:'CONFIRM', reason:'Критерий успеха достигнут без отмеченного вреда guardrails.' };
+      return {
+        outcome:FOLLOWUP_OUTCOME.R_PLUS,
+        code:a.fu_done === 'primary_only' ? FOLLOWUP_CODE.PARTIAL_EXECUTION : FOLLOWUP_CODE.CONFIRMED,
+        decision:'CONFIRM',
+        reason:a.fu_done === 'primary_only'
+          ? 'Основное изменение выполнено и критерий успеха достигнут без отмеченного вреда, но невыполненные вспомогательные шаги считать проверенными нельзя.'
+          : 'Критерий успеха достигнут без отмеченного вреда guardrails.'
+      };
     }
     if (['worse','same'].includes(a.fu_effect)) {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.FAILED, decision:'REDESIGN', reason:'После полного валидного наблюдения критерий успеха не достигнут.' };
@@ -4892,6 +4912,25 @@ function finalizePrecision() {
     const { result: previousResult, plan } = followupPlanContext();
     const previousCode = previousResult?.primaryCode || previousResult?.code || plan?.primaryCode || null;
     const originMode = previousResult?.diagnosticMode || state.followupBase?.mode || null;
+    const guardrails = Array.isArray(state.answers.fu_guardrail) ? state.answers.fu_guardrail : [];
+
+    if (followupClass.code === FOLLOWUP_CODE.NOT_EXECUTED) {
+      return {
+        type:'CONTINUE_EVIDENCE',
+        fromPrimaryCode:previousCode,
+        toPrimaryCode:previousCode,
+        nextResult:null
+      };
+    }
+
+    if (followupClass.code === FOLLOWUP_CODE.GUARDRAIL_FAIL && guardrails.includes('safety')) {
+      return {
+        type:'HARD_BLOCKER_EMERGED',
+        fromPrimaryCode:previousCode,
+        toPrimaryCode:'LEGAL_SAFETY_BLOCKER',
+        nextResult:makeResult('LEGAL_SAFETY_BLOCKER')
+      };
+    }
 
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS) {
       const buildNext = {
@@ -5024,7 +5063,7 @@ function finalizePrecision() {
     const human = followupHumanResult(cls, transition);
     const guardrails = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
     const confidenceAfter =
-      cls.outcome === FOLLOWUP_OUTCOME.R_PLUS && a.fu_measurement_valid === 'yes' && a.fu_execution_match === 'no'
+      cls.outcome === FOLLOWUP_OUTCOME.R_PLUS && a.fu_done === 'yes' && a.fu_measurement_valid === 'yes' && a.fu_execution_match === 'no'
         ? CONFIDENCE.HIGH
         : (cls.outcome === FOLLOWUP_OUTCOME.R_MINUS ? CONFIDENCE.MEDIUM : CONFIDENCE.PRELIMINARY);
 
@@ -5047,7 +5086,10 @@ function finalizePrecision() {
       newPrimaryCode:transition.toPrimaryCode || null,
       confidenceAfter,
       nextAction:human.action,
-      nextFollowupTrigger:cls.outcome === FOLLOWUP_OUTCOME.R_ZERO && cls.decision === 'CONTINUE' ? plan?.followupTrigger || null : null
+      nextFollowupTrigger:
+        (cls.code === FOLLOWUP_CODE.NOT_EXECUTED || (cls.outcome === FOLLOWUP_OUTCOME.R_ZERO && cls.decision === 'CONTINUE'))
+          ? plan?.followupTrigger || null
+          : null
     };
 
     state.result = {
@@ -5103,7 +5145,7 @@ function finalizePrecision() {
     if (plan) {
       state.activeExperiment = {
         ...plan,
-        status: cls.outcome === FOLLOWUP_OUTCOME.R_ZERO && cls.decision === 'CONTINUE'
+        status: (cls.code === FOLLOWUP_CODE.NOT_EXECUTED || (cls.outcome === FOLLOWUP_OUTCOME.R_ZERO && cls.decision === 'CONTINUE'))
           ? EXPERIMENT_STATUS.ACTIVE
           : (cls.outcome === FOLLOWUP_OUTCOME.R_INVALID ? EXPERIMENT_STATUS.INVALIDATED : EXPERIMENT_STATUS.COMPLETED)
       };
@@ -5236,9 +5278,11 @@ function finalizePrecision() {
         result,
         experimentPlan: result.experimentPlan || null,
         cycleStatus: result.followup
-          ? (result.followupOutcome === FOLLOWUP_OUTCOME.R_ZERO && result.followupSnapshot?.decision === 'CONTINUE'
-              ? CYCLE_STATUS.WAITING_FOR_EVIDENCE
-              : CYCLE_STATUS.COMPLETED)
+          ? (result.followupCode === FOLLOWUP_CODE.NOT_EXECUTED
+              ? CYCLE_STATUS.ACTIVE
+              : (result.followupOutcome === FOLLOWUP_OUTCOME.R_ZERO && result.followupSnapshot?.decision === 'CONTINUE'
+                  ? CYCLE_STATUS.WAITING_FOR_EVIDENCE
+                  : CYCLE_STATUS.COMPLETED))
           : (result.experimentPlan
               ? (result.experimentPlan.status === EXPERIMENT_STATUS.ACTIVE ? CYCLE_STATUS.ACTIVE : CYCLE_STATUS.PLANNED)
               : CYCLE_STATUS.DIAGNOSED),
