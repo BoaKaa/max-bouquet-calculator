@@ -368,7 +368,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.9.1-dev';
+  const APP_VERSION = '1.9.2-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -803,10 +803,6 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       s => s.answers.scope_model === 'SUBSCRIPTION'
         ? [opt('often','Продлевает большинство'), opt('sometimes','Продлевает примерно половина или заметная часть'), opt('rare','Продлевает меньшинство'), opt('na','До продления ещё никто не дошёл'), opt('unknown','Не знаю / не отслеживаю')]
         : [opt('often','Часто'), opt('sometimes','Иногда'), opt('rare','Редко'), opt('na','Повтор или продолжение здесь почти не нужны'), opt('unknown','Не знаю / не отслеживаю')]),
-    core_data: q('core_data', 'Проверяем продажи целиком', 'Большинство ответов выше основаны на реальных случаях или скорее на ощущениях?', '', [
-      opt('facts', 'В основном на фактах'), opt('mixed', 'Часть знаю, часть предполагаю'), opt('feelings', 'Почти всё по ощущениям'),
-    ]),
-
     // Deep demand
     deep_d1: q('deep_d1', 'Уточняем спрос', 'Были ли оплаченные покупки этого предложения в выбранном периоде?', '', [opt('yes','Да'), opt('no','Нет'), opt('unknown','Не знаю')]),
     deep_d2: q('deep_d2', 'Уточняем спрос', 'Какая картина сейчас ближе всего к реальности?', 'Здесь мы не предполагаем заранее, что проблема именно в спросе. Выберите, что фактически происходит.', [
@@ -2298,6 +2294,76 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  const CANDIDATE_TIER = Object.freeze({
+    SAFETY: 0,
+    HARD_BLOCKER: 1,
+    TARGET_CRITICAL: 2,
+    MODERATE: 3,
+    OPPORTUNITY: 4,
+  });
+
+  function fullQuestionsForTarget(s = state) {
+    const a = s.answers;
+    const goal = a.scope_goal;
+    const target = a.scope_target;
+    const model = a.scope_model;
+    const out = ['gate_legal'];
+    const add = (...ids) => ids.forEach(id => { if (!out.includes(id)) out.push(id); });
+
+    if (goal === 'income') {
+      add('gate_economics','gate_capacity');
+      if (target === 'revenue') add('core_access','core_offer');
+      return out;
+    }
+    if (goal === 'overload') {
+      add('gate_capacity','gate_fulfillment','gate_economics');
+      return out;
+    }
+    if (goal === 'repeat') {
+      add('gate_fulfillment','core_value','core_repeat');
+      return out;
+    }
+    if (goal === 'stable') {
+      add('gate_capacity','gate_economics','core_access');
+      if (target !== 'less_channel_dependency') add('core_repeat');
+      return out;
+    }
+    add('gate_fulfillment','gate_capacity','gate_economics',
+        'core_demand','core_access','core_offer','core_fit','core_trust','core_conversion');
+    if (model === 'SUBSCRIPTION' && target === 'active_members') add('core_start','core_value');
+    return out;
+  }
+
+  function fullPeriodQuestions(s = state) {
+    const goal = s.answers.scope_goal;
+    const out = ['scope_period','period_integrity'];
+    if (['new_sales','stable'].includes(goal)) out.push('period_context');
+    return out;
+  }
+
+  function targetRelevanceForZone(zone, a = state.answers) {
+    const goalMap = {
+      new_sales:['A','D','O','FIT','T','C','S'],
+      stable:['A','R','CAP','E'],
+      income:['E','CAP','A','O'],
+      overload:['CAP','F','E'],
+      repeat:['V','R','REC','REACT'],
+    };
+    const targetMap = {
+      attended_visits:['C','S','CAP'], fill_slots:['A','C','CAP'], new_customers:['A','D','FIT','O'],
+      completed_orders:['C','F','CAP','A'], paid_clients:['C','FIT','T','A'], paid_students:['C','A','O'],
+      revenue:['E','A','C','CAP'], owner_money:['E','CAP'], per_sale:['E'], same_money_less_time:['E','CAP','F'],
+      steady_orders:['A','R','CAP'], steady_income:['E','R','A'], less_channel_dependency:['A'],
+      less_hours:['CAP','E','F'], fewer_urgent:['F','CAP'], stable_quality:['F','CAP'],
+      repeat_orders:['R','V'], repeat_visits:['R','V'], repeat_work:['R','V'], next_learning:['R','V'],
+      repeat_income:['R','E','V'], new_subscribers:['A','D','O','C'], renewals:['R','V'],
+      active_members:['S','V','R'], less_churn:['R','V','F'], reactivate_members:['REACT','R'],
+    };
+    if ((targetMap[a.scope_target] || []).includes(zone)) return 2;
+    if ((goalMap[a.scope_goal] || []).includes(zone)) return 1;
+    return 0;
+  }
+
   const BUILD_PHASE = Object.freeze({
     B0: 'B0_TEST_FEASIBILITY',
     B1: 'B1_TEST_READINESS',
@@ -2449,9 +2515,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       if (nextMode === DIAGNOSTIC_MODE.FULL) {
         state.path = state.path.slice(0, state.index + 1).concat([
           ...scoped,
-          'scope_period','period_integrity','period_context',
-          'gate_legal','gate_fulfillment','gate_capacity','gate_economics',
-          'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data'
+          ...fullPeriodQuestions(state),
+          ...fullQuestionsForTarget(state)
         ]);
       } else {
         state.path = state.path.slice(0, state.index + 1).concat([...scoped, 'inheritance_entry']);
@@ -2508,24 +2573,25 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       return;
     }
 
-    // In a mature route, a hard blocker gets a short targeted clarification.
-    if (state.mode === 'full' && currentId === 'gate_economics') {
+    // In FULL, a hard blocker gets a short targeted clarification as soon as it is known.
+    if (state.mode === DIAGNOSTIC_MODE.FULL && ['gate_legal','gate_fulfillment','gate_capacity','gate_economics'].includes(currentId)) {
       const blocker = hardGateResult();
-      if (blocker === 'LEGAL_SAFETY_BLOCKER') { state.result = makeResult(blocker); renderResult(state.result); return; }
-      const blockerQuestions = {
-        FULFILLMENT: ['deep_f1','deep_f2'],
-        ECONOMICS: ['deep_e1','deep_e3'],
-        CAPACITY: ['deep_cap1','deep_cap2'],
-      }[blocker] || [];
-      if (blockerQuestions.length) {
+      if (blocker === 'LEGAL_SAFETY_BLOCKER') {
+        state.result = makeResult(blocker); renderResult(state.result); return;
+      }
+      const blockerMatchesCurrent =
+        (currentId === 'gate_fulfillment' && blocker === 'FULFILLMENT') ||
+        (currentId === 'gate_capacity' && blocker === 'CAPACITY') ||
+        (currentId === 'gate_economics' && blocker === 'ECONOMICS');
+      if (blockerMatchesCurrent) {
+        const blockerQuestions = {
+          FULFILLMENT: ['deep_f1','deep_f2'],
+          ECONOMICS: ['deep_e1','deep_e3'],
+          CAPACITY: ['deep_cap1','deep_cap2'],
+        }[blocker] || [];
         state.deepAdded = true;
         state.path = state.path.slice(0, state.index + 1).concat(blockerQuestions);
       }
-    }
-
-    if (state.mode === 'full' && currentId === 'core_data') {
-      const gap = decisionCriticalUnknown();
-      if (gap) { state.result = makeResult('DATA_GAP', [gap]); renderResult(state.result); return; }
     }
 
     if (currentId === 'deep_v2' && state.answers.deep_v2 === 'yes' && !state.path.includes('deep_v3')) {
@@ -2554,7 +2620,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       const add = [];
       if (!state.path.includes('deep_r2')) add.push('deep_r2');
       if (!state.path.includes('deep_r3')) add.push('deep_r3');
-      if (['repeat','stable','income','unknown'].includes(state.answers.scope_goal) && !state.path.includes('post_reactivation')) add.push('post_reactivation');
+      if (state.answers.scope_target === 'reactivate_members' && !state.path.includes('post_reactivation')) add.push('post_reactivation');
       if (add.length) state.path.splice(state.index + 1, 0, ...add);
     }
 
@@ -2562,11 +2628,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       const a = state.answers;
       const extra = [];
       const hasProblemToRecover = ['sometimes','regular'].includes(a.gate_fulfillment) || ['mostly','issues','no'].includes(a.core_value);
-      const goodEnoughForReferral = ['yes','mostly'].includes(a.core_value);
       const repeatPossible = ['rare','sometimes'].includes(a.core_repeat);
 
       if (hasProblemToRecover && !state.path.includes('post_recovery')) extra.push('post_recovery');
-      if (goodEnoughForReferral && ['new_sales','stable','unknown'].includes(a.scope_goal) && !state.path.includes('post_referral')) extra.push('post_referral');
 
       if (a.scope_model === 'SUBSCRIPTION') {
         if (repeatPossible && !state.path.includes('sub_cancel_known')) extra.push('sub_cancel_known');
@@ -2598,7 +2662,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       renderQuestion();
     } else {
       if (state.mode === 'full' && !state.deepAdded) {
-        const deeper = chooseDeepBranches();
+        const deeper = chooseDiscriminatorQuestions();
         if (deeper.length) {
           state.deepAdded = true;
           state.path.push(...deeper);
@@ -2649,95 +2713,91 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     return fail[currentId] && fail[currentId]() ? codes[currentId] : '';
   }
 
-  function chooseDeepBranches() {
-    const candidates = collectCandidates();
-    const selected = candidates.slice(0, 2).map(c => c.zone);
+  function deepQuestionsForZone(zone) {
     const deepMap = {
-      D: ['deep_d1','deep_d2','deep_d3'],
-      O: ['deep_o1','deep_o2'],
-      FIT: ['deep_fit1','deep_fit2'],
-      A: ['deep_a1','deep_a2','deep_a3','deep_a4'],
-      T: ['deep_t1','deep_t2'],
-      C: ['deep_c1','deep_c2'],
-      S: ['deep_s1'],
-      F: ['deep_f1','deep_f2'],
-      V: ['deep_v1','deep_v2'],
-      R: ['deep_r1'],
-      E: ['deep_e1','deep_e2','deep_e3'],
-      CAP: ['deep_cap1','deep_cap2'],
-      REC: [],
-      REACT: [],
-      ADV: [],
+      D:['deep_d1','deep_d2','deep_d3'], O:['deep_o1','deep_o2'],
+      FIT:['deep_fit1','deep_fit2'], A:['deep_a1','deep_a2','deep_a3','deep_a4'],
+      T:['deep_t1','deep_t2'], C:['deep_c1','deep_c2'], S:['deep_s1'],
+      F:['deep_f1','deep_f2'], V:['deep_v1','deep_v2'], R:['deep_r1'],
+      E:['deep_e1','deep_e2','deep_e3'], CAP:['deep_cap1','deep_cap2'],
+      REC:[], REACT:[], ADV:[]
     };
-    return selected.flatMap(z => {
-      if (z === 'R' && state.answers.scope_model === 'SUBSCRIPTION') return [];
-      return deepMap[z] || [];
-    });
+    if (zone === 'R' && state.answers.scope_model === 'SUBSCRIPTION') return [];
+    return deepMap[zone] || [];
+  }
+
+  function sameLikelyAction(a, b) {
+    const family = zone => ({
+      D:'ACQUISITION_EVIDENCE', A:'ACQUISITION_EVIDENCE',
+      O:'PREPURCHASE_CLARITY', T:'PREPURCHASE_CLARITY',
+      FIT:'QUALIFICATION', C:'PURCHASE_FLOW', S:'POST_PURCHASE_START',
+      F:'OPERATIONS', CAP:'OPERATIONS', E:'ECONOMICS', V:'VALUE',
+      R:'RETENTION', REC:'RECOVERY', REACT:'REACTIVATION', ADV:'ADVOCACY'
+    }[zone] || zone);
+    return family(a?.zone) === family(b?.zone);
+  }
+
+  function chooseDiscriminatorQuestions() {
+    const candidates = collectCandidates().filter(x => x.tier < CANDIDATE_TIER.OPPORTUNITY);
+    if (!candidates.length) return [];
+    const first = candidates[0], second = candidates[1];
+    if (!second || first.tier < second.tier || first.strength > second.strength) {
+      return deepQuestionsForZone(first.zone);
+    }
+    if (sameLikelyAction(first, second)) return deepQuestionsForZone(first.zone);
+    return [...new Set([
+      ...deepQuestionsForZone(first.zone).slice(0,1),
+      ...deepQuestionsForZone(second.zone).slice(0,1)
+    ])];
   }
 
   function collectCandidates() {
     const a = state.answers;
     const list = [];
-    // UNKNOWN is not a weak problem signal. It is handled separately as a decision-critical data gap.
-    // Treating UNKNOWN as a candidate produced false diagnoses in retrospective real cases.
-    const fulfillmentContradicted = meaningful(a.deep_f1).includes('none') && a.deep_f2 === 'no';
-    const fulfillmentSev = fulfillmentContradicted ? 0 : severity(a.gate_fulfillment, { regular:4 });
-    pushCandidate(list, 'F', fulfillmentSev, 95);
+    const add = (zone, strength, tier=CANDIDATE_TIER.MODERATE, evidenceQuality=1) => {
+      if (!strength) return;
+      list.push({zone, sev:strength, strength, tier, evidenceQuality, targetRelevance:targetRelevanceForZone(zone,a)});
+    };
 
-    const valueContradicted = a.deep_v2 === 'no' && meaningful(a.deep_v1).some(v => ['repeat','feedback','observable','usage','progress'].includes(v)) && !meaningful(a.deep_v1).includes('complaints');
-    pushCandidate(list, 'V', valueContradicted ? 0 : severity(a.core_value, { no:4, issues:3 }), 90);
+    const fulfillmentContradicted = meaningful(a.deep_f1).includes('none') && a.deep_f2 === 'no';
+    add('F', fulfillmentContradicted ? 0 : severity(a.gate_fulfillment,{regular:4}),
+      a.gate_fulfillment === 'regular' ? CANDIDATE_TIER.HARD_BLOCKER : CANDIDATE_TIER.MODERATE, 3);
 
     const economicsContradicted = a.deep_e1 === 'no' && ['yes','likely'].includes(a.deep_e2) && Array.isArray(a.deep_e3) && a.deep_e3.includes('none');
-    pushCandidate(list, 'E', economicsContradicted ? 0 : severity(a.gate_economics, { negative:4, low:3 }), 88);
-    pushCandidate(list, 'CAP', severity(a.gate_capacity, { overload:4, limit:3 }), 86);
+    add('E', economicsContradicted ? 0 : severity(a.gate_economics,{negative:4,low:3}),
+      a.gate_economics === 'negative' ? CANDIDATE_TIER.HARD_BLOCKER : CANDIDATE_TIER.TARGET_CRITICAL, 3);
+    add('CAP', severity(a.gate_capacity,{overload:4,limit:3}),
+      a.gate_capacity === 'overload' ? CANDIDATE_TIER.HARD_BLOCKER : CANDIDATE_TIER.TARGET_CRITICAL, 3);
 
-    const startContradicted = ['EDUCATION','SUBSCRIPTION'].includes(a.scope_model)
-      ? (a.deep_s1 === 'most' && a.deep_s2 === 'most')
-      : (a.deep_s1 === 'no');
-    pushCandidate(list, 'S', startContradicted ? 0 : severity(a.core_start, { problem:4, losses:3 }), 82);
+    const valueContradicted = a.deep_v2 === 'no' && meaningful(a.deep_v1).some(v => ['repeat','feedback','observable','usage','progress'].includes(v)) && !meaningful(a.deep_v1).includes('complaints');
+    add('V', valueContradicted ? 0 : severity(a.core_value,{no:4,issues:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
+
+    const startContradicted = ['EDUCATION','SUBSCRIPTION'].includes(a.scope_model) ? (a.deep_s1 === 'most' && a.deep_s2 === 'most') : (a.deep_s1 === 'no');
+    add('S', startContradicted ? 0 : severity(a.core_start,{problem:4,losses:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
 
     const conversionContradicted = Array.isArray(a.deep_c1) && meaningful(a.deep_c1).length === 0 && a.deep_c2 === 'no';
-    pushCandidate(list, 'C', conversionContradicted ? 0 : severity(a.core_conversion, { breaks:4, hard:3 }), 78);
+    add('C', conversionContradicted ? 0 : severity(a.core_conversion,{breaks:4,hard:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
 
     const trustContradicted = Array.isArray(a.deep_t1) && meaningful(a.deep_t1).length === 0 && a.deep_t2 === 'yes';
-    pushCandidate(list, 'T', trustContradicted ? 0 : severity(a.core_trust, { almost_always:4, often:3 }), 74);
-    pushCandidate(list, 'FIT', severity(a.core_fit, { bad:4, half:3 }), 72);
+    add('T', trustContradicted ? 0 : severity(a.core_trust,{almost_always:4,often:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
+    add('FIT', severity(a.core_fit,{bad:4,half:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
 
     const offerContradicted = Array.isArray(a.deep_o1) && meaningful(a.deep_o1).length === 0 && a.deep_o2 === 'easy';
-    pushCandidate(list, 'O', offerContradicted ? 0 : severity(a.core_offer, { no:4, mostly_no:3 }), 70);
-    pushCandidate(list, 'A', severity(a.core_access, { none:4, unstable:3 }), 68);
-    pushCandidate(list, 'D', severity(a.core_demand, { rare:4 }), 66);
-    const repeatSeverity = a.scope_model === 'SUBSCRIPTION'
-      ? severity(a.core_repeat, { rare:3, sometimes:2 })
-      : severity(a.core_repeat, { rare:3 });
-    pushCandidate(list, 'R', repeatSeverity, 45);
-    pushCandidate(list, 'REC', severity(a.post_recovery, { often_unresolved:3 }), 84);
-    pushCandidate(list, 'REACT', severity(a.post_reactivation, { many:1 }), 28);
-    pushCandidate(list, 'ADV', severity(a.post_referral, { no:1 }), 22);
+    add('O', offerContradicted ? 0 : severity(a.core_offer,{no:4,mostly_no:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
+    add('A', severity(a.core_access,{none:4,unstable:3}), CANDIDATE_TIER.TARGET_CRITICAL, 2);
+    add('D', severity(a.core_demand,{rare:4}), CANDIDATE_TIER.TARGET_CRITICAL, 1);
 
-    const goalBoost = { new_sales:['A','D','O','FIT','T','C'], stable:['A','R','CAP'], income:['E','CAP','O'], overload:['CAP','F','E'], repeat:['R','V'], unknown:[] };
-    const targetBoost = {
-      attended_visits:['C','S','CAP'], fill_slots:['C','A','CAP'], new_customers:['A','D','O','FIT'],
-      completed_orders:['C','F','CAP','A'], paid_clients:['C','FIT','T','A'], paid_students:['C','A','O'],
-      revenue:['E','C','A','CAP'], owner_money:['E','CAP'], per_sale:['E','O'], same_money_less_time:['E','CAP','F'],
-      steady_orders:['A','R','CAP'], steady_income:['E','R','A'], less_channel_dependency:['A'],
-      less_hours:['CAP','E','F'], fewer_urgent:['F','CAP'], stable_quality:['F','CAP'],
-      repeat_orders:['R','V'], repeat_visits:['R','V'], repeat_work:['R','V'], next_learning:['R','V'], repeat_income:['R','E','V'],
-      new_subscribers:['A','D','O','C'], renewals:['R','V'], active_members:['S','V','R'], less_churn:['R','V','F'], reactivate_members:['REACT','R'],
-      more_orders:['A','D','C'], more_money:['E','CAP'], less_load:['CAP','F','E'], more_repeat:['R','V'], stable:['A','R','CAP']
-    };
-    const goalZones = goalBoost[a.scope_goal] || [];
-    const targetZones = targetBoost[a.scope_target] || [];
-    // Severity remains dominant (100 points per level), but the user's stated outcome
-    // must break ties between problems of comparable strength.
-    list.forEach(x => {
-      if (goalZones.includes(x.zone)) x.rank += 15;
-      if (targetZones.includes(x.zone)) x.rank += 25;
-    });
-    return list.filter(x => x.sev > 0).sort((x,y) => (y.sev*100 + y.rank) - (x.sev*100 + x.rank));
+    const repeatStrength = a.scope_model === 'SUBSCRIPTION' ? severity(a.core_repeat,{rare:3,sometimes:2}) : severity(a.core_repeat,{rare:3});
+    add('R', repeatStrength, CANDIDATE_TIER.TARGET_CRITICAL, 2);
+    add('REC', severity(a.post_recovery,{often_unresolved:3}), CANDIDATE_TIER.TARGET_CRITICAL, 3);
+
+    const reactTier = a.scope_target === 'reactivate_members' ? CANDIDATE_TIER.TARGET_CRITICAL : CANDIDATE_TIER.OPPORTUNITY;
+    add('REACT', severity(a.post_reactivation,{many:1}), reactTier, 2);
+    add('ADV', severity(a.post_referral,{no:1}), CANDIDATE_TIER.OPPORTUNITY, 1);
+
+    return list.sort((x,y) => x.tier-y.tier || y.evidenceQuality-x.evidenceQuality || y.targetRelevance-x.targetRelevance || y.strength-x.strength);
   }
 
-  function pushCandidate(list, zone, sev, rank) { if (sev > 0) list.push({ zone, sev, rank }); }
   function severity(value, map) { return map[value] || 0; }
 
   function finalizeDiagnosis() {
@@ -3176,34 +3236,30 @@ function finalizePrecision() {
 
   function decisionCriticalUnknown(candidates = collectCandidates()) {
     const a = state.answers;
-    const unknownCount = ['core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat'].filter(id => a[id] === 'unknown').length;
-    const top = candidates[0];
-    const strongKnown = top && top.sev >= 3 && !['A','D'].includes(top.zone);
+    const top = candidates.find(x => x.tier < CANDIDATE_TIER.OPPORTUNITY);
+    const strongKnown = top && (top.tier <= CANDIDATE_TIER.HARD_BLOCKER || (top.strength >= 3 && top.targetRelevance > 0));
 
-    // K is a bottleneck only when the missing fact actually changes the next action.
-    if (!strongKnown && ['new_sales','stable'].includes(a.scope_goal) && a.period_integrity && a.period_integrity !== 'normal' && a.period_integrity !== 'unknown') {
-      return 'Выбранный период искажён отпуском, закрытием или ограниченной доступностью. По нему нельзя честно решать, нужно ли усиливать привлечение.';
+    if (!strongKnown && ['new_sales','stable'].includes(a.scope_goal) && a.period_integrity && !['normal','unknown'].includes(a.period_integrity)) {
+      return 'Выбранный период был ограничен отпуском, закрытой записью или другой недоступностью. Нужен обычный сопоставимый период, прежде чем решать, усиливать ли привлечение.';
     }
-    if (!strongKnown && a.core_data === 'feelings' && unknownCount >= 3) return 'Слишком много ключевых ответов сейчас основано на ощущениях. Сначала нужен один факт, который отделит разные причины.';
-    if (!strongKnown && a.core_access === 'unknown' && a.core_demand === 'unknown') return 'Непонятно одновременно, есть ли реальный спрос и есть ли у вас доступ к нему. Эти две причины требуют разных действий.';
+    if (!strongKnown && a.core_access === 'unknown' && a.core_demand === 'unknown') {
+      return 'Нужно отделить две разные причины: подходящих людей действительно мало или они просто редко доходят до вашего предложения. Зафиксируйте один источник или период и посмотрите, были ли подходящие люди и видели ли они предложение.';
+    }
     if (a.scope_model === 'SUBSCRIPTION' && ['renewals','less_churn','reactivate_members'].includes(a.scope_target) && ['na','unknown'].includes(a.core_repeat)) {
       return a.core_repeat === 'na'
-        ? 'До первого срока продления ещё никто не дошёл. Сейчас нельзя честно оценить продление или отток — сначала нужен первый реальный цикл продления.'
-        : 'Вы не знаете, сколько участников продлевает подписку. Для цели, связанной с продлением или оттоком, этот факт меняет следующее действие.';
+        ? 'До срока продления ещё никто не дошёл. Нельзя диагностировать удержание до первого реального случая продления.'
+        : 'Неизвестно, что происходит у тех, у кого уже наступил срок продления. Этот факт определяет следующее действие.';
     }
-
-    // These unknowns matter only if the likely next action is to create more volume.
-    const growthCandidate = !top || ['A','D'].includes(top.zone);
+    const growthCandidate = !top || ['A','D','O','FIT','T','C'].includes(top.zone);
     if (a.scope_goal === 'new_sales' && growthCandidate && (a.gate_capacity === 'unknown' || a.gate_economics === 'unknown')) {
-      return 'Перед увеличением потока нужно понять: какой дополнительный объём вы реально выдержите и оставляет ли типичная продажа деньги после расходов и вашего времени.';
+      return 'Перед увеличением потока нужен защитный факт: выдержите ли дополнительный объём и не делает ли типичная продажа рост убыточным.';
     }
-    if (a.scope_goal === 'income' && (!top || ['E','CAP','A','D'].includes(top.zone)) && a.gate_economics === 'unknown') {
-      return 'Перед изменениями для роста дохода нужно хотя бы грубо понимать, сколько оставляет типичная продажа после прямых расходов и вашего времени.';
+    if (a.scope_goal === 'income' && a.gate_economics === 'unknown') {
+      return 'Для цели дохода не хватает одного решающего факта: сколько типичная продажа оставляет после прямых расходов и вашего времени.';
     }
-
     const context = meaningful(a.period_context);
     if (!strongKnown && context.some(v => ['offer_change','channel_change'].includes(v)) && ['new_sales','stable'].includes(a.scope_goal) && a.deep_a2 && !['no_decline','unknown'].includes(a.deep_a2)) {
-      return 'В выбранном периоде одновременно менялся важный элемент продаж. Сначала отделите эффект этого изменения от обычной динамики, иначе легко лечить не ту причину.';
+      return 'В этом же периоде менялся важный элемент продаж. Нужен сопоставимый участок до/после или следующий обычный период, иначе нельзя выбрать между проблемой канала и реакцией на предложение.';
     }
     return '';
   }
@@ -4159,7 +4215,6 @@ function finalizePrecision() {
     add('RECOVERY_FAILURE','Часть проблем после продажи остаётся нерешённой', a.post_recovery === 'often_unresolved');
     add('ADVOCACY_GAP','Есть неиспользованный путь рекомендаций от довольных клиентов', a.post_referral === 'no');
     add('REACTIVATION_GAP','Есть подходящие бывшие клиенты, которых можно вернуть по уместному поводу', a.post_reactivation === 'many');
-    add('K','Часть выводов пока основана скорее на ощущениях, чем на фактах', a.core_data === 'feelings');
     add('CHANNEL','Новые клиенты слишком сильно зависят от одного источника', ['mostly','all'].includes(a.deep_a3));
     return risks.slice(0, 4);
   }
@@ -4181,9 +4236,9 @@ function finalizePrecision() {
       (code === 'RECOVERY_FAILURE' && a.post_recovery === 'often_unresolved') ||
       (code === 'SUB_RENEWAL' && ['yes','partly'].includes(a.sub_cancel_known) && meaningful(a.sub_cancel_reason).length) ||
       (code === 'REACTIVATION_GAP' && a.post_reactivation === 'many');
-    if (directEvidence && a.core_data !== 'feelings') return 'Высокая';
-    if (a.core_data === 'facts' || a.core_data === 'mixed' || code === 'LEGAL_SAFETY_BLOCKER') return 'Средняя';
-    return 'Низкая';
+    if (directEvidence) return 'Высокая';
+    if (code === 'LEGAL_SAFETY_BLOCKER') return 'Средняя';
+    return 'Предварительная';
   }
 
   function finalizeFollowup() {
@@ -4345,7 +4400,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, adaptResultToModel, chooseDeepBranches, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
