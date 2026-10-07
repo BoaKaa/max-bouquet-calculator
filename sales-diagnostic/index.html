@@ -2543,7 +2543,8 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     if (!saved) return false;
     const refreshed = loadHistoryStore();
     const child = refreshed.cycles.find(c => c.cycleId === state.activeCycleId);
-    parent.nextCycleId = child?.cycleId || null;
+    const refreshedParent = refreshed.cycles.find(c => c.cycleId === parentCycleId);
+    if (refreshedParent) refreshedParent.nextCycleId = child?.cycleId || null;
     writeHistoryStore(refreshed);
     renderResult(nextResult);
     return true;
