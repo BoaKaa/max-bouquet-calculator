@@ -368,14 +368,60 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.8.2';
+  const APP_VERSION = '1.9.0-dev';
+
+  // v2 semantic state. Keep legacy string values where practical so the
+  // existing diagnosis layer can continue working while the router is migrated.
+  const DIAGNOSTIC_MODE = Object.freeze({
+    FULL: 'full',
+    BUILD: 'build',
+    HYBRID: 'hybrid',
+    FOLLOWUP: 'followup',
+    PRECISION: 'precision',
+  });
+  const MATURITY_STATE = Object.freeze({
+    REPEATABLE: 'repeatable',
+    FEW: 'few',
+    NONE: 'none',
+    CHANGED: 'changed',
+  });
+  const CONFIDENCE = Object.freeze({
+    HIGH: 'HIGH',
+    MEDIUM: 'MEDIUM',
+    PRELIMINARY: 'PRELIMINARY',
+  });
+  const RESULT_KIND = Object.freeze({
+    SAFETY_BLOCKER: 'SAFETY_BLOCKER',
+    HARD_OPERATING_BLOCKER: 'HARD_OPERATING_BLOCKER',
+    PRIMARY_CONSTRAINT: 'PRIMARY_CONSTRAINT',
+    BUILD_NEXT_STEP: 'BUILD_NEXT_STEP',
+    DATA_NEEDED: 'DATA_NEEDED',
+    NO_CRITICAL_CONSTRAINT: 'NO_CRITICAL_CONSTRAINT',
+    FOLLOWUP_RESULT: 'FOLLOWUP_RESULT',
+  });
+  const CYCLE_STATUS = Object.freeze({
+    DIAGNOSED: 'DIAGNOSED',
+    PLANNED: 'PLANNED',
+    ACTIVE: 'ACTIVE',
+    WAITING_FOR_EVIDENCE: 'WAITING_FOR_EVIDENCE',
+    FOLLOWUP_DUE: 'FOLLOWUP_DUE',
+    COMPLETED: 'COMPLETED',
+    CLOSED_WITHOUT_DECISION: 'CLOSED_WITHOUT_DECISION',
+    INVALIDATED: 'INVALIDATED',
+  });
 
   const app = document.getElementById('app');
   const resetButton = document.getElementById('resetButton');
   const brandButton = document.getElementById('brandButton');
 
   const state = {
+    // Legacy runtime mode is retained during the staged migration.
     mode: null,
+    diagnosticMode: null,
+    entryMode: null,
+    businessGoal: null,
+    diagnosticTarget: null,
+    maturityState: null,
     answers: {},
     path: [],
     index: 0,
@@ -577,7 +623,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       opt('channel_change', 'Менялся важный канал продаж'),
       opt('unknown', 'Не знаю / не помню'),
     ]),
-    mode_sales: dynamicQ('mode_sales', 'Что уже происходило с продажами',
+    maturity_state: dynamicQ('maturity_state', 'Что уже происходило с продажами',
       s => '«' + (s.answers.scope_name || 'Это предложение') + '»: как обстоят дела с оплаченными продажами сейчас?',
       '',
       () => [
@@ -2061,6 +2107,11 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
   function showHome() {
     state.mode = null;
+    state.diagnosticMode = null;
+    state.entryMode = null;
+    state.businessGoal = null;
+    state.diagnosticTarget = null;
+    state.maturityState = null;
     state.answers = {};
     state.path = [];
     state.index = 0;
@@ -2086,23 +2137,60 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     });
   }
 
+  function setDiagnosticMode(mode) {
+    state.diagnosticMode = mode;
+    state.mode = mode; // compatibility with the v1.8 diagnosis/render layer
+  }
+
+  function resolveDiagnosticMode(maturityState) {
+    if (maturityState === MATURITY_STATE.REPEATABLE) return DIAGNOSTIC_MODE.FULL;
+    if (maturityState === MATURITY_STATE.CHANGED) return DIAGNOSTIC_MODE.HYBRID;
+    return DIAGNOSTIC_MODE.BUILD;
+  }
+
+  function invalidateDownstreamAnswers(fromIndex = state.index) {
+    const staleIds = state.path.slice(fromIndex + 1);
+    staleIds.forEach(id => { delete state.answers[id]; });
+    state.result = null;
+    state.deepAdded = false;
+  }
+
+  function progressMeta(id) {
+    if (state.mode === DIAGNOSTIC_MODE.PRECISION) return { label:'Проверяем вывод цифрами', percent:75 };
+    if (state.mode === DIAGNOSTIC_MODE.FOLLOWUP) return { label:'Проверяем прошлое изменение', percent:70 };
+    if (/^(scope_|maturity_state)/.test(id)) return { label:'Что проверяем', percent:15 };
+    if (/^(period_|gate_|shared_)/.test(id)) return { label:'Что происходит сейчас', percent:35 };
+    if (/^core_/.test(id)) return { label:'Проверяем ключевой участок', percent:55 };
+    if (/^(deep_|post_|sub_)/.test(id)) return { label:'Уточняем причину', percent:75 };
+    if (/^(build_|hybrid_|inheritance_)/.test(id)) {
+      return state.mode === DIAGNOSTIC_MODE.HYBRID
+        ? { label:'Что нужно перепроверить', percent:60 }
+        : { label:'Проверяем следующий шаг запуска', percent:60 };
+    }
+    return { label:'Диагностика', percent:50 };
+  }
+
   function startMode(mode) {
-    state.mode = mode;
+    state.entryMode = mode;
     state.answers = {};
     state.index = 0;
     state.result = null;
     state.deepAdded = false;
+    state.businessGoal = null;
+    state.diagnosticTarget = null;
+    state.maturityState = null;
     resetButton.hidden = false;
 
-    if (mode === 'followup') {
+    if (mode === DIAGNOSTIC_MODE.FOLLOWUP) {
+      setDiagnosticMode(DIAGNOSTIC_MODE.FOLLOWUP);
       const history = getHistory();
       state.followupBase = history[0] || null;
       state.path = ['fu_done', 'fu_effect', 'fu_guardrail'];
     } else {
-      state.path = mode === 'build'
-        ? ['scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'build_base']
-        : ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'scope_route', 'scope_geography', 'mode_sales'];
-      if (mode === 'build') state.answers.scope_goal = 'launch';
+      // FULL/BUILD is resolved from maturity, not from the home-card label.
+      state.mode = mode; // temporary compatibility until maturity_state is answered
+      state.diagnosticMode = null;
+      state.path = ['scope_goal', 'scope_name', 'scope_model', 'scope_target', 'maturity_state'];
     }
     renderQuestion();
   }
@@ -2114,8 +2202,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     const tpl = document.getElementById('questionTemplate').content.cloneNode(true);
     app.replaceChildren(tpl);
-    document.getElementById('progressBar').style.width = `${Math.round(((state.index + 1) / state.path.length) * 100)}%`;
-    document.getElementById('progressLabel').textContent = `${state.index + 1} из ${state.path.length}`;
+    const progress = progressMeta(id);
+    document.getElementById('progressBar').style.width = `${progress.percent}%`;
+    document.getElementById('progressLabel').textContent = progress.label;
     document.getElementById('sectionLabel').textContent = sectionName(id);
     document.getElementById('questionEyebrow').textContent = resolve(question.eyebrow);
     document.getElementById('questionTitle').textContent = resolve(question.title);
@@ -2141,6 +2230,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       input.value = current ?? '';
       input.autocomplete = 'off';
       const updateInput = () => {
+        const previous = state.answers[id];
         const raw = input.value.trim();
         if (question.type === 'number') {
           const normalized = raw.replace(',', '.').replace(/\s+/g, '');
@@ -2153,6 +2243,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
           state.answers[id] = raw;
           nextButton.disabled = !raw;
         }
+        if (previous !== state.answers[id]) invalidateDownstreamAnswers(state.index);
       };
       input.addEventListener('input', updateInput);
       input.addEventListener('keydown', e => { if (e.key === 'Enter' && isAnswered(id)) goNext(); });
@@ -2167,6 +2258,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         if (selected) b.classList.add('selected');
         b.innerHTML = `<span class="option-dot" aria-hidden="true"></span><span class="option-text"><strong>${o.label}</strong>${o.hint ? `<small>${o.hint}</small>` : ''}</span>`;
         b.addEventListener('click', () => {
+          const previous = JSON.stringify(state.answers[id]);
           if (question.type === 'multi') {
             const arr = Array.isArray(state.answers[id]) ? [...state.answers[id]] : [];
             if (['none','unknown','normal'].includes(o.value)) state.answers[id] = [o.value];
@@ -2177,6 +2269,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
               state.answers[id] = cleaned;
             }
           } else state.answers[id] = o.value;
+          if (previous !== JSON.stringify(state.answers[id])) invalidateDownstreamAnswers(state.index);
           renderQuestion();
         });
         answerArea.appendChild(b);
@@ -2271,30 +2364,38 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
       state.path = state.path.filter(id => !['core_start','core_value'].includes(id));
     }
 
-    // A current business with no repeatable sales moves to BUILD or HYBRID,
-    // but we first ask what can be inherited from what already works.
-    if (state.mode === 'full' && currentId === 'mode_sales') {
-      if (state.answers.mode_sales === 'repeatable') {
+    // Maturity selects the diagnostic algorithm. Business goal stays untouched.
+    if (currentId === 'maturity_state') {
+      state.businessGoal = state.answers.scope_goal || null;
+      state.diagnosticTarget = state.answers.scope_target || null;
+      state.maturityState = state.answers.maturity_state || null;
+      const nextMode = resolveDiagnosticMode(state.maturityState);
+      setDiagnosticMode(nextMode);
+      state.deepAdded = false;
+
+      if (nextMode === DIAGNOSTIC_MODE.FULL) {
         state.path = state.path.slice(0, state.index + 1).concat([
+          // scope_route/geography remain compatibility questions in this foundation
+          // commit; v1.9.1 will make them conditional per Question Library v2.
+          'scope_route','scope_geography',
           'scope_period','period_integrity','period_context',
           'gate_legal','gate_fulfillment','gate_capacity','gate_economics','shared_resources',
           'core_demand','core_offer','core_fit','core_access','core_trust','core_conversion','core_start','core_value','core_repeat','core_data'
         ]);
+      } else if (nextMode === DIAGNOSTIC_MODE.HYBRID) {
+        state.answers.build_base = 'existing'; // temporary adapter until inheritance_entry/map land in v1.9.1
+        state.path = state.path.slice(0, state.index + 1).concat(['scope_route','scope_geography','hybrid_changed']);
       } else {
-        state.mode = state.answers.mode_sales === 'changed' ? 'hybrid' : 'build';
-        state.deepAdded = false;
-        if (state.answers.mode_sales === 'changed') state.answers.build_base = 'existing';
-        const next = state.answers.mode_sales === 'changed' ? ['hybrid_changed'] : ['build_base'];
-        state.path = state.path.slice(0, state.index + 1).concat(next);
+        state.path = state.path.slice(0, state.index + 1).concat(['scope_route','scope_geography','build_base']);
       }
     }
 
     if ((state.mode === 'build' || state.mode === 'hybrid') && currentId === 'build_base') {
       if (state.answers.build_base === 'existing') {
-        state.mode = 'hybrid';
+        setDiagnosticMode(DIAGNOSTIC_MODE.HYBRID);
         state.path = state.path.slice(0, state.index + 1).concat(['hybrid_changed']);
       } else {
-        state.mode = 'build';
+        setDiagnosticMode(DIAGNOSTIC_MODE.BUILD);
         state.path = state.path.slice(0, state.index + 1).concat([
           'gate_legal','shared_resources','build_econ_plausibility','build_pilot_capacity','build_demand','build_offer','build_route','build_access','build_market','build_fulfillment','build_value','build_economics','build_capacity'
         ]);
@@ -2818,7 +2919,7 @@ function finalizePrecision() {
 
   function evidenceConflict() {
     const a = state.answers;
-    if (a.mode_sales === 'repeatable' && a.core_demand === 'new') {
+    if (a.maturity_state === 'repeatable' && a.core_demand === 'new') {
       return 'Ответы о стадии направления расходятся: в начале вы указали, что продажи этого предложения повторяются в обычной работе, а затем — что направление новое и спрос ещё не проверялся.';
     }
     if (['no','mostly_no'].includes(a.core_offer) && Array.isArray(a.deep_o1) && meaningful(a.deep_o1).length === 0 && a.deep_o2 === 'easy') {
