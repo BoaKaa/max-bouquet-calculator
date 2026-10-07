@@ -1945,7 +1945,7 @@ button:focus-visible, input:focus-visible {
     p_market_people: numberQ('p_market_people', 'Уточняем цифрами', 'Скольким людям, которым это реально могло быть нужно, вы сделали конкретное предложение на обычных условиях?', 'Не считайте общие просмотры. Нужны люди, которым предложение действительно показывали как возможную покупку.', 'Например: 20', 'count'),
     p_market_actions: numberQ('p_market_actions', 'Уточняем цифрами', 'Сколько из них сделали реальный шаг к покупке?', 'Написали по делу, записались, забронировали, оформили предзаказ или оплатили.', 'Например: 5', 'count'),
 
-    p_market_paid: numberQ('p_market_paid', 'Уточняем цифрами', 'Сколько из сделавших шаг к покупке реально оплатили или внесли предоплату?', 'Оплата — более сильное evidence, но один случай сам по себе не доказывает устойчивый спрос.', 'Например: 2', 'count'),
+    p_market_paid: numberQ('p_market_paid', 'Уточняем цифрами', 'Сколько из сделавших шаг к покупке реально оплатили или внесли предоплату?', 'Оплата — более сильное подтверждение интереса, но один случай сам по себе не доказывает устойчивый спрос.', 'Например: 2', 'count'),
 
     // Follow-up v2
     fu_done: q('fu_done', 'Возвращаемся к прошлой проверке', 'Вы сделали именно то изменение, которое было запланировано?', 'Оцениваем только фактически выполненную проверку, а не намерение.', [
@@ -3606,7 +3606,7 @@ function precisionEvaluate(code, values) {
   }
 
   if (['DEMAND_WEAK','DEMAND_UNCLEAR','BUILD_DEMAND','BUILD_MARKET_TEST'].includes(code)) {
-    const z = zero('p_market_people','Предложение не было показано ни одному подходящему человеку. 0/0 не является evidence слабого спроса.');
+    const z = zero('p_market_people','Предложение не было показано ни одному подходящему человеку. При нулевом числе показов нельзя делать вывод о слабом спросе.');
     if (z) return z;
     if (values.p_market_actions > 0) {
       return {
@@ -3617,12 +3617,12 @@ function precisionEvaluate(code, values) {
     }
     return {
       outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,
-      message:'После конкретного предложения действий к покупке не было. Это поддерживает гипотезу только если аудитория, условия, offer, route и observation rule действительно были валидны.',
+      message:'После конкретного предложения действий к покупке не было. Это поддерживает гипотезу только если аудитория, условия, само предложение, путь покупки и условие наблюдения действительно подходили для проверки.',
       derived:{marketActionShare:0}
     };
   }
 
-  return {outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,message:'Цифры добавили evidence, но не дают основания для универсального порога «хорошо/плохо».'};
+  return {outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,message:'Цифры добавили полезные данные, но не дают основания для универсального порога «хорошо/плохо».'};
 }
 
 function precisionOutcomeConfidence(outcome, evaluation, base) {
@@ -3655,7 +3655,7 @@ function reassessAfterPrecisionContradiction(base, evaluation) {
 
   return makeResult('DATA_GAP', [
     evaluation.message,
-    'Предыдущий primary result снят с первого места. Нужен следующий подтверждённый constraint или один факт, который различит оставшиеся действия.'
+    'Предыдущий главный вывод больше не считается основным. Нужен следующий подтверждённый ограничивающий участок или один факт, который поможет выбрать между оставшимися действиями.'
   ]);
 }
 
@@ -4265,7 +4265,7 @@ function finalizePrecision() {
       metrics:[base.metric].filter(Boolean),
       observationRule:p.observationRule || base.next || 'После следующего сопоставимого набора реальных случаев.',
       successRule:p.successRule || 'Основной показатель улучшается без ухудшения защитных показателей.',
-      failureRule:p.failureRule || 'Основной показатель не улучшается или ухудшается важный guardrail.',
+      failureRule:p.failureRule || 'Основной показатель не улучшается или ухудшается важный защитный показатель.',
       nextIfSuccess:p.nextIfSuccess || base.next || 'Сохранить полезное изменение и провести короткую новую диагностику.',
       nextIfFailure:p.nextIfFailure || 'Не масштабировать изменение и вернуться к следующей вероятной причине.'
     };
@@ -4314,7 +4314,7 @@ function finalizePrecision() {
       BUILD_ECONOMICS:'Проверить фактическую экономику одной сопоставимой продажи на текущих условиях.',
       BUILD_CAPACITY:'Проверить, какой регулярный объём можно выполнять без аврала и падения качества.'
     };
-    return map[code] || result.action || 'Изменить только один участок, связанный с текущим primary result.';
+    return map[code] || result.action || 'Изменить только один участок, связанный с текущим главным выводом.';
   }
 
   function experimentExecutionSteps(result, planType, changeOneThing) {
@@ -4357,7 +4357,7 @@ function finalizePrecision() {
       hypothesis:
         planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION
           ? 'Если собрать один решающий факт в сопоставимых условиях, станет понятно, какой следующий шаг выбрать.'
-          : 'Если изменить именно найденный участок и не менять остальные существенные факторы, основной показатель должен измениться в ожидаемую сторону без неприемлемого вреда guardrails.',
+          : 'Если изменить именно найденный участок и не менять остальные существенные факторы, основной показатель должен измениться в ожидаемую сторону без неприемлемого ухудшения денег, качества, сроков или нагрузки.',
       planType,
       changeOneThing,
       executionSteps:experimentExecutionSteps(result, planType, changeOneThing),
@@ -4378,8 +4378,8 @@ function finalizePrecision() {
       nextIfFailure:result.nextIfFailure,
       nextIfInconclusive:'Не объявлять результат. Довести заранее выбранное наблюдение до конца либо пересобрать тест, если нужные события естественно не наступают.',
       nextIfInvalid:'Не использовать этот тест для решения. Исправить измерение/дизайн и повторить только если решение всё ещё важно.',
-      followupTrigger:'Вернуться к Follow-up, когда observation rule выполнен. Досрочно — только при нарушении guardrail, safety/legal риска или явном вреде.',
-      earlyStopRule:'Остановить раньше только при вреде, safety/legal риске или нарушении guardrail. Отрицательный вывод нельзя объявлять до выполнения observation rule.',
+      followupTrigger:'Вернуться к повторной проверке, когда выполнено заранее выбранное условие наблюдения. Раньше — только при явном вреде, риске безопасности или нарушении обязательных требований.',
+      earlyStopRule:'Остановить проверку раньше можно только при явном вреде, риске безопасности или ухудшении важного защитного показателя. Отрицательный вывод нельзя объявлять до выполнения заранее выбранного условия наблюдения.',
       status:EXPERIMENT_STATUS.DRAFT,
       createdAt:new Date().toISOString(),
       startedAt:null
@@ -5356,7 +5356,7 @@ function finalizePrecision() {
       return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'CONTINUE', reason:'Условие наблюдения ещё не выполнено.' };
     }
     if (a.fu_sample_ready === 'cap') {
-      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Лимит проверки достигнут, а достаточного evidence для решения нет.' };
+      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Лимит проверки достигнут, а данных для решения всё ещё недостаточно.' };
     }
     if (a.fu_measurement_valid === 'no') {
       return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Данные или условия оказались несопоставимыми.' };
@@ -5365,7 +5365,7 @@ function finalizePrecision() {
       return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Нельзя уверенно определить, пригодно ли сравнение для решения.' };
     }
     if (redGuardrail) {
-      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный guardrail.' };
+      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный защитный показатель.' };
     }
     if (a.fu_effect === 'better') {
       return {
@@ -5374,7 +5374,7 @@ function finalizePrecision() {
         decision:'CONFIRM',
         reason:a.fu_done === 'primary_only'
           ? 'Основное изменение выполнено и критерий успеха достигнут без отмеченного вреда, но невыполненные вспомогательные шаги считать проверенными нельзя.'
-          : 'Критерий успеха достигнут без отмеченного вреда guardrails.'
+          : 'Критерий успеха достигнут без отмеченного ухудшения важных защитных показателей.'
       };
     }
     if (['worse','same'].includes(a.fu_effect)) {
@@ -5496,18 +5496,18 @@ function finalizePrecision() {
     };
 
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_ZERO) return {
-      title:'Пока недостаточно evidence для решения',
+      title:'Пока недостаточно данных для решения',
       summary:followupClass.reason,
       action:followupClass.decision === 'CONTINUE'
         ? 'Не меняйте гипотезу и intervention. Доведите заранее выбранное условие наблюдения до конца, если это безопасно и разумно.'
-        : 'Не тяните тест бесконечно. Пересоберите observation rule или выберите более информативный способ различить варианты.',
+        : 'Не тяните проверку бесконечно. Пересоберите условие наблюдения или выберите более информативный способ различить варианты.',
       metric:primaryMetric,
       dont:'Не записывайте этот исход как успех или провал.',
-      next:followupClass.decision === 'CONTINUE' ? (plan?.followupTrigger || 'Вернитесь после выполнения observation rule.') : 'После нового test design начните отдельную чистую проверку.'
+      next:followupClass.decision === 'CONTINUE' ? (plan?.followupTrigger || 'Вернитесь после выполнения заранее выбранного условия наблюдения.') : 'После нового плана начните отдельную чистую проверку.'
     };
 
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_MINUS) return {
-      title:followupClass.code === FOLLOWUP_CODE.GUARDRAIL_FAIL ? 'Основная метрика не оправдывает вред по guardrail' : 'Это изменение не прошло проверку',
+      title:followupClass.code === FOLLOWUP_CODE.GUARDRAIL_FAIL ? 'Улучшение основной метрики не оправдывает ухудшение важного показателя' : 'Это изменение не прошло проверку',
       summary:followupClass.reason,
       action:followupClass.decision === 'ROLLBACK'
         ? 'Остановите или откатите это изменение, если это безопасно и возможно. Старую гипотезу не обязательно считать ложной: неудачным мог быть именно intervention.'
@@ -5578,7 +5578,7 @@ function finalizePrecision() {
       userSummary:human.summary,
       evidence:[
         {type:'REPEATED_OBSERVATION',questionId:'fu_done',value:a.fu_done,label:'Выполнение запланированного изменения'},
-        {type:'USER_ESTIMATE',questionId:'fu_sample_ready',value:a.fu_sample_ready,label:'Выполнение observation rule'},
+        {type:'USER_ESTIMATE',questionId:'fu_sample_ready',value:a.fu_sample_ready,label:'Выполнение условия наблюдения'},
         {type:'USER_ESTIMATE',questionId:'fu_measurement_valid',value:a.fu_measurement_valid,label:'Пригодность сравнения'}
       ],
       confidence:confidenceAfter,
