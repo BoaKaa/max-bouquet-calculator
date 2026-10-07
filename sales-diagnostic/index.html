@@ -1429,6 +1429,14 @@ button:focus-visible, input:focus-visible {
         opt('unknown','Не знаю / пока не могу оценить'),
       ])),
 
+    shared_materiality: q('shared_materiality', 'Насколько маленький тест затронет другую работу',
+      'Даже несколько первых заказов или клиентов этого предложения заметно отнимут общие ресурсы у другой уже существующей работы?',
+      'Сначала отделяем маленькую проверку от реального роста. Если первые случаи почти не влияют на другую работу, оценивать большой конфликт ресурсов сейчас не нужно.', [
+        opt('no','Нет — несколько первых случаев почти ничего не изменят'),
+        opt('yes','Да — даже маленький тест уже заметно отнимет общие ресурсы'),
+        opt('unknown','Не знаю / пока не могу оценить')
+      ]),
+
     shared_impact: dynamicQ('shared_impact', 'Хватит ли этих ресурсов при росте',
       s => ({
         PRODUCT:'Если заказов на «' + (s.answers.scope_name || 'этот товар') + '» станет больше, это помешает выполнять другую работу, которую вы только что отметили?',
@@ -3039,9 +3047,13 @@ button:focus-visible, input:focus-visible {
     return changed.includes('capacity') || a.inheritance_entry !== 'almost_all';
   }
 
-  function shouldAskSharedImpact(s = state) {
+  function shouldAskSharedMateriality(s = state) {
     const shared = meaningful(s.answers.shared_resources);
     return shouldAskSharedResources(s) && shared.length > 0 && !shared.includes('none');
+  }
+
+  function shouldAskSharedImpact(s = state) {
+    return shouldAskSharedMateriality(s) && ['yes','unknown'].includes(s.answers.shared_materiality);
   }
 
   function hybridPlausibilityQuestions(changed) {
@@ -3083,6 +3095,7 @@ button:focus-visible, input:focus-visible {
   }
 
   const PRECISION_CONFIG = Object.freeze({
+    ACCESS:{ fields:['p_comparable','p_inquiries','p_fit','p_orders'] },
     FIT:{ fields:['p_comparable','p_inquiries','p_fit'] },
     PURCHASE_FRICTION:{ fields:['p_comparable','p_ready_to_buy','p_orders'] },
     START_FAILURE:{ fields:['p_comparable','p_confirmed','p_started'] },
@@ -3161,7 +3174,7 @@ button:focus-visible, input:focus-visible {
       }
     }
 
-    if (currentId === 'gate_legal' && ['yes','maybe','unknown'].includes(state.answers.gate_legal)) {
+    if (currentId === 'gate_legal' && legalBlocksCurrentAction(state.answers, state.mode)) {
       state.result = makeResult('LEGAL_SAFETY_BLOCKER');
       renderResult(state.result);
       return;
@@ -3231,7 +3244,10 @@ button:focus-visible, input:focus-visible {
     if (['build_pilot_capacity','build_market'].includes(currentId) && shouldAskSharedResources(state) && !state.path.includes('shared_resources')) {
       state.path.splice(state.index + 1, 0, 'shared_resources');
     }
-    if (currentId === 'shared_resources' && shouldAskSharedImpact(state) && !state.path.includes('shared_impact')) {
+    if (currentId === 'shared_resources' && shouldAskSharedMateriality(state) && !state.path.includes('shared_materiality')) {
+      state.path.splice(state.index + 1, 0, 'shared_materiality');
+    }
+    if (currentId === 'shared_materiality' && shouldAskSharedImpact(state) && !state.path.includes('shared_impact')) {
       state.path.splice(state.index + 1, 0, 'shared_impact');
     }
 
@@ -3384,9 +3400,20 @@ button:focus-visible, input:focus-visible {
     return zone ? state.precisionExcludedZones.includes(zone) : false;
   }
 
+  function legalBlocksCurrentAction(a = state.answers, mode = state.mode) {
+    const unresolved = ['yes','maybe','unknown'].includes(a.gate_legal);
+    if (!unresolved) return false;
+    if (mode === DIAGNOSTIC_MODE.FULL || mode === 'full') return true;
+    if ([DIAGNOSTIC_MODE.BUILD,DIAGNOSTIC_MODE.HYBRID,'build','hybrid'].includes(mode)) {
+      const riskyTest = ['preorder','payment'].includes(a.build_test_type) || a.build_market === 'paid';
+      return riskyTest;
+    }
+    return unresolved;
+  }
+
   function hardGateResult() {
     const a = state.answers;
-    if (a.gate_legal === 'yes') return 'LEGAL_SAFETY_BLOCKER';
+    if (legalBlocksCurrentAction(a, state.mode)) return 'LEGAL_SAFETY_BLOCKER';
     if (a.gate_fulfillment === 'regular' && !isPrecisionExcludedCode('FULFILLMENT')) return 'FULFILLMENT';
     if (a.gate_economics === 'negative' && !isPrecisionExcludedCode('ECONOMICS')) return 'ECONOMICS';
     if (a.gate_capacity === 'overload' && !isPrecisionExcludedCode('CAPACITY')) return 'CAPACITY';
@@ -3395,7 +3422,7 @@ button:focus-visible, input:focus-visible {
 
   function buildEarlyResult(currentId) {
     const a = state.answers;
-    if (currentId === 'gate_legal' && ['yes','maybe','unknown'].includes(a.gate_legal)) return 'LEGAL_SAFETY_BLOCKER';
+    if (currentId === 'gate_legal' && legalBlocksCurrentAction(a, state.mode)) return 'LEGAL_SAFETY_BLOCKER';
     if (currentId === 'build_market' && a.build_market === 'unknown') return 'BUILD_MARKET_TEST';
     if (currentId === 'build_market' && a.build_market === 'no') return '';
     if (currentId === 'build_market_audience' && ['no','mixed','unknown'].includes(a.build_market_audience)) return 'BUILD_MARKET_TEST';
@@ -3543,6 +3570,7 @@ function precisionSanity(config, values) {
 
   const pairs = [
     ['p_fit','p_inquiries'],
+    ['p_orders','p_fit'],
     ['p_orders','p_ready_to_buy'],
     ['p_started','p_confirmed'],
     ['p_first_value','p_started'],
@@ -3570,6 +3598,20 @@ function precisionEvaluate(code, values) {
 
   const zero = (id, message) => Number.isFinite(values[id]) && values[id] === 0
     ? { outcome:PRECISION_OUTCOME.INSUFFICIENT_DENOMINATOR, message } : null;
+
+  if (code === 'ACCESS') {
+    if (!Number.isFinite(values.p_inquiries)) {
+      return {outcome:PRECISION_OUTCOME.WEAKENED,message:'Без числа новых обращений эти данные не уточняют проблему доступа.'};
+    }
+    const details = [];
+    if (Number.isFinite(values.p_fit)) details.push(values.p_fit + ' из ' + values.p_inquiries + ' обращений были подходящими');
+    if (Number.isFinite(values.p_orders)) details.push(values.p_orders + ' закончились покупкой');
+    return {
+      outcome:PRECISION_OUTCOME.WEAKENED,
+      message:(details.length ? details.join('; ') + '. ' : '') +
+        'Само число случаев не говорит, достаточно ли вам входящего потока. Без собственного сравнения или проверки конкретного источника вывод о доступе остаётся предварительным.'
+    };
+  }
 
   if (code === 'FIT') {
     const z = zero('p_inquiries','За этот период не было обращений. По нулевому знаменателю нельзя оценить качество входящего потока.');
@@ -3818,7 +3860,7 @@ function finalizePrecision() {
 
   function diagnoseBuild() {
     const a = state.answers;
-    if (['yes','maybe','unknown'].includes(a.gate_legal)) return makeResult('LEGAL_SAFETY_BLOCKER');
+    if (legalBlocksCurrentAction(a, state.mode)) return makeResult('LEGAL_SAFETY_BLOCKER');
     if (['other_suffer','current_suffer','overload'].includes(a.shared_impact)) return makeResult('CAPACITY');
     if (a.shared_impact === 'cash') return makeResult('ECONOMICS');
     const buildChecks = [
@@ -5999,7 +6041,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
