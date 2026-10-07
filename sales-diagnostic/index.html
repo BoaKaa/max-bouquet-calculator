@@ -4946,7 +4946,11 @@ function finalizePrecision() {
         answers: state.answers,
         result,
         experimentPlan: result.experimentPlan || null,
-        cycleStatus: result.experimentPlan?.status === EXPERIMENT_STATUS.ACTIVE ? CYCLE_STATUS.ACTIVE : CYCLE_STATUS.PLANNED,
+        cycleStatus: result.followup
+          ? CYCLE_STATUS.COMPLETED
+          : (result.experimentPlan
+              ? (result.experimentPlan.status === EXPERIMENT_STATUS.ACTIVE ? CYCLE_STATUS.ACTIVE : CYCLE_STATUS.PLANNED)
+              : CYCLE_STATUS.DIAGNOSED),
       };
       const saved = saveHistory(item);
       const msg = document.getElementById('saveMessage');
