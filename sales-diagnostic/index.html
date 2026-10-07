@@ -401,7 +401,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.11.0-dev';
+  const APP_VERSION = '1.11.1-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -440,6 +440,24 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     INVALID_INPUT:'INVALID_INPUT',
     INSUFFICIENT_DENOMINATOR:'INSUFFICIENT_DENOMINATOR',
     INCOMPARABLE_DATA:'INCOMPARABLE_DATA',
+  });
+
+  const FOLLOWUP_OUTCOME = Object.freeze({
+    R_PLUS:'R+',
+    R_MINUS:'R-',
+    R_ZERO:'R0',
+    R_INVALID:'RX',
+  });
+  const FOLLOWUP_CODE = Object.freeze({
+    NOT_EXECUTED:'FOLLOWUP_NOT_EXECUTED',
+    PARTIAL_EXECUTION:'FOLLOWUP_PARTIAL_EXECUTION',
+    INSUFFICIENT_EVIDENCE:'FOLLOWUP_INSUFFICIENT_EVIDENCE',
+    INVALID_MEASUREMENT:'FOLLOWUP_INVALID_MEASUREMENT',
+    CONFIRMED:'FOLLOWUP_CONFIRMED',
+    FAILED:'FOLLOWUP_FAILED',
+    GUARDRAIL_FAIL:'FOLLOWUP_GUARDRAIL_FAIL',
+    EARLY_STOP:'FOLLOWUP_EARLY_STOP',
+    REDIRECTED:'FOLLOWUP_REDIRECTED',
   });
 
   const EXPERIMENT_PLAN_TYPE = Object.freeze({
@@ -1896,11 +1914,39 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     p_market_paid: numberQ('p_market_paid', 'Уточняем цифрами', 'Сколько из сделавших шаг к покупке реально оплатили или внесли предоплату?', 'Оплата — более сильное evidence, но один случай сам по себе не доказывает устойчивый спрос.', 'Например: 2', 'count'),
 
-    // Follow-up
-    fu_done: q('fu_done', 'Возвращаемся к прошлому решению', 'Удалось выполнить рекомендованное действие?', '', [opt('yes','Да'), opt('partly','Частично'), opt('no','Нет')]),
-    fu_effect: q('fu_effect', 'Что получилось', 'Что произошло с показателем, который вы отслеживали после прошлой рекомендации?', '', [opt('better','Заметно улучшился'), opt('worse','Ухудшился'), opt('same','Существенной разницы не вижу'), opt('little','Данных пока мало'), opt('invalid','Измерение получилось ненадёжным')]),
-    fu_guardrail: multiQ('fu_guardrail', 'Защитная проверка', 'Что из важного ухудшилось после изменения?', 'Можно отметить несколько пунктов. Если ничего не ухудшилось — выберите последний вариант.', [
-      opt('money','Деньги / прибыльность'), opt('quality','Качество'), opt('deadline','Сроки'), opt('load','Нагрузка'), opt('customer','Результат для клиента'), opt('none','Ничего не ухудшилось'),
+    // Follow-up v2
+    fu_done: q('fu_done', 'Возвращаемся к прошлой проверке', 'Вы сделали именно то изменение, которое было запланировано?', 'Оцениваем только фактически выполненную проверку, а не намерение.', [
+      opt('yes','Да, основное изменение выполнено полностью'),
+      opt('primary_only','Основное изменение выполнено, но не все вспомогательные шаги'),
+      opt('no','Нет, основное изменение не было выполнено'),
+      opt('different','Сделал(а) другое изменение вместо запланированного')
+    ]),
+    fu_execution_match: q('fu_execution_match', 'Проверяем чистоту теста', 'Кроме запланированного изменения, вы одновременно меняли что-то ещё, что могло повлиять на результат?', 'Цена, канал, аудитория, предложение, способ заказа, условия выполнения или другое существенное изменение могут сделать вывод невалидным.', [
+      opt('no','Нет, существенных параллельных изменений не было'),
+      opt('one','Да, было ещё одно важное изменение'),
+      opt('several','Да, одновременно менялось несколько важных вещей'),
+      opt('unknown','Не уверен(а)')
+    ]),
+    fu_sample_ready: q('fu_sample_ready', 'Хватило ли наблюдений', 'Вы уже выполнили условие наблюдения, которое было записано в плане?', 'Не требуется универсальное число случаев: ориентируйтесь на условие именно вашего плана проверки.', [
+      opt('yes','Да, условие выполнено'),
+      opt('not_yet','Нет, нужные случаи / цикл ещё не набраны'),
+      opt('cap','Достигнут заранее установленный лимит времени, денег или показов'),
+      opt('stopped','Проверку пришлось остановить раньше из-за риска или вреда'),
+      opt('unknown','Не могу определить')
+    ]),
+    fu_measurement_valid: q('fu_measurement_valid', 'Можно ли доверять сравнению', 'Можно ли по этим наблюдениям честно сравнить результат с тем, что было до изменения?', 'Данные должны относиться к сопоставимому scope и не быть испорчены пропусками или изменением способа измерения.', [
+      opt('yes','Да, сравнение достаточно надёжное'),
+      opt('no','Нет, данные или условия несопоставимы'),
+      opt('unknown','Не уверен(а)')
+    ]),
+    fu_effect: q('fu_effect', 'Что произошло с главным показателем', 'Что произошло с основной метрикой, которую вы договорились измерять?', 'Смотрите на заранее выбранный показатель, а не на общее впечатление.', [
+      opt('better','Достигнут критерий успеха / заметное нужное улучшение'),
+      opt('worse','Результат стал хуже'),
+      opt('same','Критерий успеха не достигнут, существенного улучшения нет'),
+      opt('unclear','Эффект остался неясным / между критериями')
+    ]),
+    fu_guardrail: multiQ('fu_guardrail', 'Защитная проверка', 'Одновременно ухудшилось что-то важное?', 'Отмечайте только существенные ухудшения. Если ничего важного не ухудшилось — выберите последний вариант.', [
+      opt('money','Деньги / экономика'), opt('quality','Качество'), opt('deadline','Сроки'), opt('load','Нагрузка'), opt('customer','Результат для клиента'), opt('safety','Безопасность / обязательные требования'), opt('none','Ничего важного не ухудшилось'),
     ]),
   };
 
@@ -2265,6 +2311,14 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     return { label:'Диагностика', percent:50 };
   }
 
+  function latestFollowupBase() {
+    const history = getHistory();
+    return history.find(item =>
+      item?.experimentPlan?.status === EXPERIMENT_STATUS.ACTIVE ||
+      [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item?.cycleStatus)
+    ) || history.find(item => item?.experimentPlan) || history[0] || null;
+  }
+
   function startMode(mode) {
     state.entryMode = mode;
     state.answers = {};
@@ -2278,9 +2332,9 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 
     if (mode === DIAGNOSTIC_MODE.FOLLOWUP) {
       setDiagnosticMode(DIAGNOSTIC_MODE.FOLLOWUP);
-      const history = getHistory();
-      state.followupBase = history[0] || null;
-      state.path = ['fu_done', 'fu_effect', 'fu_guardrail'];
+      state.followupBase = latestFollowupBase();
+      state.activeExperiment = state.followupBase?.experimentPlan || null;
+      state.path = ['fu_done'];
     } else {
       // FULL/BUILD is resolved from maturity, not from the home-card label.
       state.mode = mode; // temporary compatibility until maturity_state is answered
@@ -2565,9 +2619,34 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     const currentId = state.path[state.index];
     if (!isAnswered(currentId)) return;
 
-    if (state.mode === 'followup' && currentId === 'fu_done' && state.answers.fu_done === 'no') {
-      finalizeFollowup();
-      return;
+    if (state.mode === DIAGNOSTIC_MODE.FOLLOWUP) {
+      if (currentId === 'fu_done') {
+        if (['no','different'].includes(state.answers.fu_done)) {
+          finalizeFollowup();
+          return;
+        }
+        state.path = state.path.slice(0, state.index + 1).concat(['fu_execution_match']);
+      } else if (currentId === 'fu_execution_match') {
+        if (['one','several'].includes(state.answers.fu_execution_match)) {
+          finalizeFollowup();
+          return;
+        }
+        state.path = state.path.slice(0, state.index + 1).concat(['fu_sample_ready']);
+      } else if (currentId === 'fu_sample_ready') {
+        if (['not_yet','cap','stopped','unknown'].includes(state.answers.fu_sample_ready)) {
+          finalizeFollowup();
+          return;
+        }
+        state.path = state.path.slice(0, state.index + 1).concat(['fu_measurement_valid']);
+      } else if (currentId === 'fu_measurement_valid') {
+        if (['no'].includes(state.answers.fu_measurement_valid)) {
+          finalizeFollowup();
+          return;
+        }
+        state.path = state.path.slice(0, state.index + 1).concat(['fu_effect']);
+      } else if (currentId === 'fu_effect') {
+        state.path = state.path.slice(0, state.index + 1).concat(['fu_guardrail']);
+      }
     }
 
     if (currentId === 'gate_legal' && ['yes','maybe','unknown'].includes(state.answers.gate_legal)) {
@@ -4760,65 +4839,275 @@ function finalizePrecision() {
     return CONFIDENCE.PRELIMINARY;
   }
 
-  function finalizeFollowup() {
+  function followupPlanContext() {
+    const base = state.followupBase || {};
+    const result = base.result || base;
+    const plan = base.experimentPlan || result.experimentPlan || state.activeExperiment || null;
+    return { base, result, plan };
+  }
+
+  function classifyFollowup() {
     const a = state.answers;
-    const base = state.followupBase;
-    let title, summary, action, metric, dont, next;
+    const { plan } = followupPlanContext();
     const guard = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
-    const guardProblem = guard.some(x => x !== 'none');
+    const redGuardrail = guard.some(x => x !== 'none');
 
     if (a.fu_done === 'no') {
-      title = 'Сначала разберитесь, почему не получилось выполнить прошлый совет';
-      summary = 'Пока само действие не было выполнено, нельзя понять, помогло бы оно продажам или нет.';
-      action = 'Запишите, что именно помешало: не хватило времени, денег, было слишком сложно, непонятно с чего начать или возникла другая причина. Затем упростите действие до такого шага, который реально можно выполнить.';
-      metric = 'Удалось ли выполнить выбранное действие в реальной работе.';
-      dont = 'Не делайте вывод, что прошлый совет был плохим или хорошим, пока вы его фактически не проверили.';
-      next = 'Когда действие будет выполнено, сравните результат до и после.';
-    } else if (a.fu_effect === 'better' && !guardProblem) {
-      title = a.fu_done === 'partial' ? 'Выполненная часть изменения выглядит полезной' : 'Изменение похоже на полезное';
-      summary = a.fu_done === 'partial'
-        ? 'Та часть действия, которую вы реально выполнили, дала улучшение, а деньги, качество, сроки, нагрузка и результат для клиента по вашим ответам не пострадали. Невыполненную часть пока считать проверенной нельзя.'
-        : 'Нужный показатель улучшился, а деньги, качество, сроки, нагрузка и результат для клиента по вашим ответам не пострадали.';
-      action = a.fu_done === 'partial'
-        ? 'Сохраните уже проверенную полезную часть. Оставшуюся часть выполняйте отдельно только если она всё ещё нужна, и не приписывайте ей уже полученный результат.'
-        : 'Оставьте это изменение в работе и некоторое время продолжайте наблюдать, сохраняется ли эффект на обычных заказах.';
-      metric = 'Сохраняется ли улучшение на следующих реальных заказах или клиентах.';
-      dont = 'Не увеличивайте резко объём только из-за одного удачного случая.';
-      next = 'Если улучшение сохраняется, пройдите проверку снова и посмотрите, что теперь сильнее всего мешает росту.';
-    } else if (a.fu_effect === 'worse' || guardProblem) {
-      title = 'В таком виде изменение лучше не оставлять';
-      summary = guardProblem
-        ? 'Даже если основной показатель стал лучше, одновременно ухудшилось что-то важное: деньги, качество, сроки, нагрузка или результат клиента.'
-        : 'После изменения нужный показатель стал хуже.';
-      action = 'Остановите или откатите изменение, если это возможно. Запишите, что именно ухудшилось, чтобы не повторять тот же шаг снова.';
-      metric = 'Вернулся ли результат к прежнему уровню после отмены изменения.';
-      dont = 'Не продолжайте только потому, что уже потратили на это время или деньги.';
-      next = 'После отката снова проверьте ситуацию и выберите другое действие.';
-    } else if (a.fu_effect === 'invalid') {
-      title = 'По этой проверке пока нельзя сделать вывод';
-      summary = 'Условия изменились или данные получились ненадёжными, поэтому непонятно, помогло действие или нет.';
-      action = 'Если ответ всё ещё важен, повторите проверку в более понятных условиях и заранее решите, что именно будете сравнивать.';
-      metric = 'Есть сравнимый результат до и после изменения.';
-      dont = 'Не принимайте решение по данным, которым сами не доверяете.';
-      next = 'Вернитесь к выводу после нормального сравнения.';
-    } else {
-      title = 'Пока непонятно, помогло изменение или нет';
-      summary = 'Разница пока слишком мала либо случаев ещё недостаточно.';
-      action = 'Посмотрите, дадут ли ещё несколько обычных заказов ясную картину. Если нет, не тяните проверку бесконечно — выберите другую вероятную причину и проверьте её.';
-      metric = 'Тот же показатель, который вы хотели улучшить прошлым действием.';
-      dont = 'Не продолжайте слабую проверку только потому, что уже начали.';
-      next = 'Когда данных будет достаточно, сохраните вывод или выберите следующий шаг.';
+      return { outcome:null, code:FOLLOWUP_CODE.NOT_EXECUTED, decision:'CONTINUE', reason:'Основное изменение не было выполнено.' };
+    }
+    if (a.fu_done === 'different') {
+      return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Вместо запланированного было выполнено другое изменение.' };
+    }
+    if (['one','several'].includes(a.fu_execution_match)) {
+      return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Одновременно менялись другие существенные факторы, поэтому причинный вывод нельзя приписать одному изменению.' };
+    }
+    if (a.fu_sample_ready === 'stopped') {
+      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.EARLY_STOP, decision:'ROLLBACK', reason:'Проверку остановили раньше из-за риска или вреда.' };
+    }
+    if (['not_yet','unknown'].includes(a.fu_sample_ready)) {
+      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'CONTINUE', reason:'Условие наблюдения ещё не выполнено.' };
+    }
+    if (a.fu_sample_ready === 'cap') {
+      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Лимит проверки достигнут, а достаточного evidence для решения нет.' };
+    }
+    if (a.fu_measurement_valid === 'no') {
+      return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Данные или условия оказались несопоставимыми.' };
+    }
+    if (a.fu_measurement_valid === 'unknown') {
+      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Нельзя уверенно определить, пригодно ли сравнение для решения.' };
+    }
+    if (redGuardrail) {
+      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный guardrail.' };
+    }
+    if (a.fu_effect === 'better') {
+      return { outcome:FOLLOWUP_OUTCOME.R_PLUS, code:FOLLOWUP_CODE.CONFIRMED, decision:'CONFIRM', reason:'Критерий успеха достигнут без отмеченного вреда guardrails.' };
+    }
+    if (['worse','same'].includes(a.fu_effect)) {
+      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.FAILED, decision:'REDESIGN', reason:'После полного валидного наблюдения критерий успеха не достигнут.' };
+    }
+    return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Эффект остался между заранее заданными ветками решения.' };
+  }
+
+  function buildStateTransition(followupClass) {
+    const { result: previousResult, plan } = followupPlanContext();
+    const previousCode = previousResult?.primaryCode || previousResult?.code || plan?.primaryCode || null;
+    const originMode = previousResult?.diagnosticMode || state.followupBase?.mode || null;
+
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS) {
+      const buildNext = {
+        BUILD_MARKET_TEST:'BUILD_FULFILLMENT',
+        BUILD_DEMAND:'BUILD_FULFILLMENT',
+        BUILD_FULFILLMENT:'BUILD_VALUE',
+        BUILD_VALUE:'BUILD_ECONOMICS',
+        BUILD_ECONOMICS:'BUILD_CAPACITY',
+      }[previousCode];
+
+      if (buildNext) {
+        return { type:'BUILD_PHASE_ADVANCED', fromPrimaryCode:previousCode, toPrimaryCode:buildNext, nextResult:makeResult(buildNext) };
+      }
+
+      if (previousCode === 'BUILD_CAPACITY') {
+        return {
+          type:'RESOLVED_TO_NEXT',
+          fromPrimaryCode:previousCode,
+          toPrimaryCode:null,
+          nextResult:makeResult('NO_CRITICAL_CONSTRAINT_FOUND')
+        };
+      }
+
+      const zone = primaryCodeZone(previousCode);
+      if (zone && !state.precisionExcludedZones.includes(zone)) state.precisionExcludedZones.push(zone);
+      if (originMode === DIAGNOSTIC_MODE.FULL || originMode === 'full') {
+        const nextResult = diagnoseFull();
+        const nextCode = nextResult?.primaryCode || nextResult?.code || null;
+        return {
+          type: nextCode && nextCode !== previousCode ? 'RESOLVED_TO_NEXT' : 'SAME_CONSTRAINT_NEW_INTERVENTION',
+          fromPrimaryCode:previousCode,
+          toPrimaryCode:nextCode,
+          nextResult
+        };
+      }
+      return { type:'RESOLVED_TO_NEXT', fromPrimaryCode:previousCode, toPrimaryCode:null, nextResult:null };
     }
 
-    state.result = {
-      code:'FOLLOWUP',
-      title, summary, action, metric, dont, next,
-      confidence:'—',
-      why:[base ? `Прошлый вывод: ${base.result?.title || base.title || 'сохранённый результат'}.` : 'Использован предыдущий сохранённый результат.'],
-      secondary:[],
-      date:new Date().toISOString(),
-      followup:true
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_MINUS) {
+      return {
+        type:'SAME_CONSTRAINT_NEW_INTERVENTION',
+        fromPrimaryCode:previousCode,
+        toPrimaryCode:previousCode,
+        nextResult:null
+      };
+    }
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_ZERO) {
+      return {
+        type:followupClass.decision === 'CONTINUE' ? 'CONTINUE_EVIDENCE' : 'REDESIGN_TEST',
+        fromPrimaryCode:previousCode,
+        toPrimaryCode:previousCode,
+        nextResult:null
+      };
+    }
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_INVALID) {
+      return {
+        type:'REDESIGN_TEST',
+        fromPrimaryCode:previousCode,
+        toPrimaryCode:previousCode,
+        nextResult:null
+      };
+    }
+    return { type:'CLOSED', fromPrimaryCode:previousCode, toPrimaryCode:previousCode, nextResult:null };
+  }
+
+  function followupHumanResult(followupClass, transition) {
+    const { result: previousResult, plan } = followupPlanContext();
+    const previousTitle = previousResult?.userTitle || previousResult?.title || 'прошлый вывод';
+    const primaryMetric = plan?.primaryMetric || previousResult?.metrics?.[0] || previousResult?.metric || 'основной показатель';
+    const partial = state.answers.fu_done === 'primary_only';
+
+    if (followupClass.code === FOLLOWUP_CODE.NOT_EXECUTED) return {
+      title:'Проверка ещё не состоялась',
+      summary:'Основное изменение не было выполнено, поэтому по его эффективности пока нельзя делать вывод.',
+      action:'Вернитесь к запланированному действию только если оно всё ещё актуально. Если выполнить его нереалистично — закройте этот план и сформулируйте более выполнимый следующий шаг.',
+      metric:'Факт выполнения основного изменения.',
+      dont:'Не называйте прошлую гипотезу подтверждённой или опровергнутой.',
+      next:'После фактического выполнения вернитесь к Follow-up.'
     };
+
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_INVALID) return {
+      title:'Эта проверка не даёт причинного вывода',
+      summary:followupClass.reason,
+      action:'Если ответ всё ещё нужен, повторите проверку в более чистых условиях: одно основное изменение, сопоставимый способ измерения и заранее зафиксированное условие наблюдения.',
+      metric:primaryMetric,
+      dont:'Не используйте этот результат как доказательство, что исходная гипотеза верна или неверна.',
+      next:'Пересоберите test design и повторяйте только если решение всё ещё важно.'
+    };
+
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_ZERO) return {
+      title:'Пока недостаточно evidence для решения',
+      summary:followupClass.reason,
+      action:followupClass.decision === 'CONTINUE'
+        ? 'Не меняйте гипотезу и intervention. Доведите заранее выбранное условие наблюдения до конца, если это безопасно и разумно.'
+        : 'Не тяните тест бесконечно. Пересоберите observation rule или выберите более информативный способ различить варианты.',
+      metric:primaryMetric,
+      dont:'Не записывайте этот исход как успех или провал.',
+      next:followupClass.decision === 'CONTINUE' ? (plan?.followupTrigger || 'Вернитесь после выполнения observation rule.') : 'После нового test design начните отдельную чистую проверку.'
+    };
+
+    if (followupClass.outcome === FOLLOWUP_OUTCOME.R_MINUS) return {
+      title:followupClass.code === FOLLOWUP_CODE.GUARDRAIL_FAIL ? 'Основная метрика не оправдывает вред по guardrail' : 'Это изменение не прошло проверку',
+      summary:followupClass.reason,
+      action:followupClass.decision === 'ROLLBACK'
+        ? 'Остановите или откатите это изменение, если это безопасно и возможно. Старую гипотезу не обязательно считать ложной: неудачным мог быть именно intervention.'
+        : 'Не повторяйте то же действие автоматически. Вернитесь к этому constraint и выберите другой механизм или перепроверьте сам diagnosis.',
+      metric:primaryMetric,
+      dont:'Не масштабируйте это изменение только потому, что уже вложили в него время или деньги.',
+      next:'Новый шаг должен быть отдельным решением, а не автоматическим повтором прошлого intervention.'
+    };
+
+    const moved = transition?.toPrimaryCode && transition.toPrimaryCode !== transition.fromPrimaryCode;
+    return {
+      title:partial ? 'Основное изменение прошло проверку, но вспомогательные шаги проверены не полностью' : 'Изменение прошло проверку',
+      summary:followupClass.reason + (moved ? ' После пересчёта главный constraint переместился.' : ''),
+      action:moved
+        ? 'Сохраните проверенное полезное изменение как рабочее состояние и переходите к новому primary constraint.'
+        : 'Сохраните проверенное изменение. Не масштабируйте его автоматически: сначала убедитесь, что экономика, качество и нагрузка остаются приемлемыми.',
+      metric:primaryMetric,
+      dont:'Не приписывайте результат невыполненным вспомогательным шагам и не добавляйте новые изменения без новой диагностики.',
+      next:moved ? 'Следующий цикл начинается с нового primary result.' : 'Проведите короткий State Transition Test и выберите следующий decision-critical шаг.'
+    };
+  }
+
+  function finalizeFollowup() {
+    const { base, result: previousResult, plan } = followupPlanContext();
+    const a = state.answers;
+    const cls = classifyFollowup();
+    const transition = buildStateTransition(cls);
+    const human = followupHumanResult(cls, transition);
+    const guardrails = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
+    const confidenceAfter =
+      cls.outcome === FOLLOWUP_OUTCOME.R_PLUS && a.fu_measurement_valid === 'yes' && a.fu_execution_match === 'no'
+        ? CONFIDENCE.HIGH
+        : (cls.outcome === FOLLOWUP_OUTCOME.R_MINUS ? CONFIDENCE.MEDIUM : CONFIDENCE.PRELIMINARY);
+
+    const followupSnapshot = {
+      followupId:'followup_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      experimentId:plan?.experimentId || null,
+      timestamp:new Date().toISOString(),
+      executionStatus:a.fu_done || null,
+      executionFidelity:a.fu_execution_match || null,
+      contaminationStatus:['one','several'].includes(a.fu_execution_match) ? 'MATERIAL' : (a.fu_execution_match === 'unknown' ? 'UNKNOWN' : 'NONE'),
+      observationCompletion:a.fu_sample_ready || null,
+      measurementValidity:a.fu_measurement_valid || null,
+      primaryMetricBefore:null,
+      primaryMetricAfter:a.fu_effect || null,
+      guardrailResults:guardrails,
+      outcomeClass:cls.outcome,
+      followupCode:cls.code,
+      decision:cls.decision,
+      stateTransition:transition.type,
+      newPrimaryCode:transition.toPrimaryCode || null,
+      confidenceAfter,
+      nextAction:human.action,
+      nextFollowupTrigger:cls.outcome === FOLLOWUP_OUTCOME.R_ZERO && cls.decision === 'CONTINUE' ? plan?.followupTrigger || null : null
+    };
+
+    state.result = {
+      resultId:'result_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      diagnosticMode:DIAGNOSTIC_MODE.FOLLOWUP,
+      businessGoal:previousResult?.businessGoal || base?.answers?.scope_goal || null,
+      diagnosticTarget:previousResult?.diagnosticTarget || base?.answers?.scope_target || null,
+      resultKind:RESULT_KIND.FOLLOWUP_RESULT,
+      primaryCode:transition.toPrimaryCode || previousResult?.primaryCode || previousResult?.code || 'FOLLOWUP',
+      userTitle:human.title,
+      userSummary:human.summary,
+      evidence:[
+        {type:'REPEATED_OBSERVATION',questionId:'fu_done',value:a.fu_done,label:'Выполнение запланированного изменения'},
+        {type:'USER_ESTIMATE',questionId:'fu_sample_ready',value:a.fu_sample_ready,label:'Выполнение observation rule'},
+        {type:'USER_ESTIMATE',questionId:'fu_measurement_valid',value:a.fu_measurement_valid,label:'Пригодность сравнения'}
+      ],
+      confidence:confidenceAfter,
+      action:human.action,
+      holdConstant:[human.dont],
+      metrics:[human.metric],
+      observationRule:human.next,
+      successRule:'Следующий цикл должен использовать новый state, а не автоматически повторять старое действие.',
+      failureRule:'Если новое действие снова не проходит проверку, пересчитать diagnosis/state.',
+      nextIfSuccess:transition.nextResult?.userTitle || transition.nextResult?.title || human.next,
+      nextIfFailure:human.next,
+      precisionAvailable:false,
+      precisionFields:[],
+      optionalOpportunity:null,
+      guardrails:[],
+      followup:true,
+      followupOutcome:cls.outcome,
+      followupCode:cls.code,
+      followupSnapshot,
+      stateTransition:transition,
+      experimentPlan:null,
+      title:human.title,
+      summary:human.summary,
+      action:human.action,
+      metric:human.metric,
+      dont:human.dont,
+      next:human.next,
+      kind:'Повторная проверка',
+      confidenceLabel:confidenceLabel(confidenceAfter),
+      why:[
+        'Прошлый вывод: ' + (previousResult?.userTitle || previousResult?.title || 'сохранённый результат') + '.',
+        cls.reason,
+        'Решение после проверки: ' + cls.decision + '.'
+      ],
+      secondary:[],
+      date:new Date().toISOString()
+    };
+
+    if (plan) {
+      state.activeExperiment = {
+        ...plan,
+        status: cls.outcome === FOLLOWUP_OUTCOME.R_ZERO && cls.decision === 'CONTINUE'
+          ? EXPERIMENT_STATUS.ACTIVE
+          : (cls.outcome === FOLLOWUP_OUTCOME.R_INVALID ? EXPERIMENT_STATUS.INVALIDATED : EXPERIMENT_STATUS.COMPLETED)
+      };
+    }
     renderResult(state.result);
   }
 
@@ -4947,7 +5236,9 @@ function finalizePrecision() {
         result,
         experimentPlan: result.experimentPlan || null,
         cycleStatus: result.followup
-          ? CYCLE_STATUS.COMPLETED
+          ? (result.followupOutcome === FOLLOWUP_OUTCOME.R_ZERO && result.followupSnapshot?.decision === 'CONTINUE'
+              ? CYCLE_STATUS.WAITING_FOR_EVIDENCE
+              : CYCLE_STATUS.COMPLETED)
           : (result.experimentPlan
               ? (result.experimentPlan.status === EXPERIMENT_STATUS.ACTIVE ? CYCLE_STATUS.ACTIVE : CYCLE_STATUS.PLANNED)
               : CYCLE_STATUS.DIAGNOSED),
@@ -5003,7 +5294,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
