@@ -343,6 +343,35 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
         <p id="resultDecisionRule"></p>
       </article>
 
+      <article class="card result-card" id="experimentPlanCard" hidden>
+        <h2>План проверки</h2>
+        <p class="microcopy" id="experimentPlanType"></p>
+        <div class="metric-box">
+          <span>Меняем одну вещь</span>
+          <strong id="experimentChange"></strong>
+        </div>
+        <div>
+          <strong>Как выполнить</strong>
+          <ol id="experimentSteps"></ol>
+        </div>
+        <div class="metric-box">
+          <span>Главный показатель</span>
+          <strong id="experimentPrimaryMetric"></strong>
+        </div>
+        <div class="metric-box">
+          <span>Что должно остаться прежним</span>
+          <strong id="experimentHold"></strong>
+        </div>
+        <div class="metric-box">
+          <span>Когда подводить итог</span>
+          <strong id="experimentObservation"></strong>
+        </div>
+        <p id="experimentBranches"></p>
+        <p class="microcopy" id="experimentEarlyStop"></p>
+        <button class="primary-btn" id="startExperimentButton" type="button">Начать проверку</button>
+        <p class="microcopy" id="experimentStartMessage" hidden></p>
+      </article>
+
       <article class="card result-card" id="dontCard">
         <h2>Пока не меняйте</h2>
         <p id="resultDont"></p>
@@ -372,7 +401,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   'use strict';
 
   const STORAGE_KEY = 'salesDiagnosticHistoryV1';
-  const APP_VERSION = '1.10.1-dev';
+  const APP_VERSION = '1.11.0-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -413,6 +442,21 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     INCOMPARABLE_DATA:'INCOMPARABLE_DATA',
   });
 
+  const EXPERIMENT_PLAN_TYPE = Object.freeze({
+    CHANGE_TEST:'CHANGE_TEST',
+    EVIDENCE_COLLECTION:'EVIDENCE_COLLECTION',
+    READINESS_FIX:'READINESS_FIX',
+    SAFETY_RESOLUTION:'SAFETY_RESOLUTION',
+    DELIVERY_VALIDATION:'DELIVERY_VALIDATION',
+    CORRECTIVE_VERIFICATION:'CORRECTIVE_VERIFICATION',
+  });
+  const EXPERIMENT_STATUS = Object.freeze({
+    DRAFT:'DRAFT',
+    ACTIVE:'ACTIVE',
+    COMPLETED:'COMPLETED',
+    INVALIDATED:'INVALIDATED',
+  });
+
   const CYCLE_STATUS = Object.freeze({
     DIAGNOSED: 'DIAGNOSED',
     PLANNED: 'PLANNED',
@@ -446,6 +490,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     precisionOriginMode: null,
     precisionSnapshot: null,
     precisionExcludedZones: [],
+    activeExperiment: null,
   };
 
   const opt = (value, label, hint = '') => ({ value, label, hint });
@@ -2167,6 +2212,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
     state.precisionOriginMode = null;
     state.precisionSnapshot = null;
     state.precisionExcludedZones = [];
+    state.activeExperiment = null;
     resetButton.hidden = true;
     const tpl = document.getElementById('homeTemplate').content.cloneNode(true);
     app.replaceChildren(tpl);
@@ -3658,6 +3704,132 @@ function finalizePrecision() {
     };
   }
 
+  function experimentPlanTypeFor(result) {
+    const code = result.primaryCode || result.code;
+    if (code === 'LEGAL_SAFETY_BLOCKER') return EXPERIMENT_PLAN_TYPE.SAFETY_RESOLUTION;
+    if (code === 'DATA_GAP' || ['DEMAND_UNCLEAR','DEMAND_WEAK','BUILD_MARKET_TEST','BUILD_DEMAND'].includes(code)) return EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION;
+    if (['BUILD_OFFER','BUILD_ROUTE','BUILD_ACCESS'].includes(code)) return EXPERIMENT_PLAN_TYPE.READINESS_FIX;
+    if (['BUILD_FULFILLMENT','BUILD_VALUE','BUILD_ECONOMICS','BUILD_CAPACITY'].includes(code)) return EXPERIMENT_PLAN_TYPE.DELIVERY_VALIDATION;
+    if (['FULFILLMENT','ECONOMICS','CAPACITY'].includes(code)) return EXPERIMENT_PLAN_TYPE.CORRECTIVE_VERIFICATION;
+    return EXPERIMENT_PLAN_TYPE.CHANGE_TEST;
+  }
+
+  function experimentChangeFor(result) {
+    const code = result.primaryCode || result.code;
+    const map = {
+      LEGAL_SAFETY_BLOCKER:'Проверить одно конкретное обязательное требование до рискованного действия.',
+      DATA_GAP:'Собрать только тот факт, который различает две конкурирующие рекомендации.',
+      DEMAND_WEAK:'Провести один ограниченный market test одного и того же предложения на обычных условиях.',
+      DEMAND_UNCLEAR:'Показать то же предложение ещё в одном релевантном месте, не меняя цену и сам продукт.',
+      ACCESS:'Проверить один конкретный источник подходящих новых обращений.',
+      DISTRIBUTION:'Изменить только один способ вернуть видимость того же предложения в выбранном канале.',
+      OFFER:'Добавить до переписки одну отсутствующую часть предложения, которая регулярно требует объяснения.',
+      FIT:'Вынести раньше одно условие, которое чаще всего делает обращение заведомо неподходящим.',
+      DECISION_GAP:'Добавить один ответ или доказательство на самое повторяющееся сомнение перед покупкой.',
+      PURCHASE_FRICTION:'Изменить один шаг оформления, на котором теряются уже готовые купить.',
+      START_FAILURE:'Исправить одну повторяющуюся причину срыва после подтверждения покупки или записи.',
+      ACTIVATION_FAILURE:'Исправить один барьер, из-за которого оплативший человек не начинает пользоваться продуктом.',
+      FIRST_VALUE_GAP:'Сократить один участок между началом и первым понятным полезным результатом.',
+      FULFILLMENT:'Исправить одну повторяющуюся причину серьёзного сбоя в уже принятых заказах.',
+      VALUE_FAILURE:'Исправить одну повторяющуюся причину, из-за которой клиентский результат не совпадает с обещанием.',
+      NEXT_CYCLE:'Начать сохранять один минимальный контекст, нужный для следующего естественного повода купить.',
+      CUSTOMER_MEMORY_GAP:'Начать сохранять один минимальный контекст, без которого теряется следующий естественный цикл клиента.',
+      SUB_RENEWAL:'Проверить одну повторяющуюся причину непродления среди тех, у кого реально наступил срок продления.',
+      ECONOMICS:'Выбрать и изменить только один главный экономический рычаг: цену, прямой расход или объём ручного труда.',
+      CAPACITY:'Изменить только один ресурс или правило работы, которое первым создаёт перегруз.',
+      BUILD_OFFER:'Сделать минимально достаточное предложение понятным до рыночного теста.',
+      BUILD_ROUTE:'Сделать один рабочий следующий шаг покупки или записи.',
+      BUILD_ACCESS:'Определить одно конкретное место, где предложение увидят подходящие люди.',
+      BUILD_MARKET_TEST:'Показать одно неизменное предложение ограниченной группе подходящих людей и зафиксировать реальные действия.',
+      BUILD_DEMAND:'Повторить качественный market test без одновременной смены аудитории, цены, route и предложения.',
+      BUILD_FULFILLMENT:'Исправить один выявленный сбой выполнения первой реальной продажи.',
+      BUILD_VALUE:'Проверить один конкретный обещанный клиентский результат после фактического выполнения.',
+      BUILD_ECONOMICS:'Проверить фактическую экономику одной сопоставимой продажи на текущих условиях.',
+      BUILD_CAPACITY:'Проверить, какой регулярный объём можно выполнять без аврала и падения качества.'
+    };
+    return map[code] || result.action || 'Изменить только один участок, связанный с текущим primary result.';
+  }
+
+  function experimentExecutionSteps(result, planType, changeOneThing) {
+    if (planType === EXPERIMENT_PLAN_TYPE.SAFETY_RESOLUTION) return [
+      'Сформулируйте одно конкретное требование, которое нужно проверить.',
+      'Получите подтверждение из применимого правила, официального источника или у компетентного специалиста.',
+      'Только после ясного ответа решайте, можно ли переходить к рискованному действию.'
+    ];
+    if (planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION) return [
+      changeOneThing,
+      'До начала зафиксируйте, что именно будет считаться наблюдением и к какому предложению/периоду оно относится.',
+      'Не меняйте параллельно другие части, которые способны сделать результат неинтерпретируемым.'
+    ];
+    if (planType === EXPERIMENT_PLAN_TYPE.READINESS_FIX) return [
+      changeOneThing,
+      'Проверьте, что после изменения человек может пройти этот шаг без вашей импровизации.',
+      'Только после этого переходите к реальному market test.'
+    ];
+    return [
+      'Зафиксируйте исходное состояние по главному показателю, если оно доступно.',
+      changeOneThing,
+      'На протяжении проверки записывайте главный показатель и защитные показатели, не добавляя второе независимое изменение.'
+    ];
+  }
+
+  function experimentPlanFor(result) {
+    const code = result.primaryCode || result.code;
+    if (result.followup || code === 'NO_CRITICAL_CONSTRAINT_FOUND') return null;
+
+    const planType = experimentPlanTypeFor(result);
+    const changeOneThing = experimentChangeFor(result);
+    const metrics = (result.metrics || []).filter(Boolean);
+    const holdConstant = (result.holdConstant || []).filter(Boolean);
+    const guardrails = (result.guardrails || []).filter(Boolean);
+
+    return {
+      experimentId:'experiment_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+      resultId:result.resultId || null,
+      primaryCode:code,
+      hypothesis:
+        planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION
+          ? 'Если собрать decision-critical evidence в сопоставимых условиях, станет понятно, какая следующая ветка решения верна.'
+          : 'Если изменить именно найденный участок и не менять остальные существенные факторы, основной показатель должен измениться в ожидаемую сторону без неприемлемого вреда guardrails.',
+      planType,
+      changeOneThing,
+      executionSteps:experimentExecutionSteps(result, planType, changeOneThing),
+      holdConstant,
+      primaryMetric:metrics[0] || null,
+      secondaryMetrics:metrics.slice(1,3),
+      guardrails,
+      observationRule:result.observationRule,
+      exposureCap:null,
+      timeCap:null,
+      budgetCap:null,
+      capRule:'Не задавать универсальный N. Если тест требует лимита людей, времени или бюджета — зафиксировать доступный безопасный предел до старта и не менять его задним числом.',
+      successRule:result.successRule,
+      failureRule:result.failureRule,
+      inconclusiveRule:'Observation rule ещё не выполнен или данных недостаточно, чтобы выбрать между ветками. Это R0, а не победа и не провал.',
+      invalidRule:'Одновременно изменилось что-то ещё существенное, условия стали несопоставимы или измерение оказалось ненадёжным. Это RX.',
+      nextIfSuccess:result.nextIfSuccess,
+      nextIfFailure:result.nextIfFailure,
+      nextIfInconclusive:'Не объявлять результат. Довести заранее выбранное наблюдение до конца либо пересобрать тест, если нужные события естественно не наступают.',
+      nextIfInvalid:'Не использовать этот тест для решения. Исправить измерение/дизайн и повторить только если решение всё ещё важно.',
+      followupTrigger:'Вернуться к Follow-up, когда observation rule выполнен. Досрочно — только при нарушении guardrail, safety/legal риска или явном вреде.',
+      earlyStopRule:'Остановить раньше только при вреде, safety/legal риске или нарушении guardrail. Отрицательный вывод нельзя объявлять до выполнения observation rule.',
+      status:EXPERIMENT_STATUS.DRAFT,
+      createdAt:new Date().toISOString(),
+      startedAt:null
+    };
+  }
+
+  function experimentPlanTypeLabel(planType) {
+    return ({
+      [EXPERIMENT_PLAN_TYPE.CHANGE_TEST]:'Проверяем одно изменение',
+      [EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION]:'Собираем один решающий факт',
+      [EXPERIMENT_PLAN_TYPE.READINESS_FIX]:'Сначала делаем шаг готовым к реальному тесту',
+      [EXPERIMENT_PLAN_TYPE.SAFETY_RESOLUTION]:'Сначала снимаем риск / обязательное требование',
+      [EXPERIMENT_PLAN_TYPE.DELIVERY_VALIDATION]:'Проверяем реальную продажу и выполнение',
+      [EXPERIMENT_PLAN_TYPE.CORRECTIVE_VERIFICATION]:'Исправляем ограничение и проверяем результат'
+    })[planType] || 'План проверки';
+  }
+
   function optionalOpportunityFor(primaryCode) {
     const a = state.answers;
     if (['LEGAL_SAFETY_BLOCKER','ECONOMICS','CAPACITY','FULFILLMENT','DATA_GAP'].includes(primaryCode)) return null;
@@ -3679,7 +3851,7 @@ function finalizePrecision() {
     const precisionFields = precisionQuestionsFor(code);
     const resultKind = resultKindCodeFor(code);
 
-    return {
+    const result = {
       // v2 stable contract
       resultId:'result_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
       diagnosticMode:state.diagnosticMode || state.mode,
@@ -3719,6 +3891,8 @@ function finalizePrecision() {
       secondary:secondaryRisks(code),
       date:new Date().toISOString(),
     };
+    result.experimentPlan = experimentPlanFor(result);
+    return result;
   }
 
   function adaptResultToModel(code, base) {
@@ -4673,6 +4847,71 @@ function finalizePrecision() {
       'При успехе: ' + (result.nextIfSuccess || result.next || '') +
       ' При неуспехе: ' + (result.nextIfFailure || 'вернуться к диагностике и выбрать другую причину.');
 
+    const experimentCard = document.getElementById('experimentPlanCard');
+    const experimentPlan = result.experimentPlan || experimentPlanFor(result);
+    if (experimentPlan) {
+      result.experimentPlan = experimentPlan;
+      experimentCard.hidden = false;
+      document.getElementById('experimentPlanType').textContent = experimentPlanTypeLabel(experimentPlan.planType);
+      document.getElementById('experimentChange').textContent = experimentPlan.changeOneThing;
+      const steps = document.getElementById('experimentSteps');
+      experimentPlan.executionSteps.forEach(step => {
+        const li=document.createElement('li');
+        li.textContent=step;
+        steps.appendChild(li);
+      });
+      document.getElementById('experimentPrimaryMetric').textContent =
+        [experimentPlan.primaryMetric, ...experimentPlan.secondaryMetrics].filter(Boolean).join(' · ') || 'Зафиксируйте наблюдаемый результат, который указан в decision rule.';
+      document.getElementById('experimentHold').textContent =
+        experimentPlan.holdConstant.length ? experimentPlan.holdConstant.join(' ') : 'Не добавляйте второе независимое изменение во время этой проверки.';
+      document.getElementById('experimentObservation').textContent = experimentPlan.observationRule || '';
+      document.getElementById('experimentBranches').textContent =
+        'R+: ' + experimentPlan.successRule +
+        ' R−: ' + experimentPlan.failureRule +
+        ' R0: ' + experimentPlan.inconclusiveRule +
+        ' RX: ' + experimentPlan.invalidRule;
+      document.getElementById('experimentEarlyStop').textContent =
+        experimentPlan.earlyStopRule + ' ' + experimentPlan.followupTrigger;
+
+      const startExperimentButton = document.getElementById('startExperimentButton');
+      if (experimentPlan.status === EXPERIMENT_STATUS.ACTIVE) {
+        startExperimentButton.disabled = true;
+        startExperimentButton.textContent = 'Проверка уже начата';
+      } else {
+        startExperimentButton.addEventListener('click', () => {
+          const activePlan = {
+            ...experimentPlan,
+            status:EXPERIMENT_STATUS.ACTIVE,
+            startedAt:new Date().toISOString()
+          };
+          result.experimentPlan = activePlan;
+          state.activeExperiment = activePlan;
+          const item = {
+            appVersion:APP_VERSION,
+            date:result.date,
+            mode:state.mode,
+            scope:state.answers.scope_name || '',
+            answers:state.answers,
+            result,
+            experimentPlan:activePlan,
+            cycleStatus:CYCLE_STATUS.ACTIVE
+          };
+          const saved = saveHistory(item);
+          const message=document.getElementById('experimentStartMessage');
+          message.hidden=false;
+          message.textContent=saved
+            ? 'План сохранён. Возвращайтесь к проверке после выполнения условия наблюдения или раньше, если сработает защитный стоп.'
+            : 'Не удалось сохранить план в браузере. Скопируйте результат и план, чтобы не потерять условие проверки.';
+          if (saved) {
+            startExperimentButton.disabled=true;
+            startExperimentButton.textContent='Проверка начата';
+            const saveButton=document.getElementById('saveResultButton');
+            if (saveButton) saveButton.disabled=true;
+          }
+        });
+      }
+    }
+
     const precisionCard = document.getElementById('precisionCard');
     if (result.precisionSummary) {
       precisionCard.hidden = false;
@@ -4706,6 +4945,8 @@ function finalizePrecision() {
         scope: state.answers.scope_name || state.followupBase?.scope || '',
         answers: state.answers,
         result,
+        experimentPlan: result.experimentPlan || null,
+        cycleStatus: result.experimentPlan?.status === EXPERIMENT_STATUS.ACTIVE ? CYCLE_STATUS.ACTIVE : CYCLE_STATUS.PLANNED,
       };
       const saved = saveHistory(item);
       const msg = document.getElementById('saveMessage');
@@ -4734,7 +4975,8 @@ function finalizePrecision() {
   function resultText(r) {
   const precision = r.precisionSummary ? `\n\nЧто показывают ваши цифры:\n${r.precisionSummary}\n${r.precisionCaveat || ''}` : '';
   const opportunity = r.optionalOpportunity ? `\n\nДополнительная возможность:\n${r.optionalOpportunity.title}` : '';
-  return `${r.userTitle || r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nУверенность:\n${r.confidenceLabel || confidenceLabel(r.confidence)}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать первым:\n${r.action}\n\nПока не менять:\n${(r.holdConstant || [r.dont]).filter(Boolean).join(' ')}\n\nЧто измерить:\n${(r.metrics || [r.metric]).filter(Boolean).join(' · ')}\n\nКогда оценивать:\n${r.observationRule || r.next || ''}\n\nКак принять решение:\nЕсли успех: ${r.successRule || ''}\nЕсли нет: ${r.failureRule || ''}\n\nЧто дальше:\nПри успехе: ${r.nextIfSuccess || r.next || ''}\nПри неуспехе: ${r.nextIfFailure || ''}${opportunity}`;
+  const plan = r.experimentPlan ? `\n\nПлан проверки:\nМеняем: ${r.experimentPlan.changeOneThing}\nКак выполнить:\n${r.experimentPlan.executionSteps.map((x,i)=>(i+1)+'. '+x).join('\n')}\nГлавный показатель: ${r.experimentPlan.primaryMetric || ''}\nКогда оценивать: ${r.experimentPlan.observationRule || ''}\nR+: ${r.experimentPlan.successRule}\nR−: ${r.experimentPlan.failureRule}\nR0: ${r.experimentPlan.inconclusiveRule}\nRX: ${r.experimentPlan.invalidRule}` : '';
+  return `${r.userTitle || r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nУверенность:\n${r.confidenceLabel || confidenceLabel(r.confidence)}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать первым:\n${r.action}\n\nПока не менять:\n${(r.holdConstant || [r.dont]).filter(Boolean).join(' ')}\n\nЧто измерить:\n${(r.metrics || [r.metric]).filter(Boolean).join(' · ')}\n\nКогда оценивать:\n${r.observationRule || r.next || ''}\n\nКак принять решение:\nЕсли успех: ${r.successRule || ''}\nЕсли нет: ${r.failureRule || ''}\n\nЧто дальше:\nПри успехе: ${r.nextIfSuccess || r.next || ''}\nПри неуспехе: ${r.nextIfFailure || ''}${plan}${opportunity}`;
 }
 
   function isAnswered(id) {
@@ -4757,7 +4999,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, adaptResultToModel, chooseDiscriminatorQuestions, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
