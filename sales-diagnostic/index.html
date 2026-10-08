@@ -3084,7 +3084,7 @@ button:focus-visible, input:focus-visible {
     const realCommitment = ['preorder','payment'].includes(a.build_test_type) || a.build_market === 'paid';
     if (!realCommitment) return false;
     const changed = Array.isArray(a.inheritance_map) ? a.inheritance_map : [];
-    return changed.includes('capacity') || a.inheritance_entry !== 'almost_all';
+    return s.mode === DIAGNOSTIC_MODE.HYBRID || changed.includes('capacity') || a.inheritance_entry !== 'almost_all';
   }
 
   function shouldAskSharedMateriality(s = state) {
@@ -3265,22 +3265,20 @@ button:focus-visible, input:focus-visible {
     if (state.mode === DIAGNOSTIC_MODE.HYBRID && currentId === 'inheritance_map') {
       const changed = state.answers.inheritance_map;
       if (Array.isArray(changed) && changed.includes('none')) {
-        state.result = makeResult('NO_CRITICAL_CONSTRAINT_FOUND', [
-          'Вы не отметили существенных изменений, которые нужно перепроверять отдельно. Уже работающие части не признаны проблемой автоматически.'
-        ]);
-        renderResult(state.result);
-        return;
-      }
-      if (Array.isArray(changed) && changed.includes('unknown')) {
+        // Reuse the existing business, but verify one real observation and the
+        // applicable safety gate before concluding that no new check is needed.
+        state.path = state.path.slice(0,state.index + 1).concat(['build_test_type','gate_legal','build_market']);
+      } else if (Array.isArray(changed) && changed.includes('unknown')) {
         state.result = makeResult('DATA_GAP', [
-          'Сейчас нельзя отделить, что действительно можно перенести из прежних продаж, а что изменилось. Полная перепроверка всего подряд дала бы лишние вопросы и не помогла выбрать первый шаг.'
+          'Сейчас нельзя отделить, что действительно можно перенести из прежних продаж, а что изменилось. Нужна минимальная проверка изменившейся части.'
         ]);
         renderResult(state.result);
         return;
+      } else {
+        const plausibility = hybridPlausibilityQuestions(changed);
+        const checks = hybridBuildQuestions(changed);
+        state.path = state.path.slice(0, state.index + 1).concat(['build_test_type','gate_legal', ...plausibility, ...checks]);
       }
-      const plausibility = hybridPlausibilityQuestions(changed);
-      const checks = hybridBuildQuestions(changed);
-      state.path = state.path.slice(0, state.index + 1).concat(['build_test_type','gate_legal', ...plausibility, ...checks]);
     }
 
     // Shared resources are conditional and separate from pilot capacity.
