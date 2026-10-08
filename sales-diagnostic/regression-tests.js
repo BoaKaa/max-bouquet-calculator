@@ -677,6 +677,74 @@ add('AUD-ROUTE-BACK-SKIP-NONCOMMERCIAL','P1','ROUTE',()=>{
     .every(x=>!s.path.includes(x))&&s.path[1]==='gate_legal');
 },['true']);
 
+
+const POPULATED_33={
+ LEGAL_SAFETY_BLOCKER:{gate_legal:'yes'},DATA_GAP:{core_access:'unknown',core_demand:'unknown'},
+ DEMAND_WEAK:{core_demand:'rare',deep_d1:'no',deep_d2:'few_requests',deep_d3:'no'},
+ DEMAND_UNCLEAR:{core_demand:'unknown',core_access:'unknown'},
+ OFFER:{core_offer:'no',deep_o1:['price','deadline']},
+ FIT:{core_fit:'bad',deep_fit1:['budget','deadline']},
+ ACCESS:{core_access:'none',core_demand:'regular',deep_a1:'yes',deep_a2:'no_decline',deep_a4:['social']},
+ DISTRIBUTION:{core_access:'unstable',deep_a2:'views_down',deep_a1:'yes'},
+ DECISION_GAP:{core_trust:'often',deep_t1:['price']},
+ PURCHASE_FRICTION:{core_conversion:'breaks',deep_c1:['payment']},
+ START_FAILURE:{core_start:'losses',deep_s1:'many'},
+ ACTIVATION_FAILURE:{core_start:'losses',deep_s1:'few',deep_s2:'rare'},
+ FIRST_VALUE_GAP:{core_start:'losses',deep_s1:'most',deep_s2:'rare'},
+ FULFILLMENT:{gate_fulfillment:'regular',deep_f1:['deadline'],deep_f2:'no'},
+ VALUE_FAILURE:{core_value:'issues',deep_v2:'yes',deep_v3:'quality'},
+ NEXT_CYCLE:{core_repeat:'rare',deep_r1:'yes',deep_r2:'sometimes'},
+ CUSTOMER_MEMORY_GAP:{core_repeat:'rare',deep_r1:'yes',deep_r2:'sometimes',deep_r3:'no'},
+ RECOVERY_FAILURE:{post_recovery:'often_unresolved'},
+ SUB_RENEWAL:{core_repeat:'rare',sub_cancel_known:'yes',sub_cancel_reason:['technical']},
+ ADVOCACY_GAP:{post_referral:'no'},REACTIVATION_GAP:{post_reactivation:'many'},
+ ECONOMICS:{gate_economics:'negative',deep_e1:'yes'},
+ CAPACITY:{gate_capacity:'overload',deep_cap1:'time',deep_cap2:'regular'},
+ BUILD_DEMAND:{build_market:'no',build_market_sample:20,build_market_audience:'yes',
+  build_market_test_complete:'yes',build_test_type:'payment'},
+ BUILD_OFFER:{build_offer:'no'},BUILD_ROUTE:{build_route:'no'},BUILD_ACCESS:{build_access:'no'},
+ BUILD_MARKET_TEST:{build_market:'reserved',build_market_quality:'warm_existing',build_test_type:'preorder'},
+ BUILD_FULFILLMENT:{build_market:'paid',build_market_quality:'target_normal',build_fulfillment:'no'},
+ BUILD_VALUE:{build_market:'paid',build_value:'no'},
+ BUILD_ECONOMICS:{build_econ_plausibility:'no',build_test_type:'payment'},
+ BUILD_CAPACITY:{build_pilot_capacity:'no',build_test_type:'payment'},
+ NO_CRITICAL_CONSTRAINT_FOUND:{gate_fulfillment:'never',gate_capacity:'reserve',gate_economics:'good',core_access:'regular'}
+};
+for(const [resultCode,caseAnswers] of Object.entries(POPULATED_33)){
+ add('POP-'+resultCode,'P1','EVIDENCE',()=>{
+  const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+  return String(models.every(model=>{
+   reset(resultCode.startsWith('BUILD_')?'build':'full',{scope_model:model,scope_goal:'new_sales',...caseAnswers});
+   const result=diag.makeResult(resultCode);
+   return result.primaryCode===resultCode && result.confidence!=='HIGH' &&
+     result.why.length>=1 && result.why.length<=4 &&
+     result.evidence.every(e=>(!e.questionId || JSON.stringify(e.value)===JSON.stringify(s.answers[e.questionId]))) &&
+     result.evidence.every(e=>e.questionId||e.type==='INFERENCE') &&
+     result.evidence.every(e=>e.type!=='UNKNOWN'||(s.answers[e.questionId]==='unknown')) &&
+     result.why.every(x=>typeof x==='string'&&!x.includes('undefined')) &&
+     !result.why.some(x=>/\b(?:confidence|evidence|fulfillment|capacity)\b/i.test(x));
+  }));
+ },['true']);
+}
+add('POP-NO-CONFIDENT-UNKNOWN','P1','EVIDENCE',()=>{
+ reset('full',{scope_model:'PRODUCT',core_access:'unknown',core_demand:'unknown'});
+ const r=diag.makeResult('DATA_GAP');
+ return r.confidence+'|'+String(r.evidence.every(e=>e.type==='UNKNOWN'||e.type==='INFERENCE'));
+},['PRELIMINARY|true']);
+add('POP-NO-FAKE-RENEWALS','P1','EVIDENCE',()=>{
+ reset('full',{scope_model:'SUBSCRIPTION',core_repeat:'rare',sub_cancel_reason:['technical']});
+ const r=diag.makeResult('SUB_RENEWAL');
+ return String(!r.why.join(' ').includes('Участники доходят до срока') &&
+    r.why.join(' ').includes('срок продления') &&
+    r.evidence.some(e=>e.questionId==='sub_cancel_reason'));
+},['true']);
+add('POP-DETAIL-REAL-SOURCE','P1','EVIDENCE',()=>{
+ reset('full',{scope_model:'PRODUCT',core_offer:'no',deep_o1:['price','deadline']});
+ const r=diag.makeResult('OFFER');
+ return String(r.why.length===2&&r.evidence.some(e=>e.questionId==='deep_o1'&&
+    JSON.stringify(e.value)==='["price","deadline"]'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
