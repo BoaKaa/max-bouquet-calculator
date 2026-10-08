@@ -123,7 +123,7 @@ full('F14','P1',{scope_goal:'repeat',core_repeat:'rare',deep_r1:'no'},['NO_CRITI
 full('F15','P1',{scope_goal:'repeat',core_repeat:'rare',deep_r1:'yes',deep_r2:'sometimes',deep_r3:'no'},['CUSTOMER_MEMORY_GAP']);
 full('F16','P1',{scope_goal:'income',gate_economics:'low',gate_capacity:'reserve',core_access:'unstable'},['ECONOMICS']);
 full('F17','P1',{scope_goal:'overload',gate_capacity:'overload',core_access:'none'},['CAPACITY']);
-full('F18','P1',{scope_goal:'new_sales',period_integrity:'closed',gate_economics:'good',gate_capacity:'reserve'},['DATA_GAP']);
+full('F18','P1',{scope_goal:'new_sales',period_integrity:'closed',gate_economics:'good',gate_capacity:'reserve',core_access:'unstable',deep_a1:'yes'},['DATA_GAP']);
 full('F19','P1',{scope_goal:'new_sales',period_integrity:'closed',gate_economics:'negative'},['ECONOMICS']);
 full('F20','P1',{core_demand:'unknown',core_access:'unknown',core_repeat:'unknown',gate_fulfillment:'regular',deep_f1:['deadline'],deep_f2:'no'},['FULFILLMENT']);
 full('F21','P1',{scope_goal:'new_sales',core_demand:'unknown',core_access:'unknown',gate_economics:'good',gate_capacity:'reserve'},['DATA_GAP']);
@@ -162,7 +162,17 @@ build('B12','P0',{gate_legal:'no',build_test_type:'payment',build_pilot_capacity
 build('B13','P0',{gate_legal:'no',build_test_type:'payment',build_econ_plausibility:'no'},['build_econ_plausibility'],['BUILD_ECONOMICS']);
 build('B14','P1',{gate_legal:'no',build_test_type:'payment',build_econ_plausibility:'unknown'},['build_econ_plausibility'],['BUILD_ECONOMICS','BUILD_MARKET_TEST']);
 build('B15','P0',{gate_legal:'unknown',build_test_type:'payment'},['gate_legal'],['LEGAL_SAFETY_BLOCKER']);
+add('B15-route','P0','BUILD',()=>{
+  reset('build',{gate_legal:'unknown',build_test_type:'payment'},['gate_legal','build_econ_plausibility']);
+  s.index=0; diag.goNext();
+  return code(s.result);
+},['LEGAL_SAFETY_BLOCKER']);
 add('B16','P1','BUILD',()=>{reset('build',{gate_legal:'unknown',build_test_type:'research'});return String(diag.legalBlocksCurrentAction(s.answers,s.mode));},['false']);
+add('B16-route','P1','BUILD',()=>{
+  reset('build',{gate_legal:'unknown',build_test_type:'research'},['gate_legal','build_econ_plausibility']);
+  s.index=0; diag.goNext();
+  return (code(s.result)||'NONE')+'|'+s.path[s.index];
+},['NONE|build_econ_plausibility']);
 
 /* HYBRID H01-H08. */
 add('H01','P1','HYBRID',()=>{reset('hybrid',{scope_model:'PRODUCT'});const q=diag.questions.inheritance_map;const xs=q.optionsFn?q.optionsFn(s):q.options;return String(xs.some(o=>o.value==='none'));},['true']);
