@@ -522,6 +522,29 @@ add('AUD-LANG-PREC-01','P2','LANGUAGE',()=>{
   return String(!/First Value Gap|Value\b|scope\/period\/route/i.test(x.message));
 },['true']);
 
+
+add('AUD-SAFETY-MATRIX','P0','SAFETY',()=>{
+  const model=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+  return String(model.every(m=>['research','waitlist'].every(type=>['yes','maybe','unknown'].every(legal=>{
+    reset('build',{scope_model:m,scope_name:'Товар',gate_legal:legal,build_test_type:type,build_market:'unknown'});
+    const r=diag.makeResult('BUILD_MARKET_TEST');
+    return r.nonCommercialOnly && r.experimentPlan?.nonCommercialOnly &&
+      r.action.includes('Не принимайте') &&
+      r.experimentPlan.executionSteps.some(x=>x.includes('Не принимайте'));
+  }))));
+},['true']);
+add('AUD-PREC-FRIEND-REAL','P1','PRECISION',()=>{
+  reset('precision',{scope_model:'PRODUCT',build_market_quality:'friend_support',gate_legal:'no',p_market_actions:1,p_market_paid:1});
+  s.precisionOriginMode='build';
+  return code(diag.reassessAfterPrecisionContradiction({primaryCode:'BUILD_MARKET_TEST'}, {outcome:'CONTRADICTED',message:'есть покупка знакомого'}));
+},['BUILD_MARKET_TEST']);
+add('AUD-FU-LEGAL-RESULT','P0','FOLLOWUP',()=>{
+  reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',fu_measurement_valid:'yes',fu_effect:'better',fu_market_payment:'yes',fu_guardrail:['none']});
+  s.followupBase={answers:{gate_legal:'unknown'},result:{primaryCode:'BUILD_MARKET_TEST',diagnosticMode:'build'},experimentPlan:{primaryCode:'BUILD_MARKET_TEST'}};
+  const c=diag.classifyFollowup(),tran=diag.buildStateTransition(c);
+  return String(tran.toPrimaryCode==='LEGAL_SAFETY_BLOCKER' && !/Продолжайте продажи/.test(tran.nextResult?.action||''));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
