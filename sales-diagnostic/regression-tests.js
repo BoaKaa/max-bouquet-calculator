@@ -485,6 +485,20 @@ add('AUD-HYBRID-BACK-01','P1','ROUTE',()=>{
   return String(s.path.includes('build_fulfillment')&&!s.path.includes('build_market_test_complete'));
 },['true']);
 
+
+add('AUD-HYBRID-NONE-01','P1','HYBRID',()=>{
+  reset('hybrid',{scope_model:'PRODUCT',inheritance_entry:'almost_all',inheritance_map:['none']},['inheritance_map']);
+  diag.goNext();return String(!s.result&&s.path.includes('gate_legal')&&s.path.includes('build_market'));
+},['true']);
+add('AUD-HYBRID-SHARED-01','P0','HYBRID',()=>{
+  reset('hybrid',{build_test_type:'payment',inheritance_entry:'almost_all',inheritance_map:['fulfillment']});
+  return String(diag.shouldAskSharedResources(s));
+},['true']);
+add('AUD-HYBRID-SHARED-02','P1','HYBRID',()=>{
+  reset('hybrid',{build_test_type:'research',inheritance_entry:'almost_all',inheritance_map:['fulfillment']});
+  return String(diag.shouldAskSharedResources(s));
+},['false']);
+
 const failures=[];
 for (const t of tests) {
   let got;
