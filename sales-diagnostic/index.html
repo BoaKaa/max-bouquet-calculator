@@ -432,7 +432,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.5-dev';
+  const APP_VERSION = '1.13.6-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -4394,6 +4394,49 @@ function finalizePrecision() {
     return map[code] || [];
   }
 
+  // Supporting answer IDs and their human-readable context. Do not create a
+  // second 'reason' by inventing a statistic or extrapolating a self-report.
+  const EVIDENCE_DETAIL_SOURCE = Object.freeze({
+    DEMAND_WEAK:['deep_d2','Что происходило при обращениях'],
+    DEMAND_UNCLEAR:['deep_d2','Что происходило при обращениях'],
+    ACCESS:['deep_a4','Реальные источники обращений'],
+    OFFER:['deep_o1','Что людям приходится выяснять'],
+    FIT:['deep_fit1','Причины неподходящих обращений'],
+    DECISION_GAP:['deep_t1','Повторяющиеся сомнения'],
+    PURCHASE_FRICTION:['deep_c1','Шаги срыва оформления'],
+    START_FAILURE:['deep_s1','Что происходит после покупки'],
+    ACTIVATION_FAILURE:['deep_s1','Сколько людей начинают пользоваться'],
+    FIRST_VALUE_GAP:['deep_s2','Первая польза после начала'],
+    FULFILLMENT:['deep_f1','Причины проблем при выполнении'],
+    VALUE_FAILURE:['deep_v3','Что не совпадает с обещанием'],
+    NEXT_CYCLE:['deep_r1','Естественный повод для повтора'],
+    CUSTOMER_MEMORY_GAP:['deep_r3','История предыдущих покупок'],
+    SUB_RENEWAL:['sub_cancel_reason','Известные причины непродления'],
+    ECONOMICS:['deep_e1','Разница в заработке между заказами'],
+    CAPACITY:['deep_cap1','Что первым не выдерживает нагрузку'],
+    BUILD_MARKET_TEST:['build_market_quality','Насколько показателен первый покупатель'],
+    BUILD_FULFILLMENT:['build_fulfillment','Проверка выполнения первой продажи'],
+    BUILD_VALUE:['build_value','Результат клиента после продажи'],
+    BUILD_ECONOMICS:['build_econ_plausibility','Оценка денег до первой продажи'],
+    BUILD_CAPACITY:['build_pilot_capacity','Возможность выполнить первые заказы']
+  });
+  function evidenceDetailText(code, already = []) {
+    const entry = EVIDENCE_DETAIL_SOURCE[code];
+    if (!entry) return '';
+    const [id, lead] = entry;
+    const value = state.answers[id];
+    const vals = Array.isArray(value) ? value : [value];
+    if (!vals.length || vals.some(v => v === undefined || v === null || ['none','unknown'].includes(v))) return '';
+    const q = questions[id];
+    if (!q) return '';
+    const options = q.optionsFn ? q.optionsFn(state) : q.options;
+    if (!Array.isArray(options)) return '';
+    const labels = vals.map(v => options.find(o => o.value === v)?.label).filter(Boolean);
+    if (!labels.length || labels.length !== vals.length) return '';
+    const detail = lead + ': ' + humanList(labels) + '.';
+    return already.some(line => line === detail) ? '' : detail;
+  }
+
   function buildEvidenceObjects(code, whyLines) {
     const a = state.answers;
     // Attribute each observed fact to the answer that produced it.
@@ -4409,6 +4452,7 @@ function finalizePrecision() {
       ['Среди неподходящих обращений повторяется', 'deep_fit1'],
       ['Покупателям регулярно приходится дополнительно', 'deep_o1'],
       ['По вашему ответу первый заказ оплачен', 'build_market'],
+      ...Object.values(EVIDENCE_DETAIL_SOURCE).map(([id, prefix]) => [prefix + ':', id]),
       ['Количество людей, которым вы показали', 'build_market_sample'],
       ['Вы показывали предложение, но обращений', 'build_market'],
       ['Вы указали, что эти люди могли купить', 'build_market_audience'],
@@ -4425,6 +4469,12 @@ function finalizePrecision() {
       ['Вы пока не выбрали конкретное место', 'build_access'],
       ['Был интерес к покупке или оплата', 'build_fulfillment'],
       ['Нужно подтвердить, что клиент получил', 'build_value'],
+      ['Вы пока не можете оценить регулярность прихода', 'core_access'],
+      ['Вы пока не можете подтвердить частоту реальных', 'core_demand'],
+      ['Вы отметили, что серьёзных регулярных срывов', 'gate_fulfillment'],
+      ['По вашей оценке, рабочий запас', 'gate_capacity'],
+      ['По вашей оценке, типичная продажа оставляет', 'gate_economics'],
+      ['По вашей оценке, продления происходят нечасто', 'core_repeat'],
       ['Выбранный период был необычным', 'period_integrity'],
       ['В этот период были изменения', 'period_context'],
       ['Новые люди, которые действительно могут купить', 'core_access'],
@@ -4459,7 +4509,8 @@ function finalizePrecision() {
       }
       if (questionId && (a[questionId] === undefined || a[questionId] === null)) questionId = null;
       const value = questionId ? a[questionId] : null;
-      const type = !questionId ? 'INFERENCE' : typeof value === 'number'
+      const unknownAnswer = value === 'unknown' || (Array.isArray(value) && value.includes('unknown'));
+      const type = !questionId ? 'INFERENCE' : unknownAnswer ? 'UNKNOWN' : typeof value === 'number'
         ? 'NUMBER' : repeatedIds.has(questionId) ? 'REPEATED_OBSERVATION' : 'USER_ESTIMATE';
       return { type, questionId, value, label };
     });
@@ -5676,12 +5727,25 @@ function finalizePrecision() {
     add(code === 'VALUE_FAILURE' && ['issues','no'].includes(a.core_value), 'Есть признаки, что часть клиентов не получает тот результат, который ожидала.');
     add(['NEXT_CYCLE','CUSTOMER_MEMORY_GAP'].includes(code) && a.core_repeat === 'rare', 'Повторная покупка здесь возможна, но клиенты возвращаются редко.');
     add(code === 'RECOVERY_FAILURE' && a.post_recovery === 'often_unresolved', 'Часть проблем после продажи остаётся без понятного решения для клиента.');
-    add(code === 'SUB_RENEWAL' && ['rare','sometimes'].includes(a.core_repeat), 'Участники доходят до срока продления, но заметная часть не продолжает подписку.');
+    add(code === 'SUB_RENEWAL' && ['rare','sometimes'].includes(a.core_repeat), 'По вашей оценке, продления происходят нечасто. Доля тех, у кого уже наступил срок продления, пока не проверена цифрами.');
     add(code === 'ADVOCACY_GAP' && a.post_referral === 'no', 'У довольного клиента сейчас нет простого понятного способа передать вас другому человеку.');
     add(code === 'REACTIVATION_GAP' && ['many','some'].includes(a.post_reactivation), 'Есть бывшие клиенты, для которых возвращение может быть уместным.');
     add(code === 'ECONOMICS' && ['negative','low','mixed','unknown'].includes(a.gate_economics), 'Пока неясно, сколько вы действительно зарабатываете на части продаж, либо заработок выглядит слишком низким.');
     add(code === 'CAPACITY' && ['limit','overload'].includes(a.gate_capacity), 'Вы уже близко к пределу нагрузки или не справляетесь с текущим объёмом.');
     add(['DEMAND_WEAK','DEMAND_UNCLEAR'].includes(code) && ['rare','unknown'].includes(a.core_demand), 'Пока мало реальных признаков, что люди активно пытаются купить такой товар или услугу.');
+    if (code === 'DATA_GAP') {
+      if (a.core_access === 'unknown') lines.push('Вы пока не можете оценить регулярность прихода подходящих новых клиентов.');
+      if (a.core_demand === 'unknown') lines.push('Вы пока не можете подтвердить частоту реальных обращений по этому предложению.');
+    }
+    if (code === 'NO_CRITICAL_CONSTRAINT_FOUND') {
+      if (a.gate_fulfillment === 'never') lines.push('Вы отметили, что серьёзных регулярных срывов заказов почти не бывает.');
+      if (a.gate_capacity === 'reserve') lines.push('По вашей оценке, рабочий запас для обычных заказов есть.');
+      if (a.gate_economics === 'good') lines.push('По вашей оценке, типичная продажа оставляет приемлемый заработок.');
+    }
+    if (lines.length < 2) {
+      const detail = evidenceDetailText(code,lines);
+      if (detail) lines.push(detail);
+    }
     if (!lines.length) {
       if (code === 'NO_CRITICAL_CONSTRAINT_FOUND') lines.push('В выбранных ответах нет конкретного подтверждения одной главной проблемы. Это не означает, что проблем вообще нет.');
       else if (code === 'DATA_GAP') lines.push('Чтобы выбрать между разными действиями, не хватает конкретного наблюдения. Причину пока нельзя считать подтверждённой.');
@@ -5717,7 +5781,7 @@ function finalizePrecision() {
     const a = state.answers;
     const observed = evidence.filter(item =>
       item.questionId && item.value !== undefined && item.value !== null &&
-      item.type !== 'INFERENCE'
+      item.type !== 'INFERENCE' && item.type !== 'UNKNOWN'
     );
     // Initial self-report is not independently verified. HIGH confidence
     // requires subsequent quantitative or otherwise validated evidence.
