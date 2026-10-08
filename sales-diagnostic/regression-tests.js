@@ -472,6 +472,19 @@ add('AUD-HIST-01','P1','HISTORY',()=>{
   return String(save1&&save2&&stored.initialDiagnosisSnapshot?.resultId==='original-audit'&&stored.initialAnswersSnapshot?.build_market==='unknown');
 },['true']);
 
+
+add('AUD-PREC-01','P1','PRECISION',()=>{
+  reset('precision',{build_market_quality:'friend_support',gate_legal:'no',p_market_paid:1,p_market_actions:1});
+  s.precisionOriginMode='build';
+  return diag.precisionEvaluate('BUILD_MARKET_TEST',{p_comparable:'yes',p_market_people:10,p_market_actions:1,p_market_paid:1}).outcome;
+},['CONTRADICTED']);
+add('AUD-HYBRID-BACK-01','P1','ROUTE',()=>{
+  reset('hybrid',{build_market_audience:'yes',build_market_sample:12},
+    ['build_market','build_market_sample','build_market_audience','build_market_test_complete','build_fulfillment','build_value']);
+  s.index=2;diag.invalidateDownstreamAnswers(2);
+  return String(s.path.includes('build_fulfillment')&&!s.path.includes('build_market_test_complete'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
