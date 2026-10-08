@@ -149,7 +149,7 @@ add('F23-late-geography','P1','ROUTE',()=>{reset('full',{scope_goal:'new_sales',
 const b={gate_legal:'no',build_test_type:'payment',build_econ_plausibility:'yes',build_pilot_capacity:'yes',build_offer:'yes',build_route:'yes',build_access:'yes'};
 build('B01','P1',Object.assign({},b,{build_market:'unknown'}),['build_econ_plausibility','build_pilot_capacity','build_offer','build_route','build_access','build_market'],['BUILD_MARKET_TEST']);
 build('B02','P1',Object.assign({},b,{build_market:'unknown'}),['build_offer','build_route','build_access','build_market'],['BUILD_MARKET_TEST']);
-build('B03','P1',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:20}),['build_offer','build_route','build_access','build_market'],['BUILD_DEMAND']);
+build('B03','P1',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:20,build_market_test_complete:'yes'}),['build_offer','build_route','build_access','build_market'],['BUILD_DEMAND']);
 build('B04','P1',Object.assign({},b,{build_market:'no',build_market_audience:'no',build_market_sample:30}),['build_offer','build_route','build_access','build_market'],['BUILD_MARKET_TEST']);
 build('B05','P1',Object.assign({},b,{build_market:'paid',build_market_quality:'friend_support'}),['build_offer','build_route','build_access','build_market','build_market_quality'],['BUILD_MARKET_TEST','DATA_GAP']);
 build('B06','P1',Object.assign({},b,{build_market:'paid',build_market_quality:'warm_existing'}),['build_offer','build_route','build_access','build_market','build_market_quality'],['BUILD_MARKET_TEST','BUILD_FULFILLMENT']);
@@ -302,6 +302,24 @@ const simulatedPrecision = [
   ['A-P11','FIRST_VALUE_GAP',{p_comparable:'yes',p_started:8,p_first_value:8},'CONTRADICTED']
 ];
 for (const [id,primaryCode,values,expected] of simulatedPrecision) precision(id,'P1',primaryCode,values,[expected]);
+
+
+/* Recheck: a zero-action BUILD market test must have completed an explicit
+ * pre-planned observation rule; one person is not repeatable market evidence. */
+build('RC-B17-one-person','P1',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:1,build_market_test_complete:'yes'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete'],['BUILD_MARKET_TEST']);
+build('RC-B18-unfinished','P1',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:20,build_market_test_complete:'no'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete'],['BUILD_MARKET_TEST']);
+build('RC-B19-unplanned','P1',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:20,build_market_test_complete:'unplanned'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete'],['BUILD_MARKET_TEST']);
+build('RC-B20-adequate','P1',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:20,build_market_test_complete:'yes'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete'],['BUILD_DEMAND']);
+add('RC-route-ask-completion','P1','ROUTE',()=>{
+  reset('build',Object.assign({},b,{build_market:'no',build_market_sample:20,build_market_audience:'yes'}),['build_market','build_market_sample','build_market_audience']);
+  s.index=2; diag.goNext();
+  return s.path[s.index]+'|'+String(s.result===null);
+},['build_market_test_complete|true']);
+add('RC-route-one-early-stop','P1','ROUTE',()=>{
+  reset('build',Object.assign({},b,{build_market:'no',build_market_sample:1,build_market_audience:'yes'}),['build_market','build_market_sample','build_market_audience']);
+  s.index=2; diag.goNext();
+  return code(s.result)+'|'+String(!s.path.includes('build_market_test_complete'));
+},['BUILD_MARKET_TEST|true']);
 
 const failures=[];
 for (const t of tests) {
