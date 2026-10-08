@@ -359,6 +359,29 @@ add('RC-history-clear-closed','P1','HISTORY',()=>{
   } finally {diag.writeHistoryStore(before);}
 },['probe-open']);
 
+
+/* Plain-language contract: inspect output of actual result/copy handlers. */
+add('LANG01-build-demand','P1','LANGUAGE',()=>{
+  reset('build',Object.assign({},b,{scope_name:'букеты',scope_model:'PRODUCT',build_market:'no',build_market_audience:'yes',build_market_sample:20,build_market_test_complete:'yes'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete']);
+  const r=diag.diagnoseBuild();r.experimentPlan=diag.experimentPlanFor(r);
+  const txt=diag.resultText(r)+' '+r.experimentPlan.inconclusiveRule+' '+r.experimentPlan.invalidRule;
+  return String(!/market.test|Observation rule|\\bR0\\b|\\bRX\\b|downstream|bottleneck|decision fork|\\broute\\b/i.test(txt));
+},['true']);
+add('LANG02-questions','P1','LANGUAGE',()=>{
+  const ids=['scope_name','build_test_type','build_market_sample','build_market_test_complete','build_market_quality'];
+  return String(ids.every(id=>diag.questions[id] && !/market test|observation rule/i.test(String(diag.questions[id].title))));
+},['true']);
+add('LANG03-export','P1','LANGUAGE',()=>{
+  reset('build',{build_market:'unknown',scope_name:'букеты',scope_model:'PRODUCT'});
+  const r=diag.makeResult('BUILD_MARKET_TEST');r.experimentPlan=diag.experimentPlanFor(r);
+  return String(!/Если проверка невалидна|Это R0|Это RX|Observation rule/.test(diag.resultText(r)));
+},['true']);
+add('LANG04-result-rules','P1','LANGUAGE',()=>{
+  reset('build',{scope_name:'торты на заказ',scope_model:'PRODUCT',build_market:'no',build_market_sample:20,build_market_audience:'yes',build_market_test_complete:'yes'});
+  const r=diag.makeResult('BUILD_DEMAND');
+  return String(!/market test|\\bB3\\b|fulfillment|route/.test([r.action,r.observationRule,r.nextIfSuccess,r.nextIfFailure].join(' ')));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
