@@ -430,7 +430,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.12.2-dev';
+  const APP_VERSION = '1.12.3-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -5491,7 +5491,16 @@ function finalizePrecision() {
   
   function confidenceFor(code) {
     const a = state.answers;
-    if (state.mode === 'build' || state.mode === 'hybrid') return CONFIDENCE.MEDIUM;
+    if (state.mode === 'build' || state.mode === 'hybrid') {
+      // A friend's supportive purchase, an untested proposal, or an unfinished
+      // test cannot support a medium-confidence market conclusion.
+      const weakMarketQuality = ['friend_support','special_terms','unknown'].includes(a.build_market_quality);
+      if (code === 'BUILD_MARKET_TEST' &&
+          (!a.build_market || ['unknown','no'].includes(a.build_market) || weakMarketQuality)) return CONFIDENCE.PRELIMINARY;
+      if (code === 'BUILD_DEMAND' && (a.build_market_test_complete !== 'yes' || !(a.build_market_sample > 1))) return CONFIDENCE.PRELIMINARY;
+      if (code === 'BUILD_FULFILLMENT' && !a.build_fulfillment) return CONFIDENCE.PRELIMINARY;
+      return CONFIDENCE.MEDIUM;
+    }
     const directEvidence =
       (code === 'FULFILLMENT' && a.gate_fulfillment === 'regular' && meaningful(a.deep_f1).length) ||
       (code === 'CAPACITY' && ['overload','limit'].includes(a.gate_capacity) && a.deep_cap1 && a.deep_cap1 !== 'unknown') ||
