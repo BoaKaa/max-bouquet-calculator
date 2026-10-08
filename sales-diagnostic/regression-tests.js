@@ -406,6 +406,35 @@ add('LANG07-plain-questions-across-models','P1','LANGUAGE',()=>{
   }));
 },['true']);
 
+
+add('AUD-SAFETY-01','P0','SAFETY',()=>{
+  reset('build',{scope_model:'PRODUCT',scope_name:'Съедобный букет',gate_legal:'unknown',build_test_type:'research',build_market:'unknown'});
+  const r=diag.makeResult('BUILD_MARKET_TEST'),p=r.experimentPlan;
+  return String(r.nonCommercialOnly===true && p.nonCommercialOnly===true && r.action.includes('Не принимайте') && p.executionSteps.some(x=>x.includes('Не принимайте')) && p.changeOneThing.includes('некоммерческие'));
+},['true']);
+add('AUD-SAFETY-02','P0','SAFETY',()=>{
+  reset('build',{scope_model:'PRODUCT',gate_legal:'unknown',build_test_type:'payment',build_market:'unknown'});
+  return code(diag.diagnoseBuild());
+},['LEGAL_SAFETY_BLOCKER']);
+add('AUD-BOOK-01','P1','BUILD',()=>{
+  reset('build',{scope_model:'PRODUCT',gate_legal:'no',build_market:'reserved',build_offer:'yes',build_route:'yes',build_access:'yes'},['build_offer','build_route','build_access','build_market']);
+  return code(diag.diagnoseBuild());
+},['BUILD_MARKET_TEST']);
+add('AUD-BACK-01','P1','ROUTE',()=>{
+  reset('build',{build_market:'paid',gate_legal:'no',build_test_type:'research'},['build_offer','build_market','build_market_sample','build_market_audience','build_market_test_complete']);
+  s.index=1;diag.invalidateDownstreamAnswers(1);diag.goNext();
+  return String(s.path.includes('build_market_quality') && !s.path.includes('build_market_sample') && !s.path.includes('build_market_test_complete'));
+},['true']);
+add('AUD-ECON-01','P1','HYBRID',()=>{
+  reset('hybrid',{scope_model:'PRODUCT',build_economics:'maybe'},['build_economics']);
+  return code(diag.diagnoseBuild());
+},['BUILD_ECONOMICS']);
+add('AUD-EVID-01','P1','RESULT',()=>{
+  reset('build',{scope_model:'PRODUCT',build_market:'no',build_market_sample:20,build_market_audience:'yes',build_market_test_complete:'yes'});
+  const r=diag.makeResult('BUILD_DEMAND');
+  return String(r.evidence.some(x=>x.questionId==='build_market_audience'&&x.value==='yes') && r.evidence.some(x=>x.questionId==='build_market_test_complete'&&x.value==='yes'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
