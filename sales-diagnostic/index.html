@@ -370,13 +370,14 @@ button:focus-visible, input:focus-visible {
       </article>
 
       <article class="card result-card" id="experimentPlanCard" hidden>
-        <h2>Как выполнить первый шаг</h2>
+        <h2>Хотите вернуться к этому решению позже?</h2>
+        <p class="microcopy">Можно сохранить этот план в браузере, выполнить предложенное действие и затем проверить, что изменилось.</p>
         <p class="microcopy" id="experimentPlanType" hidden></p>
         <div class="metric-box" hidden>
           <span>Меняем одну вещь</span>
           <strong id="experimentChange"></strong>
         </div>
-        <div>
+        <div hidden>
           <strong>Как выполнить</strong>
           <ol id="experimentSteps"></ol>
         </div>
@@ -394,7 +395,7 @@ button:focus-visible, input:focus-visible {
         </div>
         <p id="experimentBranches" hidden></p>
         <p class="microcopy" id="experimentEarlyStop" hidden></p>
-        <button class="primary-btn" id="startExperimentButton" type="button">Начать проверку</button>
+        <button class="primary-btn" id="startExperimentButton" type="button">Сохранить и начать выполнять</button>
         <p class="microcopy" id="experimentStartMessage" hidden></p>
       </article>
 
@@ -430,7 +431,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.12.4-dev';
+  const APP_VERSION = '1.12.5-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2196,8 +2197,8 @@ button:focus-visible, input:focus-visible {
       'Когда появится реальная возможность взять больше заказов без перегруза, снова оцените продажи.'
     ),
     BUILD_DEMAND: card(
-      'Сначала проверьте, готовы ли за это платить',
-      'Пока не хватает подтверждений, что люди захотят покупать на обычных условиях.',
+      'Люди пока не начали покупать',
+      'Предложение видели, но пока никто не захотел оформить заказ. Нужно понять, почему.',
       'Покажите конкретный товар или услугу с реальной ценой людям, которым это может быть нужно, и предложите сделать настоящий шаг к покупке.',
       'Запрос, запись, бронь, предзаказ или оплата.',
       'Не тратьте много времени и денег на запуск, пока нет реального интереса к покупке.',
@@ -4292,8 +4293,8 @@ function finalizePrecision() {
       BUILD_OFFER:['build_offer'],
       BUILD_ROUTE:['build_route'],
       BUILD_ACCESS:['build_access'],
-      BUILD_MARKET_TEST:['build_market','build_market_sample','build_market_audience','build_market_quality'],
-      BUILD_DEMAND:['build_market','build_market_sample','build_market_audience'],
+      BUILD_MARKET_TEST:['build_market','build_market_quality','build_market_sample','build_market_audience'],
+      BUILD_DEMAND:['build_market_sample','build_market','build_market_test_complete','build_market_audience'],
       BUILD_FULFILLMENT:['build_fulfillment'],
       BUILD_VALUE:['build_value'],
       BUILD_ECONOMICS:['build_econ_plausibility','build_economics'],
@@ -4380,9 +4381,9 @@ function finalizePrecision() {
         nextIfFailure:'Перепроверить ценность/задачу предложения, а не масштабировать показ.'
       },
       BUILD_DEMAND:{
-        observationRule:'После ещё одного показа того же товара или услуги подходящим людям по обычной цене, с возможностью сразу заказать.',
-        successRule:'Подходящие люди начинают писать по поводу заказа, бронировать или оплачивать.',
-        failureRule:'После повторного показа на обычных условиях никто не написал по поводу заказа, не забронировал и не оплатил.',
+        observationRule:'После того как вы выясните повторяющуюся причину отказов, исправите один пункт и покажете обновлённое предложение заранее выбранному числу новых людей.',
+        successRule:'После исправления конкретной причины люди начинают писать по поводу заказа, бронировать или оплачивать.',
+        failureRule:'После исправления и запланированного показа обращений по поводу покупки по-прежнему нет.',
         nextIfSuccess:'Если люди начали заказывать — проверьте выполнение заказов, довольны ли клиенты и сколько денег остаётся после расходов.',
         nextIfFailure:'Уточните, кому и для чего нужен товар или услуга, прежде чем снова предлагать купить.'
       },
@@ -5200,12 +5201,23 @@ function finalizePrecision() {
     }
 
     if (code === 'BUILD_DEMAND') {
+      out.title = model === 'PRODUCT'
+        ? 'Товар увидели, но заказывать пока не стали'
+        : 'Люди увидели предложение, но покупать пока не стали';
+      out.summary = 'Это ещё не означает, что товар или услуга никому не нужны. Сначала выясните, что именно остановило потенциальных покупателей.';
+      const reasons = {
+        PRODUCT:'цена, состав товара, срок изготовления, доставка или отсутствие подходящего повода',
+        APPOINTMENT:'цена, время записи, место, сама услуга или непонятный результат',
+        EXPERT:'цена, доверие, условия работы или непонимание результата',
+        EDUCATION:'цена, содержание курса, формат занятий, время или ожидаемая польза',
+        SUBSCRIPTION:'цена подписки, частота оплаты, содержание или ожидаемая польза'
+      }[model] || 'цена, условия, время или непонятная польза';
       out.action = numbered(
-        `Сформулируйте одно предложение ${scope}: что именно продаёте, для какой конкретной задачи, цена и когда можно получить.`,
-        'Покажите его людям, у которых такая задача реально может быть сейчас.',
-        'Просите не оценить идею, а сделать реальный шаг: заказать, записаться, внести бронь/предоплату или явно отказаться.'
+        `По возможности поговорите с несколькими людьми, которые видели ${scope}, но не заказали. Если связи с ними нет — спросите у следующих потенциальных покупателей.`,
+        `Спросите, что остановило от покупки: ${reasons}. Не спорьте с ответом и не пытайтесь сразу уговорить.`,
+        'Если одна причина повторяется, исправьте только её. Затем покажите обновлённое предложение другим людям и запишите, кто написал, заказал или оплатил.'
       );
-      out.metric = 'Реальные попытки купить/записаться, а не лайки, опросы и похвала.';
+      out.metric = 'Сколько людей увидели обновлённое предложение и сколько из них написали по поводу покупки, заказали или оплатили.';
     }
 
     if (code === 'BUILD_OFFER') {
@@ -5443,7 +5455,32 @@ function finalizePrecision() {
       repeat_work:'больше повторной работы с подходящими клиентами', next_learning:'больше подходящих продолжений обучения', repeat_income:'больше дохода от повторных клиентов', new_subscribers:'больше новых подписчиков', renewals:'больше продлений',
       active_members:'больше активных участников', less_churn:'меньше уходов из подписки', reactivate_members:'возвращать подходящих ушедших участников'
     };
-    if (targetLabels[a.scope_target]) lines.push(`Вы указали конкретную цель: ${targetLabels[a.scope_target]}. Поэтому приоритет выбирается именно под неё, а не под абстрактное «больше продаж».`);
+    // The chosen goal is context, not evidence for a business diagnosis.
+    // Evidence below must refer to actual answers and observable events.
+    if (code === 'BUILD_DEMAND') {
+      if (Number.isInteger(a.build_market_sample) && a.build_market_sample > 0) {
+        lines.push(`Вы показали товар или услугу ${a.build_market_sample} человек, которые могли купить, но ни один не обратился по поводу заказа и не оплатил.`);
+      } else {
+        lines.push('Вы показывали предложение, но обращений по поводу покупки не было. Точное число показов пока неизвестно.');
+      }
+      if (a.build_market_audience === 'yes') lines.push('Вы указали, что эти люди могли купить по предложенной цене и условиям.');
+      if (a.build_market_test_complete === 'yes') lines.push('Запланированный показ завершён. Теперь нужно понять причину отказов, а не повторять то же самое без изменений.');
+    }
+    if (code === 'BUILD_MARKET_TEST') {
+      if (!a.build_market || a.build_market === 'unknown') lines.push('Вы ещё не показали товар или услугу людям, которые могли бы их заказать.');
+      if (a.build_market === 'no') lines.push('Люди пока не обращались по поводу заказа, но наблюдений недостаточно для вывода о спросе.');
+      if (a.build_market_quality === 'friend_support') lines.push('Первую покупку сделал знакомый или родственник из поддержки — это не показывает, как поведут себя другие покупатели.');
+      if (a.build_market_quality === 'warm_existing') lines.push('Первый покупатель уже хорошо вас знал. Реакция новых людей пока неизвестна.');
+      if (a.build_market_quality === 'special_terms') lines.push('Первое согласие на покупку было на особых условиях. По ним нельзя судить об обычной цене.');
+      if (a.build_market_test_complete !== 'yes' && a.build_market === 'no') lines.push('Вы ещё не закончили запланированный показ или не определили заранее, сколько людей хотите опросить.');
+    }
+    if (code === 'BUILD_OFFER' && ['no','mostly_no','unknown'].includes(a.build_offer)) lines.push('По вашему ответу новый покупатель пока не может самостоятельно разобраться, что продаётся и как заказать.');
+    if (code === 'BUILD_ROUTE' && ['no','mostly_no','unknown'].includes(a.build_route)) lines.push('Человек, решивший купить, сейчас не может без вашей помощи завершить оформление заказа или оплату.');
+    if (code === 'BUILD_ACCESS' && ['no','mostly_no','unknown'].includes(a.build_access)) lines.push('Вы пока не выбрали конкретное место, где товар или услугу увидят возможные покупатели.');
+    if (code === 'BUILD_FULFILLMENT') lines.push('Был интерес к покупке или оплата, но ещё нужно проверить, получится ли выполнить обещанное.');
+    if (code === 'BUILD_ECONOMICS') lines.push('По вашему ответу пока не подтверждено, что после расходов и затраченного времени продажа принесёт приемлемый заработок.');
+    if (code === 'BUILD_CAPACITY') lines.push('Пока нет уверенности, что вы сможете выполнить следующие заказы без задержек и перегруза.');
+    if (code === 'BUILD_VALUE') lines.push('Нужно подтвердить, что клиент получил обещанный результат после покупки.');
     add(a.period_integrity && !['normal','unknown'].includes(a.period_integrity), 'Выбранный период был необычным: часть времени вы не могли работать в обычном режиме. Поэтому сравнивать продажи с другими периодами нужно осторожно.');
     add(meaningful(a.period_context).some(v => ['peak','slump','offer_change','channel_change'].includes(v)), 'В этот период были изменения — сезон, цены, товар или источник клиентов. Они могли заметно повлиять на результат.');
     add(code === 'ACCESS' && ['none','unstable'].includes(a.core_access), 'Новые люди, которые действительно могут купить у вас, приходят редко или нерегулярно.');
@@ -5893,7 +5930,7 @@ function finalizePrecision() {
     decisionText.style.whiteSpace = 'pre-line';
     decisionText.textContent =
       'Если стало лучше: ' + (result.successRule || 'оставьте изменение, если оно не ухудшает деньги и качество') +
-      '\nЕсли не стало: ' + (result.failureRule || 'не увеличивайте расходы, сначала выясните причину') + '.';
+      '\nЕсли не стало: ' + (result.failureRule || 'не увеличивайте расходы, сначала выясните причину');
     const nextText = document.getElementById('resultNext');
     nextText.style.whiteSpace = 'pre-line';
     nextText.textContent =
