@@ -223,7 +223,7 @@ function transition(prevCode,origin,cls,baseAnswers){
 }
 add('FU10','P1','FOLLOWUP',()=>{const t=transition('ACCESS','full',{outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'},{scope_goal:'new_sales',gate_economics:'good',gate_capacity:'reserve',core_access:'none'});return t.toPrimaryCode;},['NO_CRITICAL_CONSTRAINT_FOUND',null]);
 add('FU11','P1','FOLLOWUP',()=>{const t=transition('ACCESS','full',{outcome:'R-',decision:'REDESIGN',code:'FOLLOWUP_FAILED'});return t.type+'|'+t.toPrimaryCode;},['SAME_CONSTRAINT_NEW_INTERVENTION|ACCESS']);
-add('FU12','P1','FOLLOWUP',()=>{const t=transition('BUILD_MARKET_TEST','build',{outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'});return t.type+'|'+t.toPrimaryCode;},['BUILD_PHASE_ADVANCED|BUILD_FULFILLMENT']);
+add('FU12','P1','FOLLOWUP',()=>{const t=transition('BUILD_MARKET_TEST','build',{outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'});return t.type+'|'+t.toPrimaryCode;},['MARKET_INTEREST_ONLY|BUILD_MARKET_TEST']);
 add('FU13','P1','FOLLOWUP',()=>{const base={scope_goal:'new_sales',core_demand:'unknown',core_access:'unknown',gate_economics:'good',gate_capacity:'reserve'};reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',fu_measurement_valid:'yes',fu_data_gap_branch:'branch_0'});s.followupBase={answers:base,result:{primaryCode:'DATA_GAP',diagnosticMode:'full',dataGapBranches:diag.dataGapBranchesFor(base)},experimentPlan:{primaryCode:'DATA_GAP'}};const cl=diag.classifyFollowup();const t=diag.buildStateTransition(cl);return cl.code+'|'+t.toPrimaryCode;},['FOLLOWUP_REDIRECTED|ACCESS']);
 
 /* Precision extension checks required by later architecture. */
@@ -433,6 +433,43 @@ add('AUD-EVID-01','P1','RESULT',()=>{
   reset('build',{scope_model:'PRODUCT',build_market:'no',build_market_sample:20,build_market_audience:'yes',build_market_test_complete:'yes'});
   const r=diag.makeResult('BUILD_DEMAND');
   return String(r.evidence.some(x=>x.questionId==='build_market_audience'&&x.value==='yes') && r.evidence.some(x=>x.questionId==='build_market_test_complete'&&x.value==='yes'));
+},['true']);
+
+
+add('AUD-FU-01','P1','FOLLOWUP',()=>{
+  const x=classify({fu_done:'yes',fu_execution_match:'unknown',fu_sample_ready:'yes',fu_measurement_valid:'yes',fu_effect:'better',fu_guardrail:['none']});
+  return x.outcome+'|'+x.decision;
+},['R0|REDESIGN']);
+add('AUD-FU-02','P1','FOLLOWUP',()=>{
+  const x=transition('BUILD_MARKET_TEST','build',{outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'}, {gate_legal:'no'});
+  return x.type+'|'+x.toPrimaryCode;
+},['MARKET_INTEREST_ONLY|BUILD_MARKET_TEST']);
+add('AUD-FU-03','P1','FOLLOWUP',()=>{
+  const x=transition('BUILD_MARKET_TEST','build',{outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'}, {gate_legal:'no'});
+  s.answers.fu_market_payment='yes';
+  const y=diag.buildStateTransition({outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'});
+  return y.type+'|'+y.toPrimaryCode;
+},['BUILD_PHASE_ADVANCED|BUILD_FULFILLMENT']);
+add('AUD-FU-04','P0','FOLLOWUP',()=>{
+  transition('BUILD_MARKET_TEST','build',{outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'}, {gate_legal:'unknown'});
+  s.answers.fu_market_payment='yes';
+  const y=diag.buildStateTransition({outcome:'R+',decision:'CONFIRM',code:'FOLLOWUP_CONFIRMED'});
+  return y.toPrimaryCode;
+},['LEGAL_SAFETY_BLOCKER']);
+add('AUD-FU-05','P1','FOLLOWUP',()=>{
+  reset('followup',{fu_effect:'better'});s.path=['fu_effect'];s.index=0;
+  s.followupBase={result:{primaryCode:'BUILD_MARKET_TEST'},experimentPlan:{primaryCode:'BUILD_MARKET_TEST'}};
+  diag.goNext();return s.path.join('|');
+},['fu_effect|fu_market_payment|fu_guardrail']);
+add('AUD-HIST-01','P1','HISTORY',()=>{
+  reset('build',{scope_name:'Товар',scope_goal:'new_sales',build_market:'unknown'});
+  s.scopeId='audit-history-' + Date.now();s.activeCycleId=null;
+  const first={resultId:'original-audit',primaryCode:'BUILD_MARKET_TEST',userTitle:'Первый диагноз'};
+  const save1=diag.saveHistory({mode:'build',scope:'Товар',answers:{scope_name:'Товар',build_market:'unknown'},result:first,cycleStatus:'ACTIVE'});
+  const c=diag.loadHistoryStore().cycles.find(x=>x.result?.resultId==='original-audit');
+  const save2=diag.saveHistory({cycleId:c.cycleId,mode:'followup',answers:{fu_done:'yes'},result:{resultId:'followup-audit',followup:true,followupSnapshot:{followupId:'fu-audit'},primaryCode:'BUILD_MARKET_TEST',userTitle:'Повторная проверка'},cycleStatus:'COMPLETED'});
+  const stored=diag.loadHistoryStore().cycles.find(x=>x.cycleId===c.cycleId);
+  return String(save1&&save2&&stored.initialDiagnosisSnapshot?.resultId==='original-audit'&&stored.initialAnswersSnapshot?.build_market==='unknown');
 },['true']);
 
 const failures=[];
