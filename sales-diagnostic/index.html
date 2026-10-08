@@ -431,7 +431,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.12.6-dev';
+  const APP_VERSION = '1.13.0-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -1657,7 +1657,8 @@ button:focus-visible, input:focus-visible {
       '',
       s => ({
         PRODUCT:[
-          opt('paid','Кто-то оплатил, внёс предоплату, забронировал товар или сделал предзаказ'),
+          opt('paid','Кто-то оплатил заказ или внёс предоплату'),
+          opt('reserved','Кто-то забронировал товар или согласовал предзаказ, но ничего не оплатил'),
           opt('action','Кто-то всерьёз обсуждал заказ или оставил заявку, но пока не оплатил'),
           opt('no','Показывал(а), но никто не написал по поводу заказа, не забронировал и не оплатил'),
           opt('unknown','Ещё не показывал(а) товар подходящим покупателям'),
@@ -2785,6 +2786,17 @@ button:focus-visible, input:focus-visible {
   function invalidateDownstreamAnswers(fromIndex = state.index) {
     const staleIds = state.path.slice(fromIndex + 1);
     staleIds.forEach(id => { delete state.answers[id]; });
+    const changed = state.path[fromIndex];
+    if (['maturity_state','inheritance_entry','inheritance_map','build_market_audience'].includes(changed) ||
+        (changed === 'build_market' && state.mode === DIAGNOSTIC_MODE.BUILD)) {
+      state.path = state.path.slice(0, fromIndex + 1);
+    } else if (changed === 'build_market' && state.mode === DIAGNOSTIC_MODE.HYBRID) {
+      const stale = new Set(['build_market_quality','build_market_sample','build_market_audience','build_market_test_complete']);
+      state.path = state.path.slice(0,fromIndex+1).concat(state.path.slice(fromIndex+1).filter(id => !stale.has(id)));
+    } else if (changed === 'shared_resources' || changed === 'shared_materiality') {
+      const stale = new Set(changed === 'shared_resources' ? ['shared_materiality','shared_impact'] : ['shared_impact']);
+      state.path = state.path.slice(0,fromIndex+1).concat(state.path.slice(fromIndex+1).filter(id => !stale.has(id)));
+    }
     state.result = null;
     state.deepAdded = false;
   }
@@ -3262,7 +3274,7 @@ button:focus-visible, input:focus-visible {
     }
 
     if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(state.mode) && currentId === 'build_market') {
-      if (['paid','action'].includes(state.answers.build_market) && !state.path.includes('build_market_quality')) {
+      if (state.answers.build_market === 'paid' && !state.path.includes('build_market_quality')) {
         state.path.splice(state.index + 1, 0, 'build_market_quality');
       } else if (state.answers.build_market === 'no') {
         const add = [];
@@ -3442,7 +3454,7 @@ button:focus-visible, input:focus-visible {
   function buildEarlyResult(currentId) {
     const a = state.answers;
     if (currentId === 'gate_legal' && legalBlocksCurrentAction(a, state.mode)) return 'LEGAL_SAFETY_BLOCKER';
-    if (currentId === 'build_market' && a.build_market === 'unknown') return 'BUILD_MARKET_TEST';
+    if (currentId === 'build_market' && ['unknown','action','reserved'].includes(a.build_market)) return 'BUILD_MARKET_TEST';
     if (currentId === 'build_market' && a.build_market === 'no') return '';
     if (currentId === 'build_market_audience' && ['no','mixed','unknown'].includes(a.build_market_audience)) return 'BUILD_MARKET_TEST';
     if (currentId === 'build_market_audience' && a.build_market_audience === 'yes') {
@@ -3460,7 +3472,7 @@ button:focus-visible, input:focus-visible {
       build_market_quality: () => false,
       build_fulfillment: () => a.build_fulfillment !== 'yes',
       build_value: () => a.build_value !== 'yes',
-      build_economics: () => !['yes','maybe'].includes(a.build_economics),
+      build_economics: () => a.build_economics !== 'yes',
       build_capacity: () => !['yes','small'].includes(a.build_capacity),
     };
     const codes = {
@@ -3895,7 +3907,7 @@ function finalizePrecision() {
       ['build_market_quality', v => true, 'BUILD_MARKET_TEST'],
       ['build_fulfillment', v => v === 'yes', 'BUILD_FULFILLMENT'],
       ['build_value', v => v === 'yes', 'BUILD_VALUE'],
-      ['build_economics', v => ['yes','maybe'].includes(v), 'BUILD_ECONOMICS'],
+      ['build_economics', v => v === 'yes', 'BUILD_ECONOMICS'],
       ['build_capacity', v => ['yes','small'].includes(v), 'BUILD_CAPACITY'],
     ];
     for (const [id, pass, code] of buildChecks) {
@@ -3915,7 +3927,7 @@ function finalizePrecision() {
     // Positive market evidence does not mean the BUILD cycle is finished.
     // A non-paid action still needs a real purchase, and weak test quality
     // (friend support / special terms / unknown) cannot validate general demand.
-    if (a.build_market === 'action') return makeResult('BUILD_MARKET_TEST');
+    if (['action','reserved'].includes(a.build_market)) return makeResult('BUILD_MARKET_TEST');
     if (a.build_market === 'paid') {
       const quality = a.build_market_quality;
       if (['friend_support','special_terms','unknown'].includes(quality)) return makeResult('BUILD_MARKET_TEST');
@@ -4308,7 +4320,12 @@ function finalizePrecision() {
     const a = state.answers;
     const availableIds = ids.filter(id => a[id] !== undefined && a[id] !== null);
     return whyLines.map((label, index) => {
-      const questionId = availableIds[index] || availableIds[0] || ids[index] || null;
+      let questionId = availableIds[index] || availableIds[0] || ids[index] || null;
+      if (code === 'BUILD_DEMAND') {
+        if (label.includes('Количество людей') || label.includes('Точное число показов')) questionId = 'build_market_sample';
+        else if (label.includes('эти люди могли купить')) questionId = 'build_market_audience';
+        else if (label.includes('Запланированный показ')) questionId = 'build_market_test_complete';
+      }
       const value = questionId ? a[questionId] : null;
       const repeatedIds = new Set([
         'gate_fulfillment','core_access','core_offer','core_fit','core_trust',
@@ -4419,6 +4436,7 @@ function finalizePrecision() {
 
   function experimentChangeFor(result) {
     const code = result.primaryCode || result.code;
+    if (result.nonCommercialOnly) return 'Провести только некоммерческие разговоры или собрать необязательные отклики без заказов и оплаты.';
     const map = {
       LEGAL_SAFETY_BLOCKER:'Проверить одно конкретное обязательное требование до рискованного действия.',
       DATA_GAP:'Собрать только тот факт, который различает две конкурирующие рекомендации.',
@@ -4454,6 +4472,11 @@ function finalizePrecision() {
   }
 
   function experimentExecutionSteps(result, planType, changeOneThing) {
+    if (result.nonCommercialOnly) return [
+      'Уточните у подходящих людей потребность и желаемые условия.',
+      'Не принимайте заказы, бронирования, предоплату или оплату и не обещайте продажу.',
+      'Запишите ответы. Обязательные требования проверьте до предложения реальной продажи.'
+    ];
     if (planType === EXPERIMENT_PLAN_TYPE.SAFETY_RESOLUTION) return [
       'Сформулируйте одно конкретное требование, которое нужно проверить.',
       'Получите подтверждение из применимого правила, официального источника или у компетентного специалиста.',
@@ -4490,6 +4513,7 @@ function finalizePrecision() {
       experimentId:'experiment_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
       resultId:result.resultId || null,
       primaryCode:code,
+      nonCommercialOnly:!!result.nonCommercialOnly,
       hypothesis:
         planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION
           ? 'Один конкретный факт поможет понять, что делать дальше.'
@@ -4642,6 +4666,27 @@ function finalizePrecision() {
       secondary:secondaryRisks(code),
       date:new Date().toISOString(),
     };
+    const answers = state.answers;
+    if (state.mode !== DIAGNOSTIC_MODE.FULL && code.startsWith('BUILD_') &&
+        ['research','waitlist'].includes(answers.build_test_type) &&
+        ['yes','maybe','unknown'].includes(answers.gate_legal)) {
+      result.nonCommercialOnly = true;
+      result.holdConstant = ['До выяснения обязательных требований не принимайте заказы, бронирования, предоплату или оплату.'];
+      result.nextIfSuccess = 'Зафиксируйте ответы и проверьте обязательные требования до первой продажи.';
+      result.nextIfFailure = 'Уточните потребность, но не принимайте коммерческих обязательств.';
+      if (['BUILD_MARKET_TEST','BUILD_DEMAND','BUILD_OFFER','BUILD_ROUTE','BUILD_ACCESS'].includes(code)) {
+        result.userTitle = 'Изучите потребность, пока продажа не разрешена';
+        result.title = result.userTitle;
+        result.userSummary = 'Можно выяснять интерес и готовить предложение, но это не разрешение принимать заказы.';
+        result.action = 'Поговорите с несколькими подходящими людьми: какая задача у них есть и какие условия важны. Не принимайте заказы, бронирования, предоплату или оплату.';
+        result.metrics = ['Число разговоров и повторяющиеся потребности или вопросы.'];
+        result.metric = result.metrics[0];
+        result.observationRule = 'После заранее выбранного числа некоммерческих разговоров.';
+        result.successRule = 'Выяснилась повторяющаяся потребность без приёма заказов и денег.';
+        result.failureRule = 'Потребность остаётся неясной; вывод о готовности платить делать нельзя.';
+        result.precisionAvailable = false;
+      }
+    }
     result.experimentPlan = experimentPlanFor(result);
     return result;
   }
@@ -5468,6 +5513,7 @@ function finalizePrecision() {
     }
     if (code === 'BUILD_MARKET_TEST') {
       if (!a.build_market || a.build_market === 'unknown') lines.push('Вы ещё не показали товар или услугу людям, которые могли бы их заказать.');
+      if (a.build_market === 'reserved') lines.push('Была бронь или согласование заказа, но оплата пока не подтверждена.');
       if (a.build_market === 'no') lines.push('Люди пока не обращались по поводу заказа, но наблюдений недостаточно для вывода о спросе.');
       if (a.build_market_quality === 'friend_support') lines.push('Первую покупку сделал знакомый или родственник из поддержки — это не показывает, как поведут себя другие покупатели.');
       if (a.build_market_quality === 'warm_existing') lines.push('Первый покупатель уже хорошо вас знал. Реакция новых людей пока неизвестна.');
@@ -5534,7 +5580,7 @@ function finalizePrecision() {
       const weakMarketQuality = ['friend_support','special_terms','unknown'].includes(a.build_market_quality);
       if (code === 'BUILD_MARKET_TEST' &&
           (!a.build_market || ['unknown','no'].includes(a.build_market) || weakMarketQuality)) return CONFIDENCE.PRELIMINARY;
-      if (code === 'BUILD_DEMAND' && (a.build_market_test_complete !== 'yes' || !(a.build_market_sample > 1))) return CONFIDENCE.PRELIMINARY;
+      if (code === 'BUILD_DEMAND' && (a.build_market_test_complete !== 'yes' || !Number.isInteger(a.build_market_sample) || a.build_market_sample <= 3)) return CONFIDENCE.PRELIMINARY;
       if (code === 'BUILD_FULFILLMENT' && !a.build_fulfillment) return CONFIDENCE.PRELIMINARY;
       return CONFIDENCE.MEDIUM;
     }
@@ -6124,7 +6170,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
