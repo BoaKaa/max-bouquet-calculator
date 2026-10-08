@@ -1701,6 +1701,15 @@ button:focus-visible, input:focus-visible {
       opt('unknown','Не могу уверенно определить'),
     ]),
 
+    build_market_test_complete: q('build_market_test_complete', 'Проверяем, можно ли судить о спросе',
+      'Вы завершили проверку в том объёме, который решили сделать заранее, до получения первых ответов?',
+      'Если заранее не определяли, скольким подходящим людям покажете предложение, не считайте отсутствие покупок доказательством слабого спроса. Один человек в любом случае не показывает закономерность.', [
+        opt('yes','Да, запланированное число подходящих людей увидело предложение'),
+        opt('no','Нет, планировали показать ещё людям'),
+        opt('unplanned','Заранее не определяли объём проверки'),
+        opt('unknown','Не уверен(а), что проверка завершена'),
+      ]),
+
     build_market_quality: dynamicQ('build_market_quality', 'Новое предложение: насколько показателен первый интерес',
       'Возьмите самый сильный случай из тех, кто уже сделал шаг к покупке. Кто это был и на каких условиях?',
       'Нам важно понять, похож ли этот случай на обычную будущую продажу. Покупка знакомого или большая скидка тоже дают информацию, но по ним нельзя уверенно судить об обычных покупателях.',
@@ -3262,6 +3271,15 @@ button:focus-visible, input:focus-visible {
       }
     }
 
+    if (['build','hybrid'].includes(state.mode) &&
+        currentId === 'build_market_audience' &&
+        state.answers.build_market_audience === 'yes' &&
+        Number.isInteger(state.answers.build_market_sample) &&
+        state.answers.build_market_sample > 1 &&
+        !state.path.includes('build_market_test_complete')) {
+      state.path.splice(state.index + 1, 0, 'build_market_test_complete');
+    }
+
     // Stop early in BUILD/HYBRID: the first failed meaningful gate is the current job.
     if (state.mode === 'build' || state.mode === 'hybrid') {
       const early = buildEarlyResult(currentId);
@@ -3427,7 +3445,10 @@ button:focus-visible, input:focus-visible {
     if (currentId === 'build_market' && a.build_market === 'no') return '';
     if (currentId === 'build_market_audience' && ['no','mixed','unknown'].includes(a.build_market_audience)) return 'BUILD_MARKET_TEST';
     if (currentId === 'build_market_audience' && a.build_market_audience === 'yes') {
-      return Number.isFinite(a.build_market_sample) && a.build_market_sample > 0 ? 'BUILD_DEMAND' : 'BUILD_MARKET_TEST';
+      return Number.isInteger(a.build_market_sample) && a.build_market_sample > 1 ? '' : 'BUILD_MARKET_TEST';
+    }
+    if (currentId === 'build_market_test_complete') {
+      return a.build_market_test_complete === 'yes' ? 'BUILD_DEMAND' : 'BUILD_MARKET_TEST';
     }
     const fail = {
       build_econ_plausibility: () => !['yes','plausible'].includes(a.build_econ_plausibility),
@@ -3882,8 +3903,11 @@ function finalizePrecision() {
     }
     if (a.build_market === 'no') {
       const validAudience = a.build_market_audience === 'yes';
-      const hasSample = Number.isFinite(a.build_market_sample) && a.build_market_sample > 0;
-      if (!validAudience || !hasSample) return makeResult('BUILD_MARKET_TEST');
+      const hasMoreThanOneObservation = Number.isInteger(a.build_market_sample) && a.build_market_sample > 1;
+      const testComplete = a.build_market_test_complete === 'yes';
+      // Avoid inferring weak demand from one rejection or from an unfinished/unplanned test.
+      // This is a minimum evidence guard, not a universal "N is sufficient" benchmark.
+      if (!validAudience || !hasMoreThanOneObservation || !testComplete) return makeResult('BUILD_MARKET_TEST');
       return makeResult('BUILD_DEMAND');
     }
 
