@@ -432,7 +432,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.3-dev';
+  const APP_VERSION = '1.13.4-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3051,7 +3051,7 @@ button:focus-visible, input:focus-visible {
   function fullPeriodQuestions(s = state) {
     const goal = s.answers.scope_goal;
     const out = ['scope_period','period_integrity'];
-    if (['new_sales','stable'].includes(goal)) out.push('period_context');
+    if (goal === 'stable') out.push('period_context');
     return out;
   }
 
@@ -3086,7 +3086,8 @@ button:focus-visible, input:focus-visible {
   });
 
   function shouldAskScopeRoute(s = state) {
-    return [DIAGNOSTIC_MODE.FULL, DIAGNOSTIC_MODE.HYBRID].includes(s.mode);
+    // The current diagnosis never uses scope_route. Defer this inert question.
+    return false;
   }
 
   function shouldAskScopeGeography(s = state) {
@@ -3256,6 +3257,20 @@ button:focus-visible, input:focus-visible {
       return;
     }
 
+    if (currentId === 'build_test_type' && state.mode === DIAGNOSTIC_MODE.BUILD &&
+        ['research','waitlist'].includes(state.answers.build_test_type)) {
+      const premature = new Set(['build_econ_plausibility','build_pilot_capacity','build_route','build_market_context']);
+      state.path = state.path.filter(id => !premature.has(id));
+    }
+    if (currentId === 'core_access' && state.answers.core_access === 'none' &&
+        state.mode === DIAGNOSTIC_MODE.FULL) {
+      const withoutDenominator = new Set(['core_fit','core_trust','core_conversion']);
+      state.path = state.path.filter(id => !withoutDenominator.has(id));
+    }
+    if (currentId === 'deep_a2' && ['views_down','responses_down','buy_down'].includes(state.answers.deep_a2) &&
+        state.mode === DIAGNOSTIC_MODE.FULL && !state.path.includes('period_context')) {
+      state.path.splice(state.index + 1,0,'period_context');
+    }
     if (currentId === 'gate_fulfillment' && state.answers.scope_model === 'PRODUCT' && state.answers.gate_fulfillment === 'never') {
       state.path = state.path.filter(id => !['core_start','core_value'].includes(id));
     }
@@ -3513,6 +3528,7 @@ button:focus-visible, input:focus-visible {
       return Number.isInteger(a.build_market_sample) && a.build_market_sample > 1 ? '' : 'BUILD_MARKET_TEST';
     }
     if (currentId === 'build_market_test_complete') {
+      if (['research','waitlist'].includes(a.build_test_type)) return 'BUILD_MARKET_TEST';
       return a.build_market_test_complete === 'yes' ? 'BUILD_DEMAND' : 'BUILD_MARKET_TEST';
     }
     const fail = {
@@ -3545,6 +3561,9 @@ button:focus-visible, input:focus-visible {
       REC:[], REACT:[], ADV:[]
     };
     if (zone === 'R' && state.answers.scope_model === 'SUBSCRIPTION') return [];
+    if (zone === 'A' && state.answers.scope_goal === 'new_sales' &&
+        state.answers.scope_target !== 'less_channel_dependency')
+      return ['deep_a1','deep_a2','deep_a4'];
     return deepMap[zone] || [];
   }
 
@@ -3970,6 +3989,8 @@ function finalizePrecision() {
       if (!pass(a[id])) return makeResult(code);
     }
     if (a.build_market === 'no') {
+      // In noncommercial research the interviewee had no buying opportunity.
+      if (['research','waitlist'].includes(a.build_test_type)) return makeResult('BUILD_MARKET_TEST');
       const validAudience = a.build_market_audience === 'yes';
       const hasMoreThanOneObservation = Number.isInteger(a.build_market_sample) && a.build_market_sample > 1;
       const testComplete = a.build_market_test_complete === 'yes';
