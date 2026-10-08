@@ -611,6 +611,55 @@ add('AUD-EVID-BUILD-NO-INVENTED-PAYMENT','P1','RESULT',()=>{
     !r.evidence.some(e=>e.questionId==='build_market'&&e.value==='paid'));
 },['true']);
 
+
+function auditRoute(mode, v) {
+  diag.startMode(mode);
+  const ids=[];
+  for(let i=0;i<50&&!s.result;i++) {
+    const id=s.path[s.index];ids.push(id);
+    const q=diag.questions[id];
+    if (!q) return {ids,result:'MISSING'};
+    if(Object.prototype.hasOwnProperty.call(v,id))s.answers[id]=v[id];
+    else { const opts=q.optionsFn?q.optionsFn(s):q.options;
+      s.answers[id]=q.type==='multi'?[opts?.find(x=>x.value==='none')?.value||opts?.[0]?.value||'unknown']:
+        q.type==='number'?1:opts?.find(x=>x.value==='unknown')?.value||opts?.[0]?.value||'test';
+    }
+    diag.goNext();
+  }
+  return {ids,result:s.result?.primaryCode};
+}
+add('AUD-ROUTE-RESEARCH-12','P2','ROUTE',()=>{
+ const x=auditRoute('build',{scope_goal:'new_sales',scope_name:'Букеты',scope_model:'PRODUCT',
+  scope_target:'completed_orders',maturity_state:'none',inheritance_entry:'none',
+  build_test_type:'research',gate_legal:'unknown',build_offer:'yes',build_access:'yes',build_market:'unknown'});
+ return x.ids.length+'|'+x.result+'|'+String(['build_econ_plausibility','build_pilot_capacity',
+    'build_route','build_market_context'].every(id=>!x.ids.includes(id)));
+},['12|BUILD_MARKET_TEST|true']);
+add('AUD-ROUTE-RESEARCH-NO-DEMAND','P1','BUILD',()=>{
+ reset('build',{scope_model:'PRODUCT',build_test_type:'research',gate_legal:'no',build_market:'no',
+  build_market_sample:30,build_market_audience:'yes',build_market_test_complete:'yes'},
+  ['build_market','build_market_sample','build_market_audience','build_market_test_complete']);
+ return code(diag.diagnoseBuild())+'|'+diag.buildEarlyResult('build_market_test_complete');
+},['BUILD_MARKET_TEST|BUILD_MARKET_TEST']);
+add('AUD-ROUTE-FULL-18','P2','ROUTE',()=>{
+ const x=auditRoute('full',{scope_goal:'new_sales',scope_name:'Торты',scope_model:'PRODUCT',
+  scope_target:'new_customers',maturity_state:'repeatable',scope_period:'month',
+  period_integrity:'normal',gate_legal:'no',gate_fulfillment:'never',gate_capacity:'reserve',
+  gate_economics:'good',core_demand:'regular',core_access:'none',core_offer:'yes',
+  deep_a1:'yes',deep_a2:'no_decline',deep_a4:['social']});
+ return x.ids.length+'|'+x.result+'|'+String(['scope_route','period_context','core_fit',
+    'core_trust','core_conversion','deep_a3'].every(id=>!x.ids.includes(id)));
+},['18|ACCESS|true']);
+add('AUD-ROUTE-DYNAMIC-CONTEXT','P2','ROUTE',()=>{
+ const x=auditRoute('full',{scope_goal:'new_sales',scope_name:'Торты',scope_model:'PRODUCT',
+  scope_target:'new_customers',maturity_state:'repeatable',scope_period:'month',
+  period_integrity:'normal',gate_legal:'no',gate_fulfillment:'never',gate_capacity:'reserve',
+  gate_economics:'good',core_demand:'regular',core_access:'unstable',core_offer:'yes',
+  core_fit:'yes',core_trust:'rare',core_conversion:'easy',deep_a1:'yes',
+  deep_a2:'views_down',deep_a4:['social']});
+ return String(x.ids.includes('period_context')&&x.ids.indexOf('period_context')>x.ids.indexOf('deep_a2'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
