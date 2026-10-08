@@ -499,6 +499,20 @@ add('AUD-HYBRID-SHARED-02','P1','HYBRID',()=>{
   return String(diag.shouldAskSharedResources(s));
 },['false']);
 
+
+add('AUD-HIST-SELECT-01','P1','HISTORY',()=>{
+  const now=new Date().toISOString();
+  const mk=(id)=>({cycleId:id,scopeId:'scope-'+id,legacyReadonly:false,status:'ACTIVE',
+    updatedAt:now,createdAt:now,scope:{name:id,diagnosticMode:'build'},answers:{scope_name:id},
+    result:{primaryCode:'BUILD_MARKET_TEST',diagnosticMode:'build'},experimentPlan:{experimentId:'exp-'+id,primaryCode:'BUILD_MARKET_TEST'}});
+  diag.writeHistoryStore({schemaVersion:2,cycles:[mk('audit-first'),mk('audit-second')],activeCycleIds:[],lastActiveCycleId:null});
+  const ok=diag.startFollowupForCycle('audit-second');
+  return String(ok && s.activeCycleId==='audit-second' && s.followupBase.cycleId==='audit-second' && s.path[0]==='fu_done');
+},['true']);
+add('AUD-HIST-SELECT-02','P1','HISTORY',()=>{
+  return String(diag.startFollowupForCycle('no-such-cycle'));
+},['false']);
+
 const failures=[];
 for (const t of tests) {
   let got;
