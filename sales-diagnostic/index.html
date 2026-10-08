@@ -394,7 +394,13 @@ button:focus-visible, input:focus-visible {
           <span>Когда подводить итог</span>
           <strong id="experimentObservation"></strong>
         </div>
-        <p id="experimentBranches" hidden></p>
+        <div id="experimentNumericPanel" hidden>
+  <p id="experimentNumericDescription" class="microcopy"></p>
+  <label class="microcopy" for="experimentMetricBefore">Число до изменения (необязательно)</label>
+  <input type="number" min="0" step="1" inputmode="numeric" class="text-input" id="experimentMetricBefore" placeholder="Например: 5"/>
+  <p class="microcopy">Сравнивайте одинаковые рабочие периоды и одинаково считайте случаи. Если точной цифры нет — пропустите поле.</p>
+</div>
+<p id="experimentBranches" hidden></p>
         <p class="microcopy" id="experimentEarlyStop" hidden></p>
         <button class="primary-btn" id="startExperimentButton" type="button">Сохранить и начать выполнять</button>
         <p class="microcopy" id="experimentStartMessage" hidden></p>
@@ -432,7 +438,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.6-dev';
+  const APP_VERSION = '1.13.7-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2008,6 +2014,13 @@ button:focus-visible, input:focus-visible {
       opt('same','Критерий успеха не достигнут, существенного улучшения нет'),
       opt('unclear','Не могу понять по имеющимся данным')
     ]),
+    fu_numeric_after: dynamicNumberQ('fu_numeric_after','Сравнение с записанным числом',
+      s => {
+        const c=s.followupBase?.result?.primaryCode || s.followupBase?.experimentPlan?.primaryCode;
+        return 'Сколько было «'+(followupNumericSpec(c)?.label||'случаев')+'» после изменения?';
+      },
+      'Считайте те же случаи, за такой же объём работы, что до изменения. Если сравнение некорректно — вернитесь и отметьте это.',
+      'Например: 7', 'count'),
     fu_market_payment: q('fu_market_payment','Была ли покупка','После этой проверки кто-нибудь действительно оплатил заказ или внёс предоплату?','Интерес, бесплатная бронь и обещание купить пока не считаются оплатой.',[
       opt('yes','Да, есть реальная оплата или предоплата от покупателя'),
       opt('no','Нет, были только обращения, интерес или бронь без оплаты'),
@@ -3237,9 +3250,14 @@ button:focus-visible, input:focus-visible {
           return;
         }
         const previousCode = state.followupBase?.result?.primaryCode || state.followupBase?.result?.code || state.followupBase?.experimentPlan?.primaryCode;
-        state.path = state.path.slice(0, state.index + 1).concat([
-          previousCode === 'DATA_GAP' ? 'fu_data_gap_branch' : 'fu_effect'
+        const {plan}=followupPlanContext();
+        const hasNumeric=previousCode!=='DATA_GAP' && followupNumericSpec(previousCode) &&
+          Number.isInteger(plan?.primaryMetricBefore) && plan.primaryMetricBefore>=0;
+        state.path=state.path.slice(0,state.index+1).concat([
+          previousCode==='DATA_GAP'?'fu_data_gap_branch':(hasNumeric?'fu_numeric_after':'fu_effect')
         ]);
+      } else if (currentId === 'fu_numeric_after') {
+        state.path=state.path.slice(0,state.index+1).concat(['fu_effect']);
       } else if (currentId === 'fu_data_gap_branch') {
         finalizeFollowup();
         return;
@@ -5806,6 +5824,34 @@ function finalizePrecision() {
     return observed.length >= 2 ? CONFIDENCE.MEDIUM : CONFIDENCE.PRELIMINARY;
   }
 
+  const FOLLOWUP_NUMERIC_SPECS=Object.freeze({
+    ACCESS:['подходящих новых обращений',1],DISTRIBUTION:['подходящих новых обращений',1],
+    OFFER:['повторных вопросов об условиях',-1],FIT:['неподходящих обращений',-1],
+    DECISION_GAP:['повторных сомнений перед покупкой',-1],
+    PURCHASE_FRICTION:['завершённых оформлений',1],
+    START_FAILURE:['реально начавшихся заказов или визитов',1],
+    ACTIVATION_FAILURE:['людей, начавших пользоваться',1],
+    FIRST_VALUE_GAP:['покупателей, получивших первую пользу',1],
+    FULFILLMENT:['серьёзных сбоев при выполнении',-1],
+    VALUE_FAILURE:['проблемных результатов клиентов',-1],
+    NEXT_CYCLE:['повторных покупок',1],CUSTOMER_MEMORY_GAP:['повторных покупок',1],
+    RECOVERY_FAILURE:['нерешённых жалоб',-1],SUB_RENEWAL:['состоявшихся продлений',1],
+    REACTIVATION_GAP:['реальных возвращений клиентов',1]
+  });
+  function followupNumericSpec(code){
+    const x=FOLLOWUP_NUMERIC_SPECS[code];
+    return x ? {label:x[0],direction:x[1]} : null;
+  }
+  function followupNumericComparison(){
+    const {result,plan}=followupPlanContext();
+    const spec=followupNumericSpec(result?.primaryCode||result?.code||plan?.primaryCode);
+    const before=plan?.primaryMetricBefore,after=state.answers.fu_numeric_after;
+    if (!spec || !Number.isInteger(before) || before<0 ||
+        !Number.isInteger(after) || after<0) return null;
+    const delta=after-before;
+    return {before,after,delta,label:spec.label,movement:delta*spec.direction>0?'better':delta===0?'same':'worse'};
+  }
+
   function followupPlanContext() {
     const base = state.followupBase || {};
     const result = base.result || base;
@@ -5870,6 +5916,12 @@ function finalizePrecision() {
 
     if (redGuardrail) {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный защитный показатель.' };
+    }
+    const numeric=followupNumericComparison();
+    if (numeric && ((a.fu_effect==='better' && numeric.movement!=='better') ||
+        (a.fu_effect==='worse' && numeric.movement==='better'))) {
+      return {outcome:FOLLOWUP_OUTCOME.R_ZERO,code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
+        decision:'REDESIGN',reason:'Оценка улучшения расходится с записанными числами до и после изменения. Не называйте проверку успешной, пока причина расхождения не выяснена.'};
     }
     if (a.fu_effect === 'better') {
       return {
@@ -6088,6 +6140,7 @@ function finalizePrecision() {
     const transition = buildStateTransition(cls);
     const human = followupHumanResult(cls, transition);
     const guardrails = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
+    const numericComparison=followupNumericComparison();
     const confidenceAfter =
       cls.outcome === FOLLOWUP_OUTCOME.R_PLUS && a.fu_done === 'yes' && a.fu_measurement_valid === 'yes' && a.fu_execution_match === 'no'
         ? CONFIDENCE.MEDIUM
@@ -6102,8 +6155,11 @@ function finalizePrecision() {
       contaminationStatus:['one','several'].includes(a.fu_execution_match) ? 'MATERIAL' : (a.fu_execution_match === 'unknown' ? 'UNKNOWN' : 'NONE'),
       observationCompletion:a.fu_sample_ready || null,
       measurementValidity:a.fu_measurement_valid || null,
-      primaryMetricBefore:null,
-      primaryMetricAfter:a.fu_effect || null,
+      primaryMetricBefore:numericComparison?.before ?? null,
+      primaryMetricAfter:numericComparison?.after ?? null,
+      primaryMetricDelta:numericComparison?.delta ?? null,
+      primaryMetricLabel:numericComparison?.label ?? null,
+      primaryMetricAssessment:a.fu_effect || null,
       guardrailResults:guardrails,
       outcomeClass:cls.outcome,
       followupCode:cls.code,
@@ -6131,7 +6187,11 @@ function finalizePrecision() {
       evidence:[
         {type:'REPEATED_OBSERVATION',questionId:'fu_done',value:a.fu_done,label:'Выполнение запланированного изменения'},
         {type:'USER_ESTIMATE',questionId:'fu_sample_ready',value:a.fu_sample_ready,label:'Выполнение условия наблюдения'},
-        {type:'USER_ESTIMATE',questionId:'fu_measurement_valid',value:a.fu_measurement_valid,label:'Пригодность сравнения'}
+        {type:'USER_ESTIMATE',questionId:'fu_measurement_valid',value:a.fu_measurement_valid,label:'Пригодность сравнения'},
+        ...(numericComparison ? [
+          {type:'NUMBER',questionId:null,source:'experimentPlan.primaryMetricBefore',value:numericComparison.before,label:'Записано до изменения: '+numericComparison.label},
+          {type:'NUMBER',questionId:'fu_numeric_after',value:numericComparison.after,label:'После изменения: '+numericComparison.label}
+        ] : [])
       ],
       confidence:confidenceAfter,
       action:human.action,
@@ -6163,6 +6223,7 @@ function finalizePrecision() {
       why:[
         'Прошлый вывод: ' + (previousResult?.userTitle || previousResult?.title || 'сохранённый результат') + '.',
         cls.reason,
+        ...(numericComparison?['Сравнение «'+numericComparison.label+'»: до '+numericComparison.before+', после '+numericComparison.after+', разница '+(numericComparison.delta>0?'+':'')+numericComparison.delta+'.']:[]),
         'Что делать дальше: ' + followupDecisionLabel(cls.decision) + '.'
       ],
       secondary:[],
@@ -6245,6 +6306,20 @@ function finalizePrecision() {
       document.getElementById('experimentHold').textContent =
         experimentPlan.holdConstant.length ? experimentPlan.holdConstant.join(' ') : 'Не добавляйте второе независимое изменение во время этой проверки.';
       document.getElementById('experimentObservation').textContent = experimentPlan.observationRule || '';
+      const nSpec=followupNumericSpec(result.primaryCode || result.code);
+      if (nSpec && experimentPlan.status!==EXPERIMENT_STATUS.ACTIVE) {
+        document.getElementById('experimentNumericPanel').hidden=false;
+        document.getElementById('experimentNumericDescription').textContent=
+          'Если число известно, запишите до изменения: '+nSpec.label+'.';
+        const nInput=document.getElementById('experimentMetricBefore');
+        nInput.value=Number.isInteger(experimentPlan.primaryMetricBefore)?String(experimentPlan.primaryMetricBefore):'';
+        nInput.addEventListener('input',()=>{
+          const value=nInput.value.trim();
+          const num=value===''?null:Number(value);
+          experimentPlan.primaryMetricBefore=Number.isInteger(num)&&num>=0?num:null;
+          result.experimentPlan=experimentPlan;
+        });
+      }
       // Detailed outcomes stay in saved data for Follow-up, not on the first result screen.
       document.getElementById('experimentBranches').textContent = '';
       document.getElementById('experimentEarlyStop').textContent = '';
@@ -6405,7 +6480,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
