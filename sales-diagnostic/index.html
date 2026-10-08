@@ -2007,6 +2007,11 @@ button:focus-visible, input:focus-visible {
       opt('same','Критерий успеха не достигнут, существенного улучшения нет'),
       opt('unclear','Не могу понять по имеющимся данным')
     ]),
+    fu_market_payment: q('fu_market_payment','Была ли покупка','После этой проверки кто-нибудь действительно оплатил заказ или внёс предоплату?','Интерес, бесплатная бронь и обещание купить пока не считаются оплатой.',[
+      opt('yes','Да, есть реальная оплата или предоплата от покупателя'),
+      opt('no','Нет, были только обращения, интерес или бронь без оплаты'),
+      opt('unknown','Не могу подтвердить оплату')
+    ]),
     fu_guardrail: multiQ('fu_guardrail', 'Защитная проверка', 'Одновременно ухудшилось что-то важное?', 'Отмечайте только существенные ухудшения. Если ничего важного не ухудшилось — выберите последний вариант.', [
       opt('money','Деньги / экономика'), opt('quality','Качество'), opt('deadline','Сроки'), opt('load','Нагрузка'), opt('customer','Результат для клиента'), opt('safety','Безопасность / обязательные требования'), opt('none','Ничего важного не ухудшилось'),
     ]),
@@ -2456,6 +2461,8 @@ button:focus-visible, input:focus-visible {
       },
       answers:item?.answers ? {...item.answers} : {},
       result:item?.result || null,
+      initialDiagnosisSnapshot:item?.result && !item.result.followup ? {...item.result} : null,
+      initialAnswersSnapshot:item?.result && !item.result.followup ? {...(item.answers || {})} : null,
       precisionSnapshots:item?.result?.precisionSnapshot ? [item.result.precisionSnapshot] : [],
       experimentPlan:item?.experimentPlan || item?.result?.experimentPlan || null,
       followups:item?.result?.followupSnapshot ? [item.result.followupSnapshot] : [],
@@ -2466,6 +2473,10 @@ button:focus-visible, input:focus-visible {
   }
 
   function mergeItemIntoCycle(cycle, item) {
+    if (!cycle.initialDiagnosisSnapshot && cycle.result && !cycle.result.followup) {
+      cycle.initialDiagnosisSnapshot = {...cycle.result};
+      cycle.initialAnswersSnapshot = {...(cycle.answers || {})};
+    }
     cycle.updatedAt = new Date().toISOString();
     cycle.appVersion = item?.appVersion || cycle.appVersion || APP_VERSION;
     cycle.status = item?.cycleStatus || cycle.status;
@@ -3192,7 +3203,10 @@ button:focus-visible, input:focus-visible {
         finalizeFollowup();
         return;
       } else if (currentId === 'fu_effect') {
-        state.path = state.path.slice(0, state.index + 1).concat(['fu_guardrail']);
+        const oldCode = state.followupBase?.result?.primaryCode || state.followupBase?.result?.code || state.followupBase?.experimentPlan?.primaryCode;
+        const needPayment = state.answers.fu_effect === 'better' &&
+          ['BUILD_MARKET_TEST','BUILD_DEMAND'].includes(oldCode);
+        state.path = state.path.slice(0, state.index + 1).concat(needPayment ? ['fu_market_payment','fu_guardrail'] : ['fu_guardrail']);
       }
     }
 
@@ -5624,6 +5638,9 @@ function finalizePrecision() {
     if (['one','several'].includes(a.fu_execution_match)) {
       return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Одновременно менялись другие существенные факторы, поэтому причинный вывод нельзя приписать одному изменению.' };
     }
+    if (a.fu_execution_match === 'unknown') {
+      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Не удалось понять, менялись ли одновременно другие важные условия. Пока нельзя утверждать, что улучшение вызвано именно этим действием.' };
+    }
     if (a.fu_sample_ready === 'stopped') {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.EARLY_STOP, decision:'ROLLBACK', reason:'Проверку остановили раньше из-за риска или вреда.' };
     }
@@ -5724,6 +5741,18 @@ function finalizePrecision() {
     }
 
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS) {
+      if (['BUILD_MARKET_TEST','BUILD_DEMAND'].includes(previousCode)) {
+        const paidNow = state.answers.fu_market_payment === 'yes';
+        if (!paidNow) return {
+          type:'MARKET_INTEREST_ONLY', fromPrimaryCode:previousCode,
+          toPrimaryCode:'BUILD_MARKET_TEST', nextResult:null
+        };
+        const originalLegal = state.followupBase?.answers?.gate_legal;
+        if (['yes','maybe','unknown'].includes(originalLegal)) {
+          return {type:'HARD_BLOCKER_EMERGED',fromPrimaryCode:previousCode,
+            toPrimaryCode:'LEGAL_SAFETY_BLOCKER',nextResult:makeResult('LEGAL_SAFETY_BLOCKER')};
+        }
+      }
       const buildNext = {
         BUILD_MARKET_TEST:'BUILD_FULFILLMENT',
         BUILD_DEMAND:'BUILD_FULFILLMENT',
@@ -5792,6 +5821,14 @@ function finalizePrecision() {
     const previousTitle = previousResult?.userTitle || previousResult?.title || 'прошлый вывод';
     const primaryMetric = plan?.primaryMetric || previousResult?.metrics?.[0] || previousResult?.metric || 'основной показатель';
     const partial = state.answers.fu_done === 'primary_only';
+    if (transition?.type === 'MARKET_INTEREST_ONLY' && followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS) return {
+      title:'Интерес появился, но оплаченного заказа пока нет',
+      summary:'Люди проявили интерес, но это ещё не подтверждение покупки и выполнения заказа.',
+      action:'Запишите, что именно заинтересовало людей. До предложения покупки убедитесь, что обязательные требования известны и выполнены. После подтверждённой оплаты проверьте выполнение заказа.',
+      metric:'Предметные обращения отдельно от подтверждённых оплат.',
+      dont:'Не называйте бронь без оплаты состоявшейся продажей.',
+      next:'Возвращайтесь к проверке оплаты только тогда, когда реальная продажа будет разрешена и состоится.'
+    };
 
     if (followupClass.code === FOLLOWUP_CODE.NOT_EXECUTED) return {
       title:'Проверка ещё не состоялась',
@@ -5855,7 +5892,7 @@ function finalizePrecision() {
     const guardrails = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
     const confidenceAfter =
       cls.outcome === FOLLOWUP_OUTCOME.R_PLUS && a.fu_done === 'yes' && a.fu_measurement_valid === 'yes' && a.fu_execution_match === 'no'
-        ? CONFIDENCE.HIGH
+        ? CONFIDENCE.MEDIUM
         : (cls.outcome === FOLLOWUP_OUTCOME.R_MINUS ? CONFIDENCE.MEDIUM : CONFIDENCE.PRELIMINARY);
 
     const followupSnapshot = {
@@ -6170,7 +6207,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
