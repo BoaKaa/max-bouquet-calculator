@@ -386,7 +386,7 @@ add('LANG04-result-rules','P1','LANGUAGE',()=>{
 add('LANG05-build-demand-evidence','P1','LANGUAGE',()=>{
   reset('build',Object.assign({},b,{scope_name:'клубничные букеты',scope_model:'PRODUCT',build_market:'no',build_market_sample:20,build_market_audience:'yes',build_market_test_complete:'yes'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete']);
   const r=diag.diagnoseBuild();
-  return String(r.why.some(x=>x.includes('20 человек')) && r.why.some(x=>x.includes('причину отказов')) && !r.action.includes('реальный шаг'));
+  return String(r.why.some(x=>x.includes('20') && x.includes('Количество людей')) && r.why.some(x=>x.includes('причину отказов')) && !r.action.includes('реальный шаг'));
 },['true']);
 add('LANG06-build-untested-evidence','P1','LANGUAGE',()=>{
   reset('build',Object.assign({},b,{scope_name:'букеты',scope_model:'PRODUCT',build_market:'unknown'}),['build_market']);
