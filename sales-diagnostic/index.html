@@ -5459,7 +5459,7 @@ function finalizePrecision() {
     // Evidence below must refer to actual answers and observable events.
     if (code === 'BUILD_DEMAND') {
       if (Number.isInteger(a.build_market_sample) && a.build_market_sample > 0) {
-        lines.push(`Вы показали товар или услугу ${a.build_market_sample} человек, которые могли купить, но ни один не обратился по поводу заказа и не оплатил.`);
+        lines.push(`Количество людей, которым вы показали товар или услугу: ${a.build_market_sample}. Никто из них не написал по поводу заказа и не оплатил.`);
       } else {
         lines.push('Вы показывали предложение, но обращений по поводу покупки не было. Точное число показов пока неизвестно.');
       }
