@@ -545,6 +545,26 @@ add('AUD-FU-LEGAL-RESULT','P0','FOLLOWUP',()=>{
   return String(tran.toPrimaryCode==='LEGAL_SAFETY_BLOCKER' && !/Продолжайте продажи/.test(tran.nextResult?.action||''));
 },['true']);
 
+
+add('AUD-EVID-PERIOD-SOURCE','P1','RESULT',()=>{
+  reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',period_integrity:'closed',period_context:['peak'],core_access:'none'});
+  const r=diag.makeResult('ACCESS');
+  return String(r.evidence.some(e=>e.questionId==='period_integrity'&&e.value==='closed') &&
+    r.evidence.some(e=>e.questionId==='period_context'&&e.value?.includes('peak')) &&
+    r.evidence.some(e=>e.questionId==='core_access'&&e.value==='none'));
+},['true']);
+add('AUD-EVID-SKIP-SOURCE','P1','RESULT',()=>{
+  reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',scope_target:'completed_orders'});
+  const r=diag.makeResult('NO_CRITICAL_CONSTRAINT_FOUND');
+  return String(r.evidence.every(e=>e.questionId===null && e.value===null && e.type==='INFERENCE'));
+},['true']);
+add('AUD-EVID-FIT-SOURCE','P1','RESULT',()=>{
+  reset('full',{scope_model:'PRODUCT',core_fit:'bad',core_access:'none'});
+  const r=diag.makeResult('FIT');
+  return String(r.evidence.some(e=>e.questionId==='core_fit' && e.value==='bad') &&
+    !r.evidence.some(e=>e.questionId==='core_access'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
