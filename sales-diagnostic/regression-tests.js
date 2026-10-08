@@ -565,6 +565,52 @@ add('AUD-EVID-FIT-SOURCE','P1','RESULT',()=>{
     !r.evidence.some(e=>e.questionId==='core_access'));
 },['true']);
 
+
+/* Contract audit: 33 result codes with no answers must not invent observations. */
+add('AUD-EVID-CONTRACT-33','P1','RESULT',()=>{
+  const codes=Object.keys(diag.resultLibrary);
+  return String(codes.length===33&&codes.every(id=>{
+    reset(id.startsWith('BUILD_')?'build':'full',{scope_model:'PRODUCT',scope_name:'Подарки',scope_goal:'new_sales'});
+    const r=diag.makeResult(id);
+    return r.primaryCode===id&&r.confidence==='PRELIMINARY'&&
+      r.evidence.every(e=>(e.questionId===null&&e.value===null&&e.type==='INFERENCE'))&&
+      Array.isArray(r.metrics)&&typeof r.action==='string'&&
+      !r.why.join(' ').includes('именно этот участок сейчас больше других влияет');
+  }));
+},['true']);
+add('AUD-EVID-LEGAL-EXPLICIT','P1','RESULT',()=>{
+  reset('full',{scope_model:'PRODUCT',gate_legal:'yes'});
+  const r=diag.makeResult('LEGAL_SAFETY_BLOCKER');
+  return r.confidence+'|'+String(r.evidence.some(e=>e.questionId==='gate_legal'&&e.value==='yes'));
+},['MEDIUM|true']);
+add('AUD-CONFIDENCE-QUALITATIVE','P1','RESULT',()=>{
+  const cases=[
+    ['FULFILLMENT',{gate_fulfillment:'regular',deep_f1:['deadline']}],
+    ['FIT',{core_fit:'bad',deep_fit1:['budget']}],
+    ['ECONOMICS',{gate_economics:'negative'}],
+    ['RECOVERY_FAILURE',{post_recovery:'often_unresolved'}],
+    ['SUB_RENEWAL',{core_repeat:'rare',sub_cancel_known:'yes',sub_cancel_reason:['no_value']}],
+    ['CAPACITY',{gate_capacity:'overload',deep_cap1:'time',deep_cap2:'regular'}]
+  ];
+  return String(cases.every(([id,answers])=>{
+    reset('full',Object.assign({scope_model:'PRODUCT'},answers));
+    const r=diag.makeResult(id);
+    return r.confidence!=='HIGH'&&r.evidence.every(e=>!e.questionId||e.value!==null);
+  }));
+},['true']);
+add('AUD-EVID-DISTRIBUTION-ORIGIN','P1','RESULT',()=>{
+  reset('full',{scope_model:'PRODUCT',core_access:'unstable',deep_a2:'views_down'});
+  const r=diag.makeResult('DISTRIBUTION');
+  return String(r.evidence.some(e=>e.questionId==='deep_a2'&&e.value==='views_down')&&
+    r.evidence.some(e=>e.questionId==='core_access'&&e.value==='unstable'));
+},['true']);
+add('AUD-EVID-BUILD-NO-INVENTED-PAYMENT','P1','RESULT',()=>{
+  reset('build',{scope_model:'PRODUCT',build_market:'reserved'});
+  const r=diag.makeResult('BUILD_FULFILLMENT');
+  return String(!r.why.join(' ').includes('первый заказ оплачен')&&
+    !r.evidence.some(e=>e.questionId==='build_market'&&e.value==='paid'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
