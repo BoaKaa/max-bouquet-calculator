@@ -394,6 +394,18 @@ add('LANG06-build-untested-evidence','P1','LANGUAGE',()=>{
   return String(r.why.some(x=>x.includes('ещё не показали')));
 },['true']);
 
+
+add('LANG07-plain-questions-across-models','P1','LANGUAGE',()=>{
+  const ids=['deep_cap1','shared_resources','shared_materiality','shared_impact','build_market_audience','p_market_people','p_market_actions','fu_sample_ready','fu_measurement_valid','deep_fit2'];
+  return String(['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'].every(model=>{
+    reset('build',{scope_model:model,scope_name:'товар',scope_goal:'new_sales'});
+    return ids.every(id=>{
+      const q=diag.questions[id];const str=typeof q.title==='function'?q.title(s):q.title;
+      return !/на тех же ресурсах|общие ресурсы|какой ресурс|реальный шаг|условие наблюдения|по этим наблюдениям|важное ограничение/i.test(str);
+    });
+  }));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
