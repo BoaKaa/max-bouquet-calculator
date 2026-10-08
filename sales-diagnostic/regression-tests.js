@@ -513,6 +513,15 @@ add('AUD-HIST-SELECT-02','P1','HISTORY',()=>{
   return String(diag.startFollowupForCycle('no-such-cycle'));
 },['false']);
 
+
+add('AUD-UI-HIDDEN-01','P2','UX',()=>String(html.includes('[hidden] { display: none !important; }')),['true']);
+add('AUD-UI-ARIA-01','P2','UX',()=>String(html.includes("input.setAttribute('aria-labelledby','questionTitle')")),['true']);
+add('AUD-LANG-PREC-01','P2','LANGUAGE',()=>{
+  reset('precision');
+  const x=diag.precisionEvaluate('FIRST_VALUE_GAP',{p_comparable:'yes',p_started:5,p_first_value:5});
+  return String(!/First Value Gap|Value\b|scope\/period\/route/i.test(x.message));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
