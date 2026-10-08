@@ -250,6 +250,59 @@ add('BACK03','P1','UX',()=>String(html.includes('if (previous !== JSON.stringify
 
 if (tests.length < 80) throw new Error('Regression coverage unexpectedly shrank: ' + tests.length);
 
+
+/* Stage A: 35 additional simulated business-state checks.
+ * These exercise the real decision engine but are NOT usability sessions.
+ * They complement, not replace, owner-led browser testing.
+ */
+const simulatedFull = [
+  ['A-F01',{scope_goal:'new_sales',gate_economics:'negative',gate_capacity:'limit',core_access:'none'},['ECONOMICS','CAPACITY']],
+  ['A-F02',{scope_goal:'new_sales',gate_economics:'good',gate_capacity:'limit',core_access:'none'},['CAPACITY']],
+  ['A-F03',{scope_goal:'new_sales',gate_fulfillment:'regular',deep_f1:['deadline'],deep_f2:'no',core_access:'none'},['FULFILLMENT']],
+  ['A-F04',{scope_goal:'income',gate_fulfillment:'regular',deep_f1:['overload'],deep_f2:'yes',core_access:'none'},['CAPACITY']],
+  ['A-F05',{scope_goal:'repeat',core_repeat:'rare',deep_r1:'no',core_access:'none'},['NO_CRITICAL_CONSTRAINT_FOUND']],
+  ['A-F06',{scope_goal:'new_sales',period_integrity:'closed',gate_capacity:'limit',gate_economics:'good',core_access:'none'},['CAPACITY']],
+  ['A-F07',{scope_goal:'new_sales',period_integrity:'closed',gate_fulfillment:'regular',deep_f1:['deadline'],deep_f2:'no',core_access:'none'},['FULFILLMENT']],
+  ['A-F08',{scope_goal:'repeat',gate_economics:'negative',core_repeat:'rare',deep_r1:'yes'},['ECONOMICS']],
+  ['A-F09',{scope_goal:'new_sales',gate_economics:'good',gate_capacity:'reserve',core_access:'none',post_reactivation:'many'},['ACCESS']],
+  ['A-F10',{scope_goal:'new_sales',gate_economics:'negative',core_demand:'unknown',core_access:'unknown'},['ECONOMICS']]
+];
+for (const [id,answers,allowed] of simulatedFull) full(id,'P1',answers,allowed);
+
+const simulatedBuildBase = {gate_legal:'no',build_test_type:'payment',build_econ_plausibility:'yes',build_pilot_capacity:'yes',build_offer:'yes',build_route:'yes',build_access:'yes'};
+const simulatedBuild = [
+  ['A-B01',{build_offer:'no',build_access:'no'},['build_offer','build_access'],'BUILD_OFFER'],
+  ['A-B02',{build_route:'no',build_access:'no'},['build_route','build_access'],'BUILD_ROUTE'],
+  ['A-B03',{build_pilot_capacity:'no',build_market:'unknown'},['build_pilot_capacity','build_market'],'BUILD_CAPACITY'],
+  ['A-B04',{build_econ_plausibility:'no',build_route:'no'},['build_econ_plausibility','build_route'],'BUILD_ECONOMICS'],
+  ['A-B05',{gate_legal:'unknown'},['gate_legal','build_offer'],'LEGAL_SAFETY_BLOCKER'],
+  ['A-B06',{gate_legal:'yes'},['gate_legal','build_offer'],'LEGAL_SAFETY_BLOCKER'],
+  ['A-B07',{build_market:'no',build_market_audience:'no',build_market_sample:3},['build_market'],'BUILD_MARKET_TEST'],
+  ['A-B08',{build_market:'no',build_market_audience:'yes',build_market_sample:0},['build_market'],'BUILD_MARKET_TEST'],
+  ['A-B09',{build_market:'paid',build_market_quality:'target_normal'},['build_market','build_market_quality'],'BUILD_FULFILLMENT'],
+  ['A-B10',{build_market:'paid',build_market_quality:'target_normal',build_fulfillment:'issues'},['build_market','build_market_quality','build_fulfillment'],'BUILD_FULFILLMENT'],
+  ['A-B11',{build_market:'paid',build_market_quality:'target_normal',build_fulfillment:'yes',build_value:'no'},['build_market','build_market_quality','build_fulfillment','build_value'],'BUILD_VALUE'],
+  ['A-B12',{build_market:'paid',build_market_quality:'target_normal',build_fulfillment:'yes',build_value:'yes',build_economics:'no'},['build_market','build_market_quality','build_fulfillment','build_value','build_economics'],'BUILD_ECONOMICS'],
+  ['A-B13',{build_market:'paid',build_market_quality:'target_normal',build_fulfillment:'yes',build_value:'yes',build_economics:'yes',build_capacity:'no'},['build_market','build_market_quality','build_fulfillment','build_value','build_economics','build_capacity'],'BUILD_CAPACITY'],
+  ['A-B14',{build_market:'paid',build_market_quality:'friend_support'},['build_market','build_market_quality'],'BUILD_MARKET_TEST']
+];
+for (const [id,answers,route,expected] of simulatedBuild) build(id,'P1',Object.assign({},simulatedBuildBase,answers),route,[expected]);
+
+const simulatedPrecision = [
+  ['A-P01','FIT',{p_comparable:'yes',p_inquiries:5,p_fit:5},'CONTRADICTED'],
+  ['A-P02','ECONOMICS',{p_comparable:'yes',p_revenue:200,p_direct_costs:250,p_hours:4},'CONFIRMED'],
+  ['A-P03','FIRST_VALUE_GAP',{p_comparable:'yes',p_started:5,p_first_value:0},'SUPPORTED_NOT_PROVEN'],
+  ['A-P04','FULFILLMENT',{p_comparable:'yes',p_completed:15,p_problems:0},'CONTRADICTED'],
+  ['A-P05','CAPACITY',{p_comparable:'yes',p_current_volume:5,p_sustainable_volume:20,p_capacity_period:'week'},'WEAKENED'],
+  ['A-P06','DEMAND_WEAK',{p_comparable:'yes',p_market_people:0,p_market_actions:0},'INSUFFICIENT_DENOMINATOR'],
+  ['A-P07','ECONOMICS',{p_comparable:'yes',p_revenue:3000,p_direct_costs:2000,p_hours:10},'WEAKENED'],
+  ['A-P08','START_FAILURE',{p_comparable:'yes',p_confirmed:5,p_started:5},'CONTRADICTED'],
+  ['A-P09','FIT',{p_comparable:'yes',p_inquiries:0,p_fit:0},'INSUFFICIENT_DENOMINATOR'],
+  ['A-P10','NEXT_CYCLE',{p_comparable:'yes',p_repeat_eligible:0,p_repeat_returned:0},'INSUFFICIENT_DENOMINATOR'],
+  ['A-P11','CAPACITY',{p_comparable:'yes',p_current_volume:5,p_sustainable_volume:20,p_capacity_period:'week'},'WEAKENED']
+];
+for (const [id,primaryCode,values,expected] of simulatedPrecision) precision(id,'P1',primaryCode,values,[expected]);
+
 const failures=[];
 for (const t of tests) {
   let got;
