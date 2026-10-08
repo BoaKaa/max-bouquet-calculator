@@ -370,9 +370,9 @@ button:focus-visible, input:focus-visible {
       </article>
 
       <article class="card result-card" id="experimentPlanCard" hidden>
-        <h2>План проверки</h2>
-        <p class="microcopy" id="experimentPlanType"></p>
-        <div class="metric-box">
+        <h2>Как выполнить первый шаг</h2>
+        <p class="microcopy" id="experimentPlanType" hidden></p>
+        <div class="metric-box" hidden>
           <span>Меняем одну вещь</span>
           <strong id="experimentChange"></strong>
         </div>
@@ -380,20 +380,20 @@ button:focus-visible, input:focus-visible {
           <strong>Как выполнить</strong>
           <ol id="experimentSteps"></ol>
         </div>
-        <div class="metric-box">
+        <div class="metric-box" hidden>
           <span>Главный показатель</span>
           <strong id="experimentPrimaryMetric"></strong>
         </div>
-        <div class="metric-box">
+        <div class="metric-box" hidden>
           <span>Что должно остаться прежним</span>
           <strong id="experimentHold"></strong>
         </div>
-        <div class="metric-box">
+        <div class="metric-box" hidden>
           <span>Когда подводить итог</span>
           <strong id="experimentObservation"></strong>
         </div>
-        <p id="experimentBranches"></p>
-        <p class="microcopy" id="experimentEarlyStop"></p>
+        <p id="experimentBranches" hidden></p>
+        <p class="microcopy" id="experimentEarlyStop" hidden></p>
         <button class="primary-btn" id="startExperimentButton" type="button">Начать проверку</button>
         <p class="microcopy" id="experimentStartMessage" hidden></p>
       </article>
@@ -430,7 +430,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.12.3-dev';
+  const APP_VERSION = '1.12.4-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -606,15 +606,15 @@ button:focus-visible, input:focus-visible {
 
   const questions = {
     scope_goal: q('scope_goal', 'Сначала о задаче', 'Что вы хотите изменить сейчас?', 'Выберите то, что беспокоит больше всего. Это не диагноз — только направление проверки.', GOAL_OPTIONS),
-    scope_name: textQ('scope_name', 'Что проверяем', 'Что именно будем разбирать?', 'Напишите один конкретный товар, услугу, курс или подписку. Например: «торты на заказ», «первый визит на лазерную эпиляцию», «курс по…».', 'Напишите коротко'),
+    scope_name: textQ('scope_name', 'Что проверяем', 'Какой конкретно товар или услугу вы хотите проверить?', 'Напишите один конкретный товар, услугу, курс или подписку. Например: «торты на заказ», «первый визит на лазерную эпиляцию», «курс по…».', 'Напишите коротко'),
     scope_model: dynamicQ('scope_model', 'Как устроена продажа',
       s => 'Что лучше всего описывает «' + (s.answers.scope_name || 'то, что мы разбираем') + '»?',
-      'Выберите основной вариант. Если у вас смешанная модель, берите ту часть, которую сейчас хотите проверить.',
+      'Например, если делаете съедобные букеты и проводите мастер-классы, сейчас выберите только одно из этих направлений.',
       () => MODEL_OPTIONS),
     scope_target: dynamicQ('scope_target', 'Уточняем цель', s => {
       const g = s.answers.scope_goal;
       const m = s.answers.scope_model;
-      if (g === 'new_sales') return m === 'APPOINTMENT' ? 'Что именно вы хотите увеличить?' : 'Какой результат вы хотите увеличить в первую очередь?';
+      if (g === 'new_sales') return m === 'APPOINTMENT' ? 'Что именно вы хотите увеличить?' : 'Чего вам сейчас больше всего не хватает: новых покупателей, оплаченных заказов или выполненных заказов?';
       if (g === 'income') return 'Что для вас сейчас значит «зарабатывать больше»?';
       if (g === 'stable') return 'Что именно вы хотите сделать стабильнее?';
       if (g === 'overload') return 'Что должно измениться, чтобы вы перестали перегружаться?';
@@ -1504,7 +1504,7 @@ button:focus-visible, input:focus-visible {
 
     // BUILD
     // BUILD
-    build_test_type: q('build_test_type', 'Как будете проверять предложение', 'Какой следующий реальный шаг вы собираетесь сделать?', 'Это нужно, чтобы не требовать полноценную продажу там, где вы пока только проверяете интерес, и не пропустить обязательные требования перед реальным заказом.', [
+    build_test_type: q('build_test_type', 'Как будете проверять предложение', 'Что вы собираетесь сделать с этим товаром или услугой в ближайшее время?', 'Это нужно, чтобы не требовать полноценную продажу там, где вы пока только проверяете интерес, и не пропустить обязательные требования перед реальным заказом.', [
       opt('research','Поговорить с подходящими людьми / проверить задачу без продажи'),
       opt('waitlist','Собрать заявки или лист ожидания без оплаты'),
       opt('preorder','Предложить бронь / предзаказ / предоплату'),
@@ -1646,19 +1646,19 @@ button:focus-visible, input:focus-visible {
       'Речь о реально работающем пути покупки сейчас, а не о том, как вы планируете сделать его позже.',
       () => COMMON_SCALE),
 
-    build_access: dynamicQ('build_access', 'Новое предложение: где его увидят нужные люди',
+    build_access: dynamicQ('build_access', 'Где покупатели увидят товар или услугу',
       s => '«' + (s.answers.scope_name || 'Выбранное предложение') + '»: вы уже знаете конкретное место, где будете показывать это предложение людям, которым оно действительно может быть нужно?',
       'Например: конкретная площадка, группа, каталог, карты, база прошлых клиентов, партнёр или другой понятный источник. Ответ «буду вести соцсети» слишком общий.',
       () => COMMON_SCALE),
 
-    build_market: dynamicQ('build_market', 'Новое предложение: что произошло после показа',
+    build_market: dynamicQ('build_market', 'Что произошло, когда люди увидели товар или услугу?',
       s => '«' + (s.answers.scope_name || 'Выбранное предложение') + '»: что произошло после того, как вы показали это предложение подходящим людям?',
       '',
       s => ({
         PRODUCT:[
           opt('paid','Кто-то оплатил, внёс предоплату, забронировал товар или сделал предзаказ'),
           opt('action','Кто-то всерьёз обсуждал заказ или оставил заявку, но пока не оплатил'),
-          opt('no','Показывал(а), но никто не сделал реального шага к заказу'),
+          opt('no','Показывал(а), но никто не написал по поводу заказа, не забронировал и не оплатил'),
           opt('unknown','Ещё не показывал(а) товар подходящим покупателям'),
         ],
         APPOINTMENT:[
@@ -1692,7 +1692,7 @@ button:focus-visible, input:focus-visible {
         opt('unknown','Ещё не показывал(а) предложение подходящим людям'),
       ])),
 
-    build_market_sample: numberQ('build_market_sample', 'Проверяем реальный тест', 'Скольким подходящим людям вы показали одно и то же конкретное предложение на этих условиях?', 'Нужен фактический знаменатель. Ноль или несколько случайных показов не доказывают слабый спрос.', 'Например: 8', 'count'),
+    build_market_sample: numberQ('build_market_sample', 'Проверяем реальный тест', 'Скольким людям вы лично показали этот товар или услугу с ценой и возможностью заказать?', 'Считайте только тех, кто действительно увидел предложение и мог вам написать или купить. Не считайте общие просмотры поста.', 'Например: 8', 'count'),
 
     build_market_audience: q('build_market_audience', 'Проверяем качество теста', 'Это были в основном люди, которым предложение действительно могло подходить и которые реально могли купить на этих условиях?', 'Если аудитория была случайной или купить было невозможно, отсутствие действий не является выводом о спросе.', [
       opt('yes','Да, в основном подходящие люди и купить было реально'),
@@ -1702,16 +1702,16 @@ button:focus-visible, input:focus-visible {
     ]),
 
     build_market_test_complete: q('build_market_test_complete', 'Проверяем, можно ли судить о спросе',
-      'Вы завершили проверку в том объёме, который решили сделать заранее, до получения первых ответов?',
-      'Если заранее не определяли, скольким подходящим людям покажете предложение, не считайте отсутствие покупок доказательством слабого спроса. Один человек в любом случае не показывает закономерность.', [
-        opt('yes','Да, запланированное число подходящих людей увидело предложение'),
-        opt('no','Нет, планировали показать ещё людям'),
-        opt('unplanned','Заранее не определяли объём проверки'),
+      'Вы уже показали товар или услугу всем людям, которым собирались показать для первой проверки?',
+      'Если показали только одному человеку или ещё не закончили показывать, пока рано говорить, что товар никому не нужен.', [
+        opt('yes','Да, всем, кому собирался(-ась), уже показал(а)'),
+        opt('no','Нет, собираюсь показать ещё людям'),
+        opt('unplanned','Заранее не решал(а), скольким людям покажу'),
         opt('unknown','Не уверен(а), что проверка завершена'),
       ]),
 
     build_market_quality: dynamicQ('build_market_quality', 'Новое предложение: насколько показателен первый интерес',
-      'Возьмите самый сильный случай из тех, кто уже сделал шаг к покупке. Кто это был и на каких условиях?',
+      'Вспомните человека, который ближе всего подошёл к покупке или уже купил. Кто это был?',
       'Нам важно понять, похож ли этот случай на обычную будущую продажу. Покупка знакомого или большая скидка тоже дают информацию, но по ним нельзя уверенно судить об обычных покупателях.',
       s => {
         const labels = {
@@ -2197,7 +2197,7 @@ button:focus-visible, input:focus-visible {
     ),
     BUILD_DEMAND: card(
       'Сначала проверьте, готовы ли за это платить',
-      'Идея может нравиться людям, но это ещё не означает, что её будут покупать.',
+      'Пока не хватает подтверждений, что люди захотят покупать на обычных условиях.',
       'Покажите конкретный товар или услугу с реальной ценой людям, которым это может быть нужно, и предложите сделать настоящий шаг к покупке.',
       'Запрос, запись, бронь, предзаказ или оплата.',
       'Не тратьте много времени и денег на запуск, пока нет реального интереса к покупке.',
@@ -2229,7 +2229,7 @@ button:focus-visible, input:focus-visible {
     ),
     BUILD_MARKET_TEST: card(
       'Проверьте идею на реальной покупке',
-      'Подготовка уже есть, но пока не хватает поведения настоящего покупателя.',
+      'Пока нет достаточных примеров того, что люди готовы оформлять заказ и платить.',
       'Предложите товар или услугу на обычных условиях реальному человеку, которому это может быть нужно.',
       'Была ли заявка, бронь, предоплата, оплата или конкретный отказ.',
       'Не считайте лайки, похвалу и покупку из жалости доказательством.',
@@ -4342,13 +4342,13 @@ function finalizePrecision() {
         successRule:'Видимость восстановилась и вместе с ней вернулись подходящие обращения.',
         failureRule:'Видимость восстановилась, но подходящие обращения не вернулись.',
         nextIfSuccess:'Оставить изменение видимости и проверить следующий участок продаж.',
-        nextIfFailure:'Не продолжать лечить охват; проверить предложение, fit или другое downstream-ограничение.'
+        nextIfFailure:'Не продолжать увеличивать показы. Проверьте, понятно ли предложение и подходит ли оно людям, которые его видят.'
       },
       PURCHASE_FRICTION:{
         observationRule:'После следующих случаев, когда подходящие люди уже решили купить или записаться.',
         successRule:'Большая часть решивших купить завершает оформление без прежнего срыва.',
         failureRule:'Потеря на том же шаге продолжает повторяться.',
-        nextIfSuccess:'Сохранить упрощение и проверить следующий bottleneck.',
+        nextIfSuccess:'Оставить упрощение и посмотреть, на каком следующем шаге люди всё ещё теряются.',
         nextIfFailure:'Проверить, действительно ли найден правильный шаг срыва.'
       },
       FULFILLMENT:{
@@ -4356,7 +4356,7 @@ function finalizePrecision() {
         successRule:'Повторяющийся серьёзный сбой перестал возникать без ухудшения качества и нагрузки.',
         failureRule:'Тот же сбой продолжает повторяться.',
         nextIfSuccess:'Только после стабилизации выполнения возвращаться к росту.',
-        nextIfFailure:'Не увеличивать поток; менять причину сбоя или проверять capacity.'
+        nextIfFailure:'Не увеличивать число заказов; исправить повторяющийся сбой или проверить, хватает ли времени и помощников.'
       },
       CAPACITY:{
         observationRule:'После обычного рабочего периода с новым способом распределения нагрузки.',
@@ -4380,18 +4380,18 @@ function finalizePrecision() {
         nextIfFailure:'Перепроверить ценность/задачу предложения, а не масштабировать показ.'
       },
       BUILD_DEMAND:{
-        observationRule:'После повторного качественного market test с тем же понятным предложением и рабочим способом покупки.',
-        successRule:'Появляются реальные действия к покупке.',
-        failureRule:'После качественного повторного теста действий по-прежнему нет.',
-        nextIfSuccess:'Вернуться к B3 — fulfillment/value/economics.',
-        nextIfFailure:'Пересобрать задачу/ценность предложения до нового теста.'
+        observationRule:'После ещё одного показа того же товара или услуги подходящим людям по обычной цене, с возможностью сразу заказать.',
+        successRule:'Подходящие люди начинают писать по поводу заказа, бронировать или оплачивать.',
+        failureRule:'После повторного показа на обычных условиях никто не написал по поводу заказа, не забронировал и не оплатил.',
+        nextIfSuccess:'Если люди начали заказывать — проверьте выполнение заказов, довольны ли клиенты и сколько денег остаётся после расходов.',
+        nextIfFailure:'Уточните, кому и для чего нужен товар или услуга, прежде чем снова предлагать купить.'
       },
       DATA_GAP:{
         observationRule:'Как только собран конкретный недостающий факт, который различает два действия.',
         successRule:'Факт однозначно выбирает одну ветку решения.',
         failureRule:'Факт всё ещё не помогает выбрать между разными действиями — значит, нужна другая проверка.',
         nextIfSuccess:'Продолжить по выбранной ветке.',
-        nextIfFailure:'Не собирать данные бесконечно; пересобрать decision fork.'
+        nextIfFailure:'Не собирать цифры без конца — определите другой конкретный факт, который поможет выбрать действие.'
       }
     };
     const p = plans[code] || {};
@@ -4421,7 +4421,7 @@ function finalizePrecision() {
     const map = {
       LEGAL_SAFETY_BLOCKER:'Проверить одно конкретное обязательное требование до рискованного действия.',
       DATA_GAP:'Собрать только тот факт, который различает две конкурирующие рекомендации.',
-      DEMAND_WEAK:'Провести один ограниченный market test одного и того же предложения на обычных условиях.',
+      DEMAND_WEAK:'Показать одно и то же предложение подходящим людям по обычной цене и записать, кто захотел заказать.',
       DEMAND_UNCLEAR:'Показать то же предложение ещё в одном релевантном месте, не меняя цену и сам продукт.',
       ACCESS:'Проверить один конкретный источник подходящих новых обращений.',
       DISTRIBUTION:'Изменить только один способ вернуть видимость того же предложения в выбранном канале.',
@@ -4443,7 +4443,7 @@ function finalizePrecision() {
       BUILD_ROUTE:'Сделать один рабочий следующий шаг покупки или записи.',
       BUILD_ACCESS:'Определить одно конкретное место, где предложение увидят подходящие люди.',
       BUILD_MARKET_TEST:'Показать одно неизменное предложение ограниченной группе подходящих людей и зафиксировать реальные действия.',
-      BUILD_DEMAND:'Повторить качественный market test без одновременной смены аудитории, цены, route и предложения.',
+      BUILD_DEMAND:'Ещё раз предложить тот же товар или услугу подходящим людям, не меняя одновременно цену, аудиторию и способ заказа.',
       BUILD_FULFILLMENT:'Исправить один выявленный сбой выполнения первой реальной продажи.',
       BUILD_VALUE:'Проверить один конкретный обещанный клиентский результат после фактического выполнения.',
       BUILD_ECONOMICS:'Проверить фактическую экономику одной сопоставимой продажи на текущих условиях.',
@@ -4460,18 +4460,18 @@ function finalizePrecision() {
     ];
     if (planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION) return [
       changeOneThing,
-      'До начала зафиксируйте, что именно будет считаться наблюдением и к какому предложению/периоду оно относится.',
-      'Не меняйте параллельно другие части, которые способны сделать результат неинтерпретируемым.'
+      'До начала решите, что будете записывать: сколько людей увидели предложение, сколько написали и сколько заказали.',
+      'Пока не меняйте одновременно цену, товар и способ заказа — иначе не поймёте, что повлияло на результат.'
     ];
     if (planType === EXPERIMENT_PLAN_TYPE.READINESS_FIX) return [
       changeOneThing,
       'Проверьте, что после изменения человек может пройти этот шаг без вашей импровизации.',
-      'Только после этого переходите к реальному market test.'
+      'После этого предложите людям оформить заказ и посмотрите, получится ли это.'
     ];
     return [
-      'Зафиксируйте исходное состояние по главному показателю, если оно доступно.',
+      'Запишите, как обстоят дела сейчас: например, сколько было обращений, заказов или срывов.',
       changeOneThing,
-      'На протяжении проверки записывайте главный показатель и защитные показатели, не добавляя второе независимое изменение.'
+      'Отмечайте, что изменилось, и не забывайте о деньгах, сроках и качестве. Не меняйте сразу несколько вещей.'
     ];
   }
 
@@ -4491,7 +4491,7 @@ function finalizePrecision() {
       primaryCode:code,
       hypothesis:
         planType === EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION
-          ? 'Если собрать один решающий факт в сопоставимых условиях, станет понятно, какой следующий шаг выбрать.'
+          ? 'Один конкретный факт поможет понять, что делать дальше.'
           : 'Если изменить именно найденный участок и не менять остальные существенные факторы, основной показатель должен измениться в ожидаемую сторону без неприемлемого ухудшения денег, качества, сроков или нагрузки.',
       planType,
       changeOneThing,
@@ -4504,17 +4504,17 @@ function finalizePrecision() {
       exposureCap:null,
       timeCap:null,
       budgetCap:null,
-      capRule:'Не задавать универсальный N. Если тест требует лимита людей, времени или бюджета — зафиксировать доступный безопасный предел до старта и не менять его задним числом.',
+      capRule:'Заранее решите, скольким людям покажете предложение, сколько времени и денег готовы потратить. Не увеличивайте этот предел после первых отказов.',
       successRule:result.successRule,
       failureRule:result.failureRule,
-      inconclusiveRule:'Observation rule ещё не выполнен или данных недостаточно, чтобы выбрать между ветками. Это R0, а не победа и не провал.',
-      invalidRule:'Одновременно изменилось что-то ещё существенное, условия стали несопоставимы или измерение оказалось ненадёжным. Это RX.',
+      inconclusiveRule:'Проверка ещё не закончена или ответов слишком мало. Пока нельзя считать, что изменение помогло или не помогло.',
+      invalidRule:'Одновременно менялись другие условия или вы не записывали результаты. По такому сравнению нельзя понять, помогло ли изменение.',
       nextIfSuccess:result.nextIfSuccess,
       nextIfFailure:result.nextIfFailure,
-      nextIfInconclusive:'Не объявлять результат. Довести заранее выбранное наблюдение до конца либо пересобрать тест, если нужные события естественно не наступают.',
-      nextIfInvalid:'Не использовать этот тест для решения. Исправить измерение/дизайн и повторить только если решение всё ещё важно.',
-      followupTrigger:'Вернуться к повторной проверке, когда выполнено заранее выбранное условие наблюдения. Раньше — только при явном вреде, риске безопасности или нарушении обязательных требований.',
-      earlyStopRule:'Остановить проверку раньше можно только при явном вреде, риске безопасности или ухудшении важного защитного показателя. Отрицательный вывод нельзя объявлять до выполнения заранее выбранного условия наблюдения.',
+      nextIfInconclusive:'Пока не делайте вывод. Закончите начатую проверку или выберите более простой способ узнать результат.',
+      nextIfInvalid:'Не опирайтесь на эти результаты. При необходимости проведите проверку заново, не меняя несколько вещей одновременно.',
+      followupTrigger:'Вернитесь к результату, когда соберёте запланированные наблюдения. Если появились серьёзные проблемы — остановитесь раньше.',
+      earlyStopRule:'Если проверка начинает вредить деньгам, качеству или безопасности, остановите её. Если вреда нет, не делайте вывод по первым отказам.',
       status:EXPERIMENT_STATUS.DRAFT,
       createdAt:new Date().toISOString(),
       startedAt:null
@@ -4709,7 +4709,7 @@ function finalizePrecision() {
   function concretizeResult(code, out) {
     const a = state.answers;
     const model = a.scope_model;
-    const scope = a.scope_name ? `«${a.scope_name}»` : 'этого предложения';
+    const scope = a.scope_name ? `«${a.scope_name}»` : 'этот товар или услугу';
 
     if (code === 'LEGAL_SAFETY_BLOCKER') {
       if (a.gate_legal === 'unknown') {
@@ -5266,14 +5266,14 @@ function finalizePrecision() {
               ? 'Реальный шаг уже был, но человек уже хорошо вас знал и доверял вам. Для нового предложения нужно проверить, сработает ли оно и на менее тёплом подходящем покупателе.'
               : 'Реальный шаг к покупке есть, но пока непонятно, насколько этот случай похож на обычную будущую продажу.';
         out.action = numbered(
-          `Покажите ${scope} новому человеку, которому оно реально подходит, на обычной цене и обычных условиях.`,
+          `Покажите ${scope} новому подходящему покупателю по обычной цене.`,
           'Не меняйте одновременно продукт, цену и способ продажи — иначе будет непонятно, что именно проверили.',
           'Запишите реальный результат: купил / сделал серьёзный шаг / отказался и почему.'
         );
         out.metric = 'Реальное действие нового подходящего покупателя на обычной цене и условиях.';
       } else {
         out.action = numbered(
-          `Предложите ${scope} реальному покупателю на нормальных условиях.`,
+          `Предложите ${scope} человеку, которому это может быть нужно, по обычной цене.`,
           'Не заменяйте продажу опросом «нравится ли идея» и не давайте такую скидку, которая полностью меняет экономику.',
           'После результата запишите: кто купил/отказался, для какой задачи и на каких условиях.'
         );
@@ -5592,7 +5592,7 @@ function finalizePrecision() {
       };
     }
     if (['worse','same'].includes(a.fu_effect)) {
-      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.FAILED, decision:'REDESIGN', reason:'После полного валидного наблюдения критерий успеха не достигнут.' };
+      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.FAILED, decision:'REDESIGN', reason:'Проверка закончена, но улучшения не произошло.' };
     }
     return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Эффект остался между заранее заданными ветками решения.' };
   }
@@ -5716,7 +5716,7 @@ function finalizePrecision() {
       action:'Вернитесь к запланированному действию только если оно всё ещё актуально. Если выполнить его нереалистично — закройте этот план и сформулируйте более выполнимый следующий шаг.',
       metric:'Факт выполнения основного изменения.',
       dont:'Не называйте прошлую гипотезу подтверждённой или опровергнутой.',
-      next:'После фактического выполнения вернитесь к Follow-up.'
+      next:'Когда выполните запланированное действие, вернитесь и проверьте результат.'
     };
 
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_INVALID) return {
@@ -5889,12 +5889,16 @@ function finalizePrecision() {
     document.getElementById('resultMetric').textContent = (result.metrics || [result.metric]).filter(Boolean).join(' · ');
     document.getElementById('resultObservation').textContent = result.observationRule || result.next || '';
     document.getElementById('resultDont').textContent = (result.holdConstant || [result.dont]).filter(Boolean).join(' ');
-    document.getElementById('resultDecisionRule').textContent =
-      'Если успех: ' + (result.successRule || 'основной показатель улучшился без вреда') +
-      ' Если нет: ' + (result.failureRule || 'результат не улучшился или появился вред') + '.';
-    document.getElementById('resultNext').textContent =
-      'При успехе: ' + (result.nextIfSuccess || result.next || '') +
-      ' При неуспехе: ' + (result.nextIfFailure || 'вернуться к диагностике и выбрать другую причину.');
+    const decisionText = document.getElementById('resultDecisionRule');
+    decisionText.style.whiteSpace = 'pre-line';
+    decisionText.textContent =
+      'Если стало лучше: ' + (result.successRule || 'оставьте изменение, если оно не ухудшает деньги и качество') +
+      '\nЕсли не стало: ' + (result.failureRule || 'не увеличивайте расходы, сначала выясните причину') + '.';
+    const nextText = document.getElementById('resultNext');
+    nextText.style.whiteSpace = 'pre-line';
+    nextText.textContent =
+      'Если помогло: ' + (result.nextIfSuccess || result.next || 'сохраните изменение') +
+      '\nЕсли нет: ' + (result.nextIfFailure || 'вернитесь к диагностике и выберите другую причину.');
 
     if (result.followup && result.stateTransition?.nextResult && state.activeCycleId) {
       const nextCycleButton=document.createElement('button');
@@ -5923,13 +5927,9 @@ function finalizePrecision() {
       document.getElementById('experimentHold').textContent =
         experimentPlan.holdConstant.length ? experimentPlan.holdConstant.join(' ') : 'Не добавляйте второе независимое изменение во время этой проверки.';
       document.getElementById('experimentObservation').textContent = experimentPlan.observationRule || '';
-      document.getElementById('experimentBranches').textContent =
-        'Если сработало: ' + experimentPlan.successRule +
-        ' Если не сработало: ' + experimentPlan.failureRule +
-        ' Если данных пока мало: ' + experimentPlan.inconclusiveRule +
-        ' Если проверка получилась невалидной: ' + experimentPlan.invalidRule;
-      document.getElementById('experimentEarlyStop').textContent =
-        experimentPlan.earlyStopRule + ' ' + experimentPlan.followupTrigger;
+      // Detailed outcomes stay in saved data for Follow-up, not on the first result screen.
+      document.getElementById('experimentBranches').textContent = '';
+      document.getElementById('experimentEarlyStop').textContent = '';
 
       const startExperimentButton = document.getElementById('startExperimentButton');
       if (experimentPlan.status === EXPERIMENT_STATUS.ACTIVE) {
@@ -6052,10 +6052,19 @@ function finalizePrecision() {
   }
 
   function resultText(r) {
-  const precision = r.precisionSummary ? `\n\nЧто показывают ваши цифры:\n${r.precisionSummary}\n${r.precisionCaveat || ''}` : '';
-  const opportunity = r.optionalOpportunity ? `\n\nДополнительная возможность:\n${r.optionalOpportunity.title}` : '';
-  const plan = r.experimentPlan ? `\n\nПлан проверки:\nМеняем: ${r.experimentPlan.changeOneThing}\nКак выполнить:\n${r.experimentPlan.executionSteps.map((x,i)=>(i+1)+'. '+x).join('\n')}\nГлавный показатель: ${r.experimentPlan.primaryMetric || ''}\nКогда оценивать: ${r.experimentPlan.observationRule || ''}\nЕсли сработало: ${r.experimentPlan.successRule}\nЕсли не сработало: ${r.experimentPlan.failureRule}\nЕсли данных мало: ${r.experimentPlan.inconclusiveRule}\nЕсли проверка невалидна: ${r.experimentPlan.invalidRule}` : '';
-  return `${r.userTitle || r.title}\n\nПочему:\n${r.why.map(x=>'• '+x).join('\n')}\n\nУверенность:\n${r.confidenceLabel || confidenceLabel(r.confidence)}\n\nЧто этот вывод означает:\n${r.proven || ''}\n${r.boundary || ''}${precision}\n\nЧто сделать первым:\n${r.action}\n\nПока не менять:\n${(r.holdConstant || [r.dont]).filter(Boolean).join(' ')}\n\nЧто измерить:\n${(r.metrics || [r.metric]).filter(Boolean).join(' · ')}\n\nКогда оценивать:\n${r.observationRule || r.next || ''}\n\nКак принять решение:\nЕсли успех: ${r.successRule || ''}\nЕсли нет: ${r.failureRule || ''}\n\nЧто дальше:\nПри успехе: ${r.nextIfSuccess || r.next || ''}\nПри неуспехе: ${r.nextIfFailure || ''}${plan}${opportunity}`;
+  const precision = r.precisionSummary ? '\n\nЧто показывают цифры:\n' + r.precisionSummary : '';
+  const opportunity = r.optionalOpportunity ? '\n\nДополнительная возможность:\n' + r.optionalOpportunity.title : '';
+  return (r.userTitle || r.title) +
+    '\n\nПочему:\n' + r.why.map(x=>'• '+x).join('\n') +
+    '\n\nНасколько уверенный вывод: ' + (r.confidenceLabel || confidenceLabel(r.confidence)) +
+    '\n\nЧто сделать первым:\n' + r.action +
+    '\n\nЧто пока не менять:\n' + (r.holdConstant || [r.dont]).filter(Boolean).join(' ') +
+    '\n\nЧто записывать:\n' + (r.metrics || [r.metric]).filter(Boolean).join(' · ') +
+    '\n\nКогда проверить:\n' + (r.observationRule || r.next || '') +
+    '\n\nЕсли стало лучше: ' + (r.successRule || '') +
+    '\nЕсли не стало: ' + (r.failureRule || '') +
+    '\n\nЧто дальше:\n' + (r.nextIfSuccess || r.next || '') +
+    '\nЕсли результата нет: ' + (r.nextIfFailure || '') + precision + opportunity;
 }
 
   function isAnswered(id) {
