@@ -4096,7 +4096,11 @@ function finalizePrecision() {
     const top = candidates.find(x => x.tier < CANDIDATE_TIER.OPPORTUNITY);
     const strongKnown = top && (top.tier <= CANDIDATE_TIER.HARD_BLOCKER || (top.strength >= 3 && top.targetRelevance > 0));
 
-    if (!strongKnown && ['new_sales','stable'].includes(a.scope_goal) && a.period_integrity && !['normal','unknown'].includes(a.period_integrity)) {
+    const independentStrong = top && (
+      top.tier <= CANDIDATE_TIER.HARD_BLOCKER ||
+      ['E','CAP'].includes(top.zone)
+    );
+    if (!independentStrong && ['new_sales','stable'].includes(a.scope_goal) && a.period_integrity && !['normal','unknown'].includes(a.period_integrity)) {
       return 'Выбранный период был ограничен отпуском, закрытой записью или другой недоступностью. Нужен обычный сопоставимый период, прежде чем решать, усиливать ли привлечение.';
     }
     if (!strongKnown && a.core_access === 'unknown' && a.core_demand === 'unknown') {
@@ -4115,7 +4119,7 @@ function finalizePrecision() {
       return 'Для цели дохода не хватает одного решающего факта: сколько типичная продажа оставляет после прямых расходов и вашего времени.';
     }
     const context = meaningful(a.period_context);
-    if (!strongKnown && context.some(v => ['offer_change','channel_change'].includes(v)) && ['new_sales','stable'].includes(a.scope_goal) && a.deep_a2 && !['no_decline','unknown'].includes(a.deep_a2)) {
+    if (!independentStrong && context.some(v => ['offer_change','channel_change'].includes(v)) && ['new_sales','stable'].includes(a.scope_goal) && a.deep_a2 && !['no_decline','unknown'].includes(a.deep_a2)) {
       return 'В этом же периоде менялся важный элемент продаж. Нужен сопоставимый участок до/после или следующий обычный период, иначе нельзя выбрать между проблемой канала и реакцией на предложение.';
     }
     return '';
