@@ -8,6 +8,7 @@
   <meta name="description" content="Практический инструмент для проверки продаж у мастеров, услуг, экспертов и обучения." />
   <title>Диагностика системы продаж</title>
   <style>
+[hidden] { display: none !important; }
 :root {
   --bg: #f6f4ef;
   --surface: #fffdf9;
@@ -431,7 +432,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.0-dev';
+  const APP_VERSION = '1.13.1-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2948,6 +2949,8 @@ button:focus-visible, input:focus-visible {
     if (question.type === 'text' || question.type === 'number') {
       const input = document.createElement('input');
       input.className = 'text-input';
+      input.setAttribute('aria-labelledby','questionTitle');
+      if (help) input.setAttribute('aria-describedby','questionHelp');
       input.type = question.type === 'number' ? 'text' : 'text';
       input.inputMode = question.type === 'number' ? 'decimal' : 'text';
       input.placeholder = question.placeholder || '';
@@ -3724,7 +3727,7 @@ function precisionEvaluate(code, values) {
   if (code === 'FIRST_VALUE_GAP') {
     const z = zero('p_started','Никто не начал, поэтому нельзя оценить достижение первой пользы после старта.');
     if (z) return z;
-    if (values.p_first_value === values.p_started) return {outcome:PRECISION_OUTCOME.CONTRADICTED,message:'Все начавшие дошли до первого полезного результата. First Value Gap в этом периоде не подтверждается.'};
+    if (values.p_first_value === values.p_started) return {outcome:PRECISION_OUTCOME.CONTRADICTED,message:'Все начавшие дошли до первого полезного результата. Проблема с получением первой пользы в этом периоде не подтверждается.'};
     return {outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,message:'Не все начавшие дошли до первой пользы. Это поддерживает вывод, но не задаёт универсальную «норму».'};
   }
 
@@ -3740,7 +3743,7 @@ function precisionEvaluate(code, values) {
   }
 
   if (code === 'VALUE_FAILURE') {
-    const z = zero('p_value_total','Нет случаев с известным клиентским результатом. Нельзя оценить Value по отсутствующему знаменателю.');
+    const z = zero('p_value_total','Нет случаев с известным клиентским результатом. Нельзя оценить результат для клиента без реальных наблюдений.');
     if (z) return z;
     if (values.p_value_problems === 0) return {outcome:PRECISION_OUTCOME.CONTRADICTED,message:'Среди случаев с известным результатом нет подтверждённых проблем. Текущий вывод о Value не подтверждается.'};
     return {outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,message:'Есть подтверждённые проблемные результаты. Это поддерживает вывод без универсального порога.'};
@@ -3749,12 +3752,12 @@ function precisionEvaluate(code, values) {
   if (['NEXT_CYCLE','CUSTOMER_MEMORY_GAP'].includes(code)) {
     const z = zero('p_repeat_eligible','Ни у одного клиента не возник реальный повод вернуться. Repeat-диагноз по этому периоду запрещён.');
     if (z) return z;
-    if (values.p_repeat_returned === values.p_repeat_eligible) return {outcome:PRECISION_OUTCOME.WEAKENED,message:'Все eligible-клиенты вернулись. Repeat как текущее ограничение стал заметно слабее.'};
+    if (values.p_repeat_returned === values.p_repeat_eligible) return {outcome:PRECISION_OUTCOME.WEAKENED,message:'Все eligible-клиенты вернулись. Вероятность проблемы с повторными покупками стала заметно меньше.'};
     return {outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,message:'Не все клиенты с реальным поводом вернуться вернулись. Это поддерживает repeat-гипотезу, но не создаёт норматив процента.'};
   }
 
   if (code === 'SUB_RENEWAL') {
-    const z = zero('p_renewal_due','Ни у кого не наступил срок продления. Диагноз по renewal сейчас нельзя делать.');
+    const z = zero('p_renewal_due','Ни у кого не наступил срок продления. Диагноз по продлениям пока делать нельзя.');
     if (z) return z;
     if (values.p_renewed === values.p_renewal_due) return {outcome:PRECISION_OUTCOME.CONTRADICTED,message:'Все участники, у которых наступил срок продления, продлили. Renewal-проблема в этом периоде не подтверждается.'};
     return {outcome:PRECISION_OUTCOME.SUPPORTED_NOT_PROVEN,message:'Есть непродления среди реально наступивших продлений. Причину всё равно нужно определять по фактам, а не по проценту.'};
@@ -3890,7 +3893,7 @@ function finalizePrecision() {
       precisionSnapshot:snapshot,
       precisionAvailable:true,
       precisionSummary:evaluation.message,
-      precisionCaveat:'Нужны числа из того же scope/period/route. Когда появятся сопоставимые данные, проверку можно повторить.',
+      precisionCaveat:'Нужны числа для того же товара, периода и способа покупки. Когда появятся сопоставимые данные, проверку можно повторить.',
       confidence:CONFIDENCE.PRELIMINARY,
       confidenceLabel:confidenceLabel(CONFIDENCE.PRELIMINARY)
     };
@@ -3928,7 +3931,7 @@ function finalizePrecision() {
 
   if (evaluation.derived?.contribution !== undefined) {
     const d=evaluation.derived;
-    result.precisionSummary += ' Contribution после прямых расходов: ' + fmtNumber(d.contribution,2) +
+    result.precisionSummary += ' Остаток после прямых расходов: ' + fmtNumber(d.contribution,2) +
       (Number.isFinite(d.contributionPerHour) ? '; примерно ' + fmtNumber(d.contributionPerHour,2) + ' на час до постоянных расходов и налогов.' : '.');
   }
   if (evaluation.derived?.capacityReserve !== undefined) {
@@ -5890,7 +5893,7 @@ function finalizePrecision() {
       title:'Пока недостаточно данных для решения',
       summary:followupClass.reason,
       action:followupClass.decision === 'CONTINUE'
-        ? 'Не меняйте гипотезу и intervention. Доведите заранее выбранное условие наблюдения до конца, если это безопасно и разумно.'
+        ? 'Не меняйте пока запланированное действие. Доведите заранее выбранное условие наблюдения до конца, если это безопасно и разумно.'
         : 'Не тяните проверку бесконечно. Пересоберите условие наблюдения или выберите более информативный способ различить варианты.',
       metric:primaryMetric,
       dont:'Не записывайте этот исход как успех или провал.',
@@ -5902,7 +5905,7 @@ function finalizePrecision() {
       summary:followupClass.reason,
       action:followupClass.decision === 'ROLLBACK'
         ? 'Остановите или откатите это изменение, если это безопасно и возможно. Старую гипотезу не обязательно считать ложной: неудачным мог быть именно intervention.'
-        : 'Не повторяйте то же действие автоматически. Вернитесь к этому constraint и выберите другой механизм или перепроверьте сам diagnosis.',
+        : 'Не повторяйте то же действие автоматически. Вернитесь к этой проблеме и выберите другой механизм или перепроверьте сам diagnosis.',
       metric:primaryMetric,
       dont:'Не масштабируйте это изменение только потому, что уже вложили в него время или деньги.',
       next:'Новый шаг должен быть отдельным решением, а не автоматическим повтором прошлого intervention.'
@@ -5978,7 +5981,7 @@ function finalizePrecision() {
       holdConstant:[human.dont],
       metrics:[human.metric],
       observationRule:human.next,
-      successRule:'Следующий цикл должен использовать новый state, а не автоматически повторять старое действие.',
+      successRule:'Следующий цикл должен использовать новый результат, а не автоматически повторять старое действие.',
       failureRule:'Если новое действие снова не проходит проверку, пересчитать diagnosis/state.',
       nextIfSuccess:transition.nextResult?.userTitle || transition.nextResult?.title || human.next,
       nextIfFailure:human.next,
