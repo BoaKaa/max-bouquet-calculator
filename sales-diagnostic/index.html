@@ -2732,7 +2732,14 @@ button:focus-visible, input:focus-visible {
         const status=document.createElement('span');
         status.className='status-pill';
         status.textContent=cycleStatusLabel(cycle.status,cycle.legacyReadonly);
-        info.append(titleEl,meta,status);
+        info.append(titleEl,meta);
+        if (cycle.result?.followup && cycle.initialDiagnosisSnapshot?.userTitle) {
+          const original=document.createElement('div');
+          original.className='history-meta';
+          original.textContent='Первоначальный вывод: '+cycle.initialDiagnosisSnapshot.userTitle;
+          info.appendChild(original);
+        }
+        info.appendChild(status);
         row.appendChild(info);
 
         const actions=document.createElement('div');
@@ -2798,11 +2805,11 @@ button:focus-visible, input:focus-visible {
     const staleIds = state.path.slice(fromIndex + 1);
     staleIds.forEach(id => { delete state.answers[id]; });
     const changed = state.path[fromIndex];
-    if (['maturity_state','inheritance_entry','inheritance_map','build_market_audience'].includes(changed) ||
-        (changed === 'build_market' && state.mode === DIAGNOSTIC_MODE.BUILD)) {
+    if (['maturity_state','inheritance_entry','inheritance_map'].includes(changed) ||
+        (['build_market','build_market_audience'].includes(changed) && state.mode === DIAGNOSTIC_MODE.BUILD)) {
       state.path = state.path.slice(0, fromIndex + 1);
-    } else if (changed === 'build_market' && state.mode === DIAGNOSTIC_MODE.HYBRID) {
-      const stale = new Set(['build_market_quality','build_market_sample','build_market_audience','build_market_test_complete']);
+    } else if (['build_market','build_market_audience'].includes(changed) && state.mode === DIAGNOSTIC_MODE.HYBRID) {
+      const stale = new Set(changed === 'build_market' ? ['build_market_quality','build_market_sample','build_market_audience','build_market_test_complete'] : ['build_market_test_complete']);
       state.path = state.path.slice(0,fromIndex+1).concat(state.path.slice(fromIndex+1).filter(id => !stale.has(id)));
     } else if (changed === 'shared_resources' || changed === 'shared_materiality') {
       const stale = new Set(changed === 'shared_resources' ? ['shared_materiality','shared_impact'] : ['shared_impact']);
@@ -3774,7 +3781,10 @@ function reassessAfterPrecisionContradiction(base, evaluation) {
     const paid = state.answers.p_market_paid || 0;
     const actions = state.answers.p_market_actions || 0;
     if (origin === DIAGNOSTIC_MODE.BUILD || origin === DIAGNOSTIC_MODE.HYBRID) {
-      return makeResult(paid > 0 ? 'BUILD_FULFILLMENT' : (actions > 0 ? 'BUILD_MARKET_TEST' : 'DATA_GAP'));
+      const regularBuyer = ['target_normal','mixed_target'].includes(state.answers.build_market_quality);
+      const legalCleared = state.answers.gate_legal === 'no';
+      return makeResult(paid > 0 && regularBuyer && legalCleared
+        ? 'BUILD_FULFILLMENT' : 'BUILD_MARKET_TEST');
     }
   }
 
