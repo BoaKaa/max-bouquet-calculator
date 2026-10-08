@@ -432,7 +432,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.1-dev';
+  const APP_VERSION = '1.13.2-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -4371,24 +4371,62 @@ function finalizePrecision() {
   }
 
   function buildEvidenceObjects(code, whyLines) {
-    const ids = evidenceQuestionIdsFor(code);
     const a = state.answers;
-    const availableIds = ids.filter(id => a[id] !== undefined && a[id] !== null);
-    return whyLines.map((label, index) => {
-      let questionId = availableIds[index] || availableIds[0] || ids[index] || null;
-      if (code === 'BUILD_DEMAND') {
-        if (label.includes('Количество людей') || label.includes('Точное число показов')) questionId = 'build_market_sample';
-        else if (label.includes('эти люди могли купить')) questionId = 'build_market_audience';
-        else if (label.includes('Запланированный показ')) questionId = 'build_market_test_complete';
+    // Attribute each observed fact to the answer that produced it.
+    // An unattributed interpretation is not a recorded user observation.
+    const sources = [
+      ['Количество людей, которым вы показали', 'build_market_sample'],
+      ['Вы показывали предложение, но обращений', 'build_market'],
+      ['Вы указали, что эти люди могли купить', 'build_market_audience'],
+      ['Запланированный показ завершён', 'build_market_test_complete'],
+      ['Вы ещё не показали товар', 'build_market'],
+      ['Была бронь или согласование', 'build_market'],
+      ['Люди пока не обращались по поводу заказа', 'build_market'],
+      ['Первую покупку сделал знакомый', 'build_market_quality'],
+      ['Первый покупатель уже хорошо вас знал', 'build_market_quality'],
+      ['Первое согласие на покупку было', 'build_market_quality'],
+      ['Вы ещё не закончили запланированный показ', 'build_market_test_complete'],
+      ['По вашему ответу новый покупатель', 'build_offer'],
+      ['Человек, решивший купить, сейчас', 'build_route'],
+      ['Вы пока не выбрали конкретное место', 'build_access'],
+      ['Был интерес к покупке или оплата', 'build_fulfillment'],
+      ['Нужно подтвердить, что клиент получил', 'build_value'],
+      ['Выбранный период был необычным', 'period_integrity'],
+      ['В этот период были изменения', 'period_context'],
+      ['Новые люди, которые действительно могут купить', 'core_access'],
+      ['Новому человеку трудно быстро понять', 'core_offer'],
+      ['Среди обращений много людей', 'core_fit'],
+      ['Перед покупкой люди часто задают', 'core_trust'],
+      ['Даже люди, которые уже хотят купить', 'core_conversion'],
+      ['Часть клиентов теряется уже после', 'core_start'],
+      ['При выполнении текущих заказов', 'gate_fulfillment'],
+      ['Есть признаки, что часть клиентов', 'core_value'],
+      ['Повторная покупка здесь возможна', 'core_repeat'],
+      ['Часть проблем после продажи остаётся', 'post_recovery'],
+      ['Участники доходят до срока продления', 'core_repeat'],
+      ['У довольного клиента сейчас нет', 'post_referral'],
+      ['Есть бывшие клиенты, для которых', 'post_reactivation'],
+      ['Пока неясно, сколько вы действительно зарабатываете', 'gate_economics'],
+      ['Вы уже близко к пределу нагрузки', 'gate_capacity'],
+      ['Пока мало реальных признаков', 'core_demand']
+    ];
+    const repeatedIds = new Set([
+      'gate_fulfillment','core_access','core_offer','core_fit','core_trust',
+      'core_conversion','core_start','core_value','core_repeat','post_recovery'
+    ]);
+    return whyLines.map(label => {
+      const rule = sources.find(([prefix]) => label.startsWith(prefix));
+      let questionId = rule ? rule[1] : null;
+      if (!questionId && code === 'BUILD_ECONOMICS' && label.startsWith('По вашему ответу пока не подтверждено')) {
+        questionId = a.build_economics !== undefined ? 'build_economics' : 'build_econ_plausibility';
       }
+      if (!questionId && code === 'BUILD_CAPACITY' && label.startsWith('Пока нет уверенности')) {
+        questionId = a.build_capacity !== undefined ? 'build_capacity' : 'build_pilot_capacity';
+      }
+      if (questionId && (a[questionId] === undefined || a[questionId] === null)) questionId = null;
       const value = questionId ? a[questionId] : null;
-      const repeatedIds = new Set([
-        'gate_fulfillment','core_access','core_offer','core_fit','core_trust',
-        'core_conversion','core_start','core_value','core_repeat','post_recovery'
-      ]);
-      const type = typeof value === 'number'
-        ? 'NUMBER'
-        : (questionId && repeatedIds.has(questionId) ? 'REPEATED_OBSERVATION' : 'USER_ESTIMATE');
+      const type = !questionId ? 'INFERENCE' : typeof value === 'number'
+        ? 'NUMBER' : repeatedIds.has(questionId) ? 'REPEATED_OBSERVATION' : 'USER_ESTIMATE';
       return { type, questionId, value, label };
     });
   }
