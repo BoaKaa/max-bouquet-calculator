@@ -745,6 +745,48 @@ add('POP-DETAIL-REAL-SOURCE','P1','EVIDENCE',()=>{
     JSON.stringify(e.value)==='["price","deadline"]'));
 },['true']);
 
+
+add('NUM-ROUTE-PRESENT','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_measurement_valid:'yes'});
+ s.path=['fu_measurement_valid'];s.index=0;
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+ diag.goNext();const next=s.path[1];s.answers.fu_numeric_after=2;diag.goNext();
+ return next+'|'+s.path[2];
+},['fu_numeric_after|fu_effect']);
+add('NUM-ROUTE-LEGACY','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_measurement_valid:'yes'});s.path=['fu_measurement_valid'];
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT'}};
+ diag.goNext();return s.path[1];
+},['fu_effect']);
+add('NUM-LESS-IS-BETTER','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+  fu_measurement_valid:'yes',fu_numeric_after:2,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+ return diag.followupNumericComparison().movement+'|'+diag.classifyFollowup().code;
+},['better|FOLLOWUP_CONFIRMED']);
+add('NUM-BETTER-CONTRADICTS','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+  fu_measurement_valid:'yes',fu_numeric_after:7,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+ return diag.classifyFollowup().outcome+'|'+diag.classifyFollowup().code;
+},['R0|FOLLOWUP_INSUFFICIENT_EVIDENCE']);
+add('NUM-GUARDRAIL-PREVAILS','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+  fu_measurement_valid:'yes',fu_numeric_after:2,fu_effect:'better',fu_guardrail:['money']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_GUARDRAIL_FAIL']);
+add('NUM-SNAPSHOT-TRUTH','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+  fu_measurement_valid:'yes',fu_numeric_after:2,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT',diagnosticMode:'full',userTitle:'Сбои'},
+  experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+ diag.finalizeFollowup();
+ const f=s.result.followupSnapshot;
+ return f.primaryMetricBefore+'|'+f.primaryMetricAfter+'|'+f.primaryMetricDelta+'|'+
+  String(s.result.evidence.some(e=>e.questionId==='fu_numeric_after'&&e.value===2));
+},['5|2|-3|true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
