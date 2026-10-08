@@ -2702,7 +2702,7 @@ button:focus-visible, input:focus-visible {
     const modes = [
       { id: 'full', title: 'Проверить текущие продажи', text: 'Короткая проверка по вашей текущей цели, затем только вопросы, которые могут изменить решение.' },
       { id: 'build', title: 'Проверить новый или сильно изменённый продукт', text: 'Для запуска с нуля или заметно изменённого предложения внутри уже работающего бизнеса.' },
-      { id: 'followup', title: 'Проверить результат активного изменения', text: followupBase ? `Есть незавершённая проверка от ${formatDate(followupBase.date)}.` : 'Появится после запуска плана проверки.', disabled: !followupBase },
+      { id: 'followup', title: 'Проверить результат активного изменения', text: followupBase ? `Есть незавершённая проверка от ${formatDate(followupBase.date)}. Другие активные планы доступны в истории.` : 'Появится после запуска плана проверки.', disabled: !followupBase },
     ];
     modes.forEach(m => {
       const b = document.createElement('button');
@@ -2712,7 +2712,7 @@ button:focus-visible, input:focus-visible {
       grid.appendChild(b);
     });
 
-    const recent = store.cycles.slice(0,6);
+    const recent = store.cycles.filter(c => isOpenCycleStatus(c.status)).concat(store.cycles.filter(c => !isOpenCycleStatus(c.status)).slice(0,6));
     if (recent.length) {
       const historyCard=document.createElement('article');
       historyCard.className='card result-card';
@@ -2750,6 +2750,14 @@ button:focus-visible, input:focus-visible {
           resume.textContent=isOpenCycleStatus(cycle.status)?'Продолжить':'Открыть';
           resume.addEventListener('click',()=>resumeCycle(cycle.cycleId));
           actions.appendChild(resume);
+          if (cycle.experimentPlan?.experimentId &&
+              [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(cycle.status)) {
+            const followup=document.createElement('button');
+            followup.type='button'; followup.className='primary-btn';
+            followup.textContent='Проверить результат';
+            followup.addEventListener('click',()=>startFollowupForCycle(cycle.cycleId));
+            actions.appendChild(followup);
+          }
         }
         if (!cycle.legacyReadonly && !isOpenCycleStatus(cycle.status)) {
           const del=document.createElement('button');
@@ -2856,6 +2864,28 @@ button:focus-visible, input:focus-visible {
       [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item.status)
     );
     return cycle ? cycleAdapter(cycle) : null;
+  }
+
+  function startFollowupForCycle(cycleId) {
+    const cycle = loadHistoryStore().cycles.find(c => c.cycleId === cycleId);
+    if (!cycle || cycle.legacyReadonly || !cycle.experimentPlan?.experimentId ||
+        ![CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(cycle.status)) return false;
+    state.entryMode = DIAGNOSTIC_MODE.FOLLOWUP;
+    state.answers = {};
+    state.path = ['fu_done'];
+    state.index = 0;
+    state.result = null;
+    state.deepAdded = false;
+    state.resumeContext = null;
+    state.precisionBase = null;
+    state.followupBase = cycleAdapter(cycle);
+    state.activeCycleId = cycle.cycleId;
+    state.scopeId = cycle.scopeId || null;
+    state.activeExperiment = cycle.experimentPlan;
+    setDiagnosticMode(DIAGNOSTIC_MODE.FOLLOWUP);
+    resetButton.hidden = false;
+    renderQuestion();
+    return true;
   }
 
   function startMode(mode) {
@@ -6215,7 +6245,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
