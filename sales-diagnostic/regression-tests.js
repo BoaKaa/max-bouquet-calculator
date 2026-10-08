@@ -321,6 +321,44 @@ add('RC-route-one-early-stop','P1','ROUTE',()=>{
   return code(s.result)+'|'+String(!s.path.includes('build_market_test_complete'));
 },['BUILD_MARKET_TEST|true']);
 
+
+/* Recheck: confidence must reflect evidence quality, not just diagnostic mode. */
+add('RC-confidence-friend','P1','RESULT',()=>{
+  reset('build',Object.assign({},b,{build_market:'paid',build_market_quality:'friend_support'}),['build_market','build_market_quality']);
+  const r=diag.diagnoseBuild(); return code(r)+'|'+r.confidence;
+},['BUILD_MARKET_TEST|PRELIMINARY']);
+add('RC-confidence-untested','P1','RESULT',()=>{
+  reset('build',Object.assign({},b,{build_market:'unknown'}),['build_market']);
+  const r=diag.diagnoseBuild(); return code(r)+'|'+r.confidence;
+},['BUILD_MARKET_TEST|PRELIMINARY']);
+add('RC-confidence-paid-next-phase','P1','RESULT',()=>{
+  reset('build',Object.assign({},b,{build_market:'paid',build_market_quality:'target_normal'}),['build_market','build_market_quality']);
+  const r=diag.diagnoseBuild(); return code(r)+'|'+r.confidence;
+},['BUILD_FULFILLMENT|PRELIMINARY']);
+add('RC-confidence-market-complete','P1','RESULT',()=>{
+  reset('build',Object.assign({},b,{build_market:'no',build_market_audience:'yes',build_market_sample:20,build_market_test_complete:'yes'}),['build_market','build_market_sample','build_market_audience','build_market_test_complete']);
+  const r=diag.diagnoseBuild(); return code(r)+'|'+r.confidence;
+},['BUILD_DEMAND|MEDIUM']);
+add('RC-history-persistence','P1','HISTORY',()=>{
+  const before=diag.loadHistoryStore();
+  try {
+    const now='2026-10-08T10:00:00.000Z';
+    const store={schemaVersion:2,cycles:[{cycleId:'probe-open',status:'ACTIVE',updatedAt:now},{cycleId:'probe-closed',status:'COMPLETED',updatedAt:now}],activeCycleIds:[],lastActiveCycleId:'probe-open'};
+    if(!diag.writeHistoryStore(store))return 'WRITE_FAILED';
+    const loaded=diag.loadHistoryStore();
+    return loaded.cycles.length+'|'+loaded.activeCycleIds.length;
+  } finally {diag.writeHistoryStore(before);}
+},['2|1']);
+add('RC-history-clear-closed','P1','HISTORY',()=>{
+  const before=diag.loadHistoryStore();
+  try {
+    const now='2026-10-08T10:00:00.000Z';
+    diag.writeHistoryStore({schemaVersion:2,cycles:[{cycleId:'probe-open',status:'ACTIVE',updatedAt:now},{cycleId:'probe-closed',status:'COMPLETED',updatedAt:now}],activeCycleIds:[],lastActiveCycleId:'probe-open'});
+    if(!diag.clearClosedHistory()) return 'CLEAR_FAILED';
+    return diag.loadHistoryStore().cycles.map(c=>c.cycleId).join(',');
+  } finally {diag.writeHistoryStore(before);}
+},['probe-open']);
+
 const failures=[];
 for (const t of tests) {
   let got;
