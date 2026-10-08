@@ -660,6 +660,23 @@ add('AUD-ROUTE-DYNAMIC-CONTEXT','P2','ROUTE',()=>{
  return String(x.ids.includes('period_context')&&x.ids.indexOf('period_context')>x.ids.indexOf('deep_a2'));
 },['true']);
 
+
+add('AUD-ROUTE-BACK-RESTORE-PAID','P0','ROUTE',()=>{
+  reset('build',{scope_model:'PRODUCT',build_test_type:'payment',gate_legal:'no'},
+    ['build_test_type','gate_legal','build_offer','build_access','build_market']);
+  s.index=0;diag.goNext();
+  return String(['build_econ_plausibility','build_pilot_capacity','build_route']
+    .every(x=>s.path.includes(x)) && s.path[1]==='gate_legal');
+},['true']);
+add('AUD-ROUTE-BACK-SKIP-NONCOMMERCIAL','P1','ROUTE',()=>{
+  reset('build',{scope_model:'PRODUCT',build_test_type:'research',gate_legal:'unknown'},
+    ['build_test_type','gate_legal','build_econ_plausibility','build_pilot_capacity',
+      'build_offer','build_route','build_access','build_market_context','build_market']);
+  s.index=0;diag.goNext();
+  return String(['build_econ_plausibility','build_pilot_capacity','build_route','build_market_context']
+    .every(x=>!s.path.includes(x))&&s.path[1]==='gate_legal');
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
