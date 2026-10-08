@@ -432,7 +432,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.4-dev';
+  const APP_VERSION = '1.13.5-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3257,10 +3257,13 @@ button:focus-visible, input:focus-visible {
       return;
     }
 
-    if (currentId === 'build_test_type' && state.mode === DIAGNOSTIC_MODE.BUILD &&
-        ['research','waitlist'].includes(state.answers.build_test_type)) {
-      const premature = new Set(['build_econ_plausibility','build_pilot_capacity','build_route','build_market_context']);
-      state.path = state.path.filter(id => !premature.has(id));
+    if (currentId === 'build_test_type' && state.mode === DIAGNOSTIC_MODE.BUILD) {
+      const nonCommercial = ['research','waitlist'].includes(state.answers.build_test_type);
+      // Rebuild both directions. Switching Back from research to a paid test
+      // must restore the economy, capacity and checkout safety questions.
+      const remaining = baseBuildRoute().slice(1).filter(id =>
+        !nonCommercial || !['build_econ_plausibility','build_pilot_capacity','build_route','build_market_context'].includes(id));
+      state.path = state.path.slice(0,state.index + 1).concat(remaining);
     }
     if (currentId === 'core_access' && state.answers.core_access === 'none' &&
         state.mode === DIAGNOSTIC_MODE.FULL) {
