@@ -5862,6 +5862,14 @@ function finalizePrecision() {
     const previousTitle = previousResult?.userTitle || previousResult?.title || 'прошлый вывод';
     const primaryMetric = plan?.primaryMetric || previousResult?.metrics?.[0] || previousResult?.metric || 'основной показатель';
     const partial = state.answers.fu_done === 'primary_only';
+    if (transition?.toPrimaryCode === 'LEGAL_SAFETY_BLOCKER') return {
+      title:'Перед следующей продажей проверьте обязательные требования',
+      summary:'Появилась оплата, но обязательные требования к такой продаже ранее не были выяснены.',
+      action:'Не принимайте новые заказы, бронирования и оплаты до проверки и выполнения обязательных требований. При необходимости разберитесь с уже принятым обязательством.',
+      metric:'Есть подтверждение, что требования установлены и соблюдены.',
+      dont:'Не считайте факт оплаты разрешением продавать без проверки обязательных требований.',
+      next:'После проверки правил отдельно оцените, можно ли безопасно продолжать продажи.'
+    };
     if (transition?.type === 'MARKET_INTEREST_ONLY' && followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS) return {
       title:'Интерес появился, но оплаченного заказа пока нет',
       summary:'Люди проявили интерес, но это ещё не подтверждение покупки и выполнения заказа.',
@@ -6248,7 +6256,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
