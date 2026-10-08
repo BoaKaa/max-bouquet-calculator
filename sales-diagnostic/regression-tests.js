@@ -299,7 +299,7 @@ const simulatedPrecision = [
   ['A-P08','START_FAILURE',{p_comparable:'yes',p_confirmed:5,p_started:5},'CONTRADICTED'],
   ['A-P09','FIT',{p_comparable:'yes',p_inquiries:0,p_fit:0},'INSUFFICIENT_DENOMINATOR'],
   ['A-P10','NEXT_CYCLE',{p_comparable:'yes',p_repeat_eligible:0,p_repeat_returned:0},'INSUFFICIENT_DENOMINATOR'],
-  ['A-P11','CAPACITY',{p_comparable:'yes',p_current_volume:5,p_sustainable_volume:20,p_capacity_period:'week'},'WEAKENED']
+  ['A-P11','FIRST_VALUE_GAP',{p_comparable:'yes',p_started:8,p_first_value:8},'CONTRADICTED']
 ];
 for (const [id,primaryCode,values,expected] of simulatedPrecision) precision(id,'P1',primaryCode,values,[expected]);
 
