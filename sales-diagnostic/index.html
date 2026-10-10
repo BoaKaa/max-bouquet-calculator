@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.11-dev';
+  const APP_VERSION = '1.13.12-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3392,7 +3392,8 @@ button:focus-visible, input:focus-visible {
     if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(state.mode) && currentId === 'build_market') {
       if (state.answers.build_market === 'paid' && !state.path.includes('build_market_quality')) {
         state.path.splice(state.index + 1, 0, 'build_market_quality');
-      } else if (state.answers.build_market === 'no') {
+      } else if (state.answers.build_market === 'no' &&
+                 !['research','waitlist'].includes(state.answers.build_test_type)) {
         const add = [];
         if (!state.path.includes('build_market_sample')) add.push('build_market_sample');
         if (!state.path.includes('build_market_audience')) add.push('build_market_audience');
@@ -3571,7 +3572,11 @@ button:focus-visible, input:focus-visible {
     const a = state.answers;
     if (currentId === 'gate_legal' && legalBlocksCurrentAction(a, state.mode)) return 'LEGAL_SAFETY_BLOCKER';
     if (currentId === 'build_market' && ['unknown','action','reserved'].includes(a.build_market)) return 'BUILD_MARKET_TEST';
-    if (currentId === 'build_market' && a.build_market === 'no') return '';
+    if (currentId === 'build_market' && a.build_market === 'no') {
+      // Research/waitlist did not give respondents a real chance to buy.
+      // No commercial-demand inference or purchase-denominator questions.
+      return ['research','waitlist'].includes(a.build_test_type) ? 'BUILD_MARKET_TEST' : '';
+    }
     if (currentId === 'build_market_audience' && ['no','mixed','unknown'].includes(a.build_market_audience)) return 'BUILD_MARKET_TEST';
     if (currentId === 'build_market_audience' && a.build_market_audience === 'yes') {
       return Number.isInteger(a.build_market_sample) && a.build_market_sample > 1 ? '' : 'BUILD_MARKET_TEST';
@@ -4523,6 +4528,7 @@ function finalizePrecision() {
       ['Вы ещё не показали товар', 'build_market'],
       ['Была бронь или согласование', 'build_market'],
       ['Люди пока не обращались по поводу заказа', 'build_market'],
+      ['Вы выбрали только исследование или необязательный', 'build_test_type'],
       ['Первую покупку сделал знакомый', 'build_market_quality'],
       ['Первый покупатель уже хорошо вас знал', 'build_market_quality'],
       ['Первое согласие на покупку было', 'build_market_quality'],
@@ -5765,11 +5771,16 @@ function finalizePrecision() {
     if (code === 'BUILD_MARKET_TEST') {
       if (a.build_market === 'unknown') lines.push('Вы ещё не показали товар или услугу людям, которые могли бы их заказать.');
       if (a.build_market === 'reserved') lines.push('Была бронь или согласование заказа, но оплата пока не подтверждена.');
-      if (a.build_market === 'no') lines.push('Люди пока не обращались по поводу заказа, но наблюдений недостаточно для вывода о спросе.');
+      if (a.build_market === 'no' && ['research','waitlist'].includes(a.build_test_type))
+        lines.push('Вы выбрали только исследование или необязательный список ожидания. Покупку людям не предлагали, поэтому отсутствие заказов ничего не доказывает о спросе.');
+      else if (a.build_market === 'no')
+        lines.push('Люди пока не обращались по поводу заказа, но наблюдений недостаточно для вывода о спросе.');
       if (a.build_market_quality === 'friend_support') lines.push('Первую покупку сделал знакомый или родственник из поддержки — это не показывает, как поведут себя другие покупатели.');
       if (a.build_market_quality === 'warm_existing') lines.push('Первый покупатель уже хорошо вас знал. Реакция новых людей пока неизвестна.');
       if (a.build_market_quality === 'special_terms') lines.push('Первое согласие на покупку было на особых условиях. По ним нельзя судить об обычной цене.');
-      if (a.build_market_test_complete !== 'yes' && a.build_market === 'no') lines.push('Вы ещё не закончили запланированный показ или не определили заранее, сколько людей хотите опросить.');
+      if (a.build_market_test_complete !== 'yes' && a.build_market === 'no' &&
+          !['research','waitlist'].includes(a.build_test_type))
+        lines.push('Вы ещё не закончили запланированный показ или не определили заранее, сколько людей хотите опросить.');
     }
     if (code === 'BUILD_OFFER' && ['no','mostly_no','unknown'].includes(a.build_offer)) lines.push('По вашему ответу новый покупатель пока не может самостоятельно разобраться, что продаётся и как заказать.');
     if (code === 'BUILD_ROUTE' && ['no','mostly_no','unknown'].includes(a.build_route)) lines.push('Человек, решивший купить, сейчас не может без вашей помощи завершить оформление заказа или оплату.');
