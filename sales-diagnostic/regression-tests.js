@@ -935,6 +935,76 @@ add('TARGET-N-GUARDRAIL-HIGHER-PRIORITY','P0','FOLLOWUP',()=>{
  return diag.classifyFollowup().code;
 },['FOLLOWUP_GUARDRAIL_FAIL']);
 
+
+/* Real diagnosis selection: the earliest secondary contradiction must not
+   hide a contradictory HARD GATE. Metamorphic variations across 5 models. */
+add('SEL-MULTI-CONFLICT-SELF-FULFILL','P0','SELECTION',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+   reset('full',{scope_model:model,scope_goal:'new_sales',gate_fulfillment:'regular',
+    deep_f1:['none'],deep_f2:'no',gate_economics:'good',gate_capacity:'reserve',
+    core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+   const result=diag.diagnoseFull();
+   return code(result)==='DATA_GAP' &&
+       result.why.some(line=>line.includes('регулярные сбои выполнения') || line.includes('повторяющиеся случаи'));
+ }));
+},['true']);
+add('SEL-MULTI-CONFLICT-SELF-ECON','P0','SELECTION',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+   reset('full',{scope_model:model,scope_goal:'new_sales',gate_fulfillment:'never',
+    gate_economics:'negative',deep_e1:'no',deep_e2:'yes',deep_e3:['none'],
+    core_offer:'no',deep_o1:['none'],deep_o2:'easy',gate_capacity:'reserve'});
+   const result=diag.diagnoseFull();
+   return code(result)==='DATA_GAP' &&
+      result.why.some(line=>line.includes('убытков') || line.includes('экономику'));
+ }));
+},['true']);
+add('SEL-MULTI-CONFLICT-OTHER-ECON','P0','SELECTION',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+   reset('full',{scope_model:model,scope_goal:'new_sales',
+    gate_fulfillment:'regular',deep_f1:['none'],deep_f2:'no',
+    gate_economics:'negative',gate_capacity:'reserve',
+    core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+   return code(diag.diagnoseFull())==='ECONOMICS';
+ }));
+},['true']);
+add('SEL-MULTI-CONFLICT-OTHER-CAP','P0','SELECTION',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+   reset('full',{scope_model:model,scope_goal:'new_sales',
+    gate_fulfillment:'never',gate_economics:'negative',
+    deep_e1:'no',deep_e2:'yes',deep_e3:['none'],gate_capacity:'overload',
+    core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+   return code(diag.diagnoseFull())==='CAPACITY';
+ }));
+},['true']);
+add('SEL-MULTI-CONFLICT-LEGAL-FIRST','P0','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',gate_legal:'yes',gate_fulfillment:'regular',
+ deep_f1:['none'],deep_f2:'no',gate_economics:'negative',
+ deep_e1:'no',deep_e2:'yes',deep_e3:['none']});
+ return code(diag.diagnoseFull());
+},['LEGAL_SAFETY_BLOCKER']);
+add('SEL-MULTI-CONFLICT-FULFILL-REALLY-TRUE','P1','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',
+ gate_fulfillment:'regular',deep_f1:['deadline'],deep_f2:'no',
+ gate_economics:'good',core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+ return code(diag.diagnoseFull());
+},['FULFILLMENT']);
+add('SEL-MULTI-CONFLICT-ECON-REALLY-TRUE','P1','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',
+ gate_economics:'negative',deep_e1:'yes',gate_fulfillment:'never',
+ core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+ return code(diag.diagnoseFull());
+},['ECONOMICS']);
+add('SEL-MULTI-CONFLICT-ONLY-SECONDARY','P1','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',
+ gate_economics:'good',gate_capacity:'reserve',gate_fulfillment:'never',
+ core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+ return code(diag.diagnoseFull());
+},['DATA_GAP']);
+
 const failures=[];
 for (const t of tests) {
   let got;
