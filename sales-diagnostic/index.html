@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.15-dev';
+  const APP_VERSION = '1.13.16-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2383,6 +2383,21 @@ button:focus-visible, input:focus-visible {
     return store;
   }
 
+  function historyStorageProblem() {
+    let raw;
+    try { raw=localStorage.getItem(HISTORY_STORAGE_KEY); }
+    catch { return 'История недоступна: браузер запретил доступ к сохранённым данным.'; }
+    if (raw === null) return null;
+    try {
+      const data=JSON.parse(raw);
+      if (data?.schemaVersion!==HISTORY_SCHEMA_VERSION || !Array.isArray(data.cycles))
+        return 'Сохранённая история имеет неизвестную структуру или версию. Приложение не будет её перезаписывать.';
+    } catch {
+      return 'Сохранённая история повреждена. Приложение не будет её перезаписывать.';
+    }
+    return null;
+  }
+
   function loadHistoryStore() {
     let store;
     try {
@@ -2415,6 +2430,8 @@ button:focus-visible, input:focus-visible {
   }
 
   function writeHistoryStore(store) {
+    // Reading an unsupported or corrupt record as [] is NOT permission to erase it.
+    if (historyStorageProblem()) return false;
     try {
       store.updatedAt = new Date().toISOString();
       pruneHistoryStore(store);
@@ -2580,6 +2597,7 @@ button:focus-visible, input:focus-visible {
   }
 
   function exportHistory() {
+    if (historyStorageProblem()) return false;
     const store = loadHistoryStore();
     const payload = {
       exportVersion:1,
@@ -2601,6 +2619,70 @@ button:focus-visible, input:focus-visible {
     } catch {
       return false;
     }
+  }
+
+  function reviewHistoryImport(text) {
+    const blocked=historyStorageProblem();
+    if (blocked) return {ok:false,reason:blocked};
+    if (typeof text!=='string' || text.length>1024*1024)
+      return {ok:false,reason:'Файл истории слишком большой (максимум 1 МБ).'};
+    let data;
+    try {data=JSON.parse(text);}catch{return {ok:false,reason:'Файл не содержит корректный JSON.'};}
+    if (data?.exportVersion!==1 || data?.historySchemaVersion!==HISTORY_SCHEMA_VERSION ||
+        !Array.isArray(data.cycles))
+      return {ok:false,reason:'Файл не является экспортом истории совместимой версии.'};
+    if (data.cycles.length>HISTORY_MAX_CYCLES)
+      return {ok:false,reason:'В файле больше 20 циклов. Для этого объёма нужен отдельный перенос без сокращения истории.'};
+    const existing=loadHistoryStore();
+    const previous=new Map(existing.cycles.map(c=>[c.cycleId,c]));
+    const ids=new Set(),fresh=[];
+    let duplicate=0;
+    for (const c of data.cycles) {
+      if (!c || typeof c!=='object' || typeof c.cycleId!=='string' ||
+          !/^((cycle|legacy)_[a-zA-Z0-9_]+)$/.test(c.cycleId) ||
+          c.cycleId.length>128 || ids.has(c.cycleId) ||
+          c.schemaVersion!==HISTORY_SCHEMA_VERSION ||
+          typeof c.createdAt!=='string' || typeof c.updatedAt!=='string' ||
+          !c.scope || typeof c.scope!=='object' || Array.isArray(c.scope) ||
+          !c.result || typeof c.result!=='object' ||
+          !c.legacyReadonly && (
+            !Array.isArray(c.result.why) ||
+            !c.result.why.every(v=>typeof v==='string') ||
+            typeof (c.result.userTitle||c.result.title)!=='string'
+          ) ||
+          c.experimentPlan && (
+            typeof c.experimentPlan!=='object' ||
+            !Array.isArray(c.experimentPlan.executionSteps) ||
+            !Array.isArray(c.experimentPlan.secondaryMetrics) ||
+            !Array.isArray(c.experimentPlan.holdConstant)
+          ) ||
+          !(Object.values(CYCLE_STATUS).includes(c.status)||c.status==='LEGACY_READONLY'))
+        return {ok:false,reason:'В файле есть неполный или повреждённый цикл. Ничего не импортировано.'};
+      ids.add(c.cycleId);
+      if(previous.has(c.cycleId)){
+        if(JSON.stringify(previous.get(c.cycleId))!==JSON.stringify(c))
+          return {ok:false,reason:'Совпадает идентификатор цикла, но его данные различаются. Автоматическая перезапись запрещена.'};
+        duplicate++;
+      } else fresh.push(c);
+    }
+    if(existing.cycles.length+fresh.length>HISTORY_MAX_CYCLES)
+      return {ok:false,reason:'При объединении будет больше 20 циклов. Импорт остановлен, чтобы не удалить старые записи.'};
+    return {ok:true,newCount:fresh.length,duplicateCount:duplicate,total:data.cycles.length,
+      currentRaw:localStorage.getItem(HISTORY_STORAGE_KEY),newCycles:fresh};
+  }
+
+  function commitHistoryImport(text,expectedRaw) {
+    if (historyStorageProblem()) return false;
+    let raw;
+    try{raw=localStorage.getItem(HISTORY_STORAGE_KEY);}catch{return false;}
+    // Another tab may have changed the history since the preview.
+    if(raw!==expectedRaw)return false;
+    const reviewed=reviewHistoryImport(text);
+    if(!reviewed.ok || reviewed.currentRaw!==raw)return false;
+    if(!reviewed.newCount)return true;
+    const store=loadHistoryStore();
+    store.cycles=[...store.cycles,...reviewed.newCycles];
+    return writeHistoryStore(store);
   }
 
   function cycleStatusLabel(status, legacyReadonly = false) {
@@ -2758,12 +2840,25 @@ button:focus-visible, input:focus-visible {
     });
 
     const recent = store.cycles.filter(c => isOpenCycleStatus(c.status)).concat(store.cycles.filter(c => !isOpenCycleStatus(c.status)).slice(0,6));
-    if (recent.length) {
+    { // Import must also be accessible on a fresh browser with no history.
       const historyCard=document.createElement('article');
       historyCard.className='card result-card';
       historyCard.innerHTML='<h2>История решений</h2><p class="lead">Здесь сохраняются циклы диагностики и проверок, а не клиенты или заказы.</p>';
       const list=document.createElement('div');
       list.className='reason-list';
+      if (!recent.length) {
+        const empty=document.createElement('p');
+        empty.className='microcopy';
+        empty.textContent='Пока нет сохранённых проверок. Можно восстановить ранее экспортированную историю.';
+        list.appendChild(empty);
+      }
+      const storageWarning=historyStorageProblem();
+      if(storageWarning){
+        const warning=document.createElement('p');
+        warning.className='note-box';
+        warning.textContent=storageWarning+' Не удаляйте данные браузера, пока не сделаете резервную копию.';
+        list.appendChild(warning);
+      }
       recent.forEach(cycle => {
         const row=document.createElement('div');
         row.className='history-row';
@@ -2829,8 +2924,55 @@ button:focus-visible, input:focus-visible {
       });
       historyActions.appendChild(exportButton);
 
+      // Preview is read-only. Commit requires a second explicit action and
+      // refuses conflicting IDs, stale preview and any implicit pruning.
+      const importFile=document.createElement('input');
+      importFile.type='file';importFile.accept='.json,application/json';
+      importFile.className='text-input';
+      importFile.setAttribute('aria-label','Выберите файл экспорта истории');
+      const importMessage=document.createElement('p');
+      importMessage.className='microcopy';importMessage.setAttribute('role','status');
+      importMessage.textContent='Импорт только добавляет новые циклы. Существующие не перезаписываются.';
+      const importButton=document.createElement('button');
+      importButton.type='button';importButton.className='ghost-btn';
+      importButton.textContent='Импортировать проверенные записи';importButton.disabled=true;
+      let pendingText=null,pendingRaw=null;
+      importFile.addEventListener('change',async()=>{
+        importButton.disabled=true;pendingText=null;pendingRaw=null;
+        const file=importFile.files?.[0];
+        if(!file)return;
+        if(file.size>1024*1024){
+          importMessage.textContent='Файл слишком большой (максимум 1 МБ).';return;
+        }
+        try {
+          const text=await file.text();
+          const preview=reviewHistoryImport(text);
+          if(!preview.ok){importMessage.textContent=preview.reason;return;}
+          importMessage.textContent='Проверено: новых циклов '+preview.newCount+
+            ', уже имеющихся без изменений '+preview.duplicateCount+'.';
+          pendingText=text;pendingRaw=preview.currentRaw;
+          importButton.disabled=preview.newCount===0;
+        } catch {importMessage.textContent='Не удалось прочитать файл. История не изменена.';}
+      });
+      importButton.addEventListener('click',()=>{
+        if(!pendingText)return;
+        const check=reviewHistoryImport(pendingText);
+        if(!check.ok || check.currentRaw!==pendingRaw){
+          importButton.disabled=true;
+          importMessage.textContent='История изменилась или файл больше не проходит проверку. Выберите файл ещё раз.';
+          return;
+        }
+        if(!window.confirm('Добавить '+check.newCount+' новых циклов? Существующие записи не заменяются.'))return;
+        if(commitHistoryImport(pendingText,pendingRaw))showHome();
+        else {importButton.disabled=true;importMessage.textContent='Импорт остановлен. История не изменена.';}
+      });
+      historyActions.appendChild(importFile);
+      historyActions.appendChild(importButton);
+      historyActions.appendChild(importMessage);
+
       const clearButton=document.createElement('button');
       clearButton.type='button'; clearButton.className='ghost-btn'; clearButton.textContent='Удалить завершённую историю';
+      clearButton.disabled=!store.cycles.some(c=>!isOpenCycleStatus(c.status));
       clearButton.addEventListener('click',()=>{
         if (window.confirm('Удалить завершённые циклы? Незавершённые проверки останутся.')) {
           clearClosedHistory();
@@ -6687,7 +6829,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
