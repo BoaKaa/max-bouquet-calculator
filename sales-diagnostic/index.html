@@ -401,7 +401,9 @@ button:focus-visible, input:focus-visible {
   <div id="experimentDenominatorPanel" hidden><label class="microcopy" for="experimentDenominatorBefore" id="experimentDenominatorLabel"></label>
 <input id="experimentDenominatorBefore" type="number" min="0" step="1" inputmode="numeric" class="text-input" placeholder="Например: 20"/>
 <p class="microcopy">Для доли нужны оба числа: число событий и общее число случаев. Если одного нет, такое сравнение будет неточным.</p></div>
-<p class="microcopy">Сравнивайте одинаковые рабочие периоды и одинаково считайте случаи. Неизвестное число можно оставить пустым.</p>
+<label class="microcopy" for="experimentPlannedCount">Сколько случаев планируете проверить после изменения? (необязательно)</label>
+<input id="experimentPlannedCount" class="text-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 20"/>
+<p class="microcopy">Выберите число заранее для своей задачи. Универсальной достаточной выборки нет. Считайте сопоставимые случаи.</p>
 </div>
 <p id="experimentBranches" hidden></p>
         <p class="microcopy" id="experimentEarlyStop" hidden></p>
@@ -441,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.9-dev';
+  const APP_VERSION = '1.13.10-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2024,6 +2026,10 @@ button:focus-visible, input:focus-visible {
       },
       'Считайте те же случаи, за такой же объём работы, что до изменения. Если сравнение некорректно — вернитесь и отметьте это.',
       'Например: 7', 'count'),
+    fu_observed_count: numberQ('fu_observed_count','Сколько случаев проверили',
+      'Сколько сопоставимых случаев вы действительно учли после изменения?',
+      'Считайте только подходящие случаи по этой проверке, не увеличивая план задним числом.',
+      'Например: 12','count'),
     fu_numeric_denominator_after: dynamicNumberQ('fu_numeric_denominator_after','Сколько было случаев',
       s => {
         const c=s.followupBase?.result?.primaryCode||s.followupBase?.experimentPlan?.primaryCode;
@@ -3251,7 +3257,14 @@ button:focus-visible, input:focus-visible {
           finalizeFollowup();
           return;
         }
-        state.path = state.path.slice(0, state.index + 1).concat(['fu_measurement_valid']);
+        const {plan}=followupPlanContext();
+        const previous=state.followupBase?.result?.primaryCode||state.followupBase?.experimentPlan?.primaryCode;
+        const spec=followupNumericSpec(previous);
+        const hasDenominator=spec?.denominator && Number.isInteger(plan?.primaryMetricDenominatorBefore);
+        const askObserved=Number.isInteger(plan?.plannedObservationCount) && plan.plannedObservationCount>0 && !hasDenominator;
+        state.path=state.path.slice(0,state.index+1).concat([askObserved?'fu_observed_count':'fu_measurement_valid']);
+      } else if (currentId === 'fu_observed_count') {
+        state.path=state.path.slice(0,state.index+1).concat(['fu_measurement_valid']);
       } else if (currentId === 'fu_measurement_valid') {
         if (['no'].includes(state.answers.fu_measurement_valid)) {
           finalizeFollowup();
@@ -5958,6 +5971,15 @@ function finalizePrecision() {
     const numeric=followupNumericComparison();
     if(numeric?.invalid)return {outcome:FOLLOWUP_OUTCOME.R_INVALID,code:FOLLOWUP_CODE.INVALID_MEASUREMENT,
       decision:'REDESIGN',reason:numeric.reason};
+    if(Number.isInteger(plan?.plannedObservationCount)&&plan.plannedObservationCount>0){
+      const actual=numeric?.rate?numeric.afterN:a.fu_observed_count;
+      if(!Number.isInteger(actual)||actual<plan.plannedObservationCount){
+        return {outcome:FOLLOWUP_OUTCOME.R_ZERO,code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
+          decision:'CONTINUE',reason:'Запланировано '+plan.plannedObservationCount+
+          ' сопоставимых случаев. Пока учтено '+(Number.isInteger(actual)?actual:'неизвестное количество')+
+          '. Вывод об улучшении делать рано.'};
+      }
+    }
     if (numeric && ((a.fu_effect==='better' && numeric.movement!=='better') ||
         (a.fu_effect==='worse' && numeric.movement==='better'))) {
       return {outcome:FOLLOWUP_OUTCOME.R_ZERO,code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
@@ -6202,6 +6224,8 @@ function finalizePrecision() {
       primaryMetricDenominatorAfter:numericComparison?.afterN ?? null,
       primaryMetricRateBefore:numericComparison?.beforeRate ?? null,
       primaryMetricRateAfter:numericComparison?.afterRate ?? null,
+      plannedObservationCount:plan?.plannedObservationCount ?? null,
+      observedCount:numericComparison?.afterN ?? a.fu_observed_count ?? null,
       primaryMetricLabel:numericComparison?.label ?? null,
       primaryMetricAssessment:a.fu_effect || null,
       guardrailResults:guardrails,
@@ -6374,6 +6398,13 @@ function finalizePrecision() {
           result.experimentPlan=experimentPlan;
         };
         nInput.addEventListener('input',()=>setNumber(nInput,'primaryMetricBefore'));
+        const target=document.getElementById('experimentPlannedCount');
+        target.value=Number.isInteger(experimentPlan.plannedObservationCount)?String(experimentPlan.plannedObservationCount):'';
+        target.addEventListener('input',()=>{
+          const raw=target.value.trim(),num=raw===''?null:Number(raw);
+          experimentPlan.plannedObservationCount=Number.isInteger(num)&&num>0?num:null;
+          result.experimentPlan=experimentPlan;
+        });
         if(nSpec.denominator){
           document.getElementById('experimentDenominatorPanel').hidden=false;
           document.getElementById('experimentDenominatorLabel').textContent='Сколько всего было «'+nSpec.denominator+'» до изменения?';
