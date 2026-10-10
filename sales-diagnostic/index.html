@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.10-dev';
+  const APP_VERSION = '1.13.11-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -4115,17 +4115,29 @@ function finalizePrecision() {
     const a = state.answers;
     if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
     const conflict = evidenceConflict();
-    // An inconsistency about a secondary funnel step cannot hide a separately
-    // reported hard operating risk. But contradiction of the blocker itself
-    // prevents treating THAT blocker as established.
-    const fulfillmentDisputed = conflict.startsWith('Ответы о выполнении противоречат');
-    const economicsDisputed = conflict.startsWith('Ответы об экономике противоречат');
+    // A conflict string captures only the FIRST contradiction. Independently
+    // inspect each hard gate; a secondary contradiction must not mask a direct
+    // rebuttal of fulfillment or economics. Never derive these flags from
+    // localized/display wording or from conflict ordering.
+    const fulfillmentDisputed = a.gate_fulfillment === 'regular' &&
+      Array.isArray(a.deep_f1) && a.deep_f1.includes('none') && a.deep_f2 === 'no';
+    const economicsDisputed = ['negative','low'].includes(a.gate_economics) &&
+      a.deep_e1 === 'no' && ['yes','likely'].includes(a.deep_e2) &&
+      Array.isArray(a.deep_e3) && a.deep_e3.includes('none');
     if (a.gate_fulfillment === 'regular' && !fulfillmentDisputed && !isPrecisionExcludedCode('FULFILLMENT')) {
       if (meaningful(a.deep_f1).includes('overload') && a.deep_f2 === 'yes' && !isPrecisionExcludedCode('CAPACITY')) return makeResult('CAPACITY');
       return makeResult('FULFILLMENT');
     }
     if (a.gate_economics === 'negative' && !economicsDisputed && !isPrecisionExcludedCode('ECONOMICS')) return makeResult('ECONOMICS');
     if (a.gate_capacity === 'overload' && !isPrecisionExcludedCode('CAPACITY')) return makeResult('CAPACITY');
+    // When the blocker itself was directly contradicted, name that
+    // uncertainty first even if another, unrelated contradiction was detected.
+    if (fulfillmentDisputed) return makeResult('DATA_GAP', [
+      'Указаны регулярные сбои выполнения, но при уточнении повторяющиеся случаи не подтверждены. Сначала проверьте реальные заказы и причины срывов.'
+    ]);
+    if (economicsDisputed) return makeResult('DATA_GAP', [
+      'Оценка убытков расходится с уточняющими ответами о расходах и заработке. Проверьте экономику конкретных сопоставимых продаж, прежде чем увеличивать их число.'
+    ]);
     if (conflict) return makeResult('DATA_GAP', [conflict]);
 
     const candidates = collectCandidates();
