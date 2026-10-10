@@ -1005,6 +1005,82 @@ add('SEL-MULTI-CONFLICT-ONLY-SECONDARY','P1','SELECTION',()=>{
  return code(diag.diagnoseFull());
 },['DATA_GAP']);
 
+
+/* Model-aware end-to-end routing through the real goNext() engine, not
+   forced result codes. Run from the actual scope questions to result. */
+function routeAllModels(kind){
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ const actual=[];
+ for(const model of models){
+   diag.startMode('full');
+   const seen=[];
+   let safety=0;
+   while(!s.result && safety++<60){
+     const id=s.path[s.index];
+     if(!id) throw Error('missing question in '+model+'/'+kind);
+     const answers={
+       scope_goal:'new_sales',scope_name:'Тестовый продукт',scope_model:model,
+       scope_target:'new_customers',maturity_state:kind==='full_access'?'repeatable':
+         kind==='hybrid_channel'?'changed':'none',
+       scope_period:'month',period_integrity:'normal',scope_geography:'local',
+       gate_legal:kind==='build_research'?'unknown':'no',
+       gate_fulfillment:'never',gate_capacity:'reserve',gate_economics:'good',
+       core_demand:'regular',core_access:'none',core_offer:'yes',
+       deep_a1:'yes',deep_a2:'no_decline',deep_a4:['social'],
+       inheritance_entry:kind==='hybrid_channel'?'existing':'none',
+       inheritance_map:['channel'],build_test_type:'research',
+       build_offer:'yes',build_access:'yes',build_market:kind==='hybrid_channel'?'unknown':'no',
+       build_market_sample:20,build_market_audience:'yes',build_market_test_complete:'yes'
+     };
+     if(!(id in answers)) throw Error('unexpected question '+id+' in '+model+'/'+kind);
+     s.answers[id]=answers[id];seen.push(id);diag.goNext();
+   }
+   actual.push({model,result:code(s.result),seen:s.path.slice(0,s.index+1),visited:seen});
+ }
+ return actual;
+}
+add('ROUTE-FULL-ACCESS-5-MODELS','P1','ROUTING',()=>{
+ const cases=routeAllModels('full_access');
+ return String(cases.every(x=>x.result==='ACCESS'&&x.visited.length<=18 &&
+   !x.visited.some(id=>['core_fit','core_trust','core_conversion'].includes(id))));
+},['true']);
+add('ROUTE-BUILD-RESEARCH-5-MODELS','P1','ROUTING',()=>{
+ const cases=routeAllModels('build_research');
+ return String(cases.every(x=>x.result==='BUILD_MARKET_TEST'&&x.visited.length<=12 &&
+   !x.visited.some(id=>['build_market_sample','build_market_audience','build_market_test_complete',
+   'build_route','build_econ_plausibility','build_pilot_capacity'].includes(id))));
+},['true']);
+add('ROUTE-HYBRID-CHANNEL-5-MODELS','P1','ROUTING',()=>{
+ const cases=routeAllModels('hybrid_channel');
+ return String(cases.every(x=>x.result==='BUILD_MARKET_TEST' &&
+   !x.visited.some(id=>['build_offer','build_route','build_fulfillment','build_economics'].includes(id)) &&
+   x.visited.includes('build_access')));
+},['true']);
+add('ROUTE-NONCOMMERCIAL-MISSING-SAMPLE-LEGAL','P0','ROUTING',()=>{
+ reset('build',{build_test_type:'research',gate_legal:'unknown',build_market:'no'},
+   ['build_market']);
+ diag.goNext();
+ return code(s.result)+'|'+String(!s.path.some(id=>['build_market_sample',
+   'build_market_audience','build_market_test_complete'].includes(id)))+'|'+
+   String(!/оплатить|бронь.*заказ|принять предоплату/.test(s.result.action||''));
+},['BUILD_MARKET_TEST|true|true']);
+add('ROUTE-WAITLIST-MISSING-SAMPLE','P1','ROUTING',()=>{
+ reset('build',{build_test_type:'waitlist',build_market:'no'},['build_market']);
+ diag.goNext();return code(s.result)+'|'+s.path.join(',');
+},['BUILD_MARKET_TEST|build_market']);
+add('ROUTE-PAID-STILL-ASKS-SAMPLE','P0','ROUTING',()=>{
+ reset('build',{build_test_type:'payment',gate_legal:'no',build_market:'no'},['build_market']);
+ diag.goNext();
+ return String(!s.result&&s.path.includes('build_market_sample')&&s.path.includes('build_market_audience'));
+},['true']);
+add('ROUTE-RESEARCH-NO-FAKE-INCOMPLETE','P1','RESULT',()=>{
+ reset('build',{build_test_type:'research',build_market:'no'},['build_market']);
+ const out=diag.makeResult('BUILD_MARKET_TEST');
+ return String(out.why.some(x=>x.includes('Покупку людям не предлагали')) &&
+   !out.why.some(x=>x.includes('Вы ещё не закончили запланированный показ')) &&
+   out.evidence.some(e=>e.questionId==='build_test_type'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
