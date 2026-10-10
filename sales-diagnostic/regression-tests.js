@@ -1256,6 +1256,56 @@ add('FU-NO-COMPARABILITY-STILL-STOPS','P1','FOLLOWUP',()=>{
  return String(s.result!==null && !s.path.includes('fu_effect'));
 },['true']);
 
+
+function historyTestId(){
+ return diag.loadHistoryStore().cycles.find(z=>z.result?.resultId==='fu_hist_15')?.cycleId||null;
+}
+add('HIST-IMMUTABLE-INITIAL-ANSWERS','P0','HISTORY',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',core_access:'none'});s.scopeId='scope_h15';
+ const initial={resultId:'initial_hist_15',primaryCode:'ACCESS',diagnosticMode:'full',
+ userTitle:'Исходный диагноз',why:['Новые люди не приходят'],businessGoal:'new_sales'};
+ const first=diag.saveHistory({mode:'full',answers:{...s.answers},result:initial,
+ cycleStatus:'ACTIVE',experimentPlan:{experimentId:'exp_hist_15',primaryCode:'ACCESS',status:'ACTIVE'}});
+ const id=s.activeCycleId;
+ const savedFu=diag.saveHistory({cycleId:id,mode:'followup',
+ answers:{fu_done:'yes',fu_effect:'better'},
+ result:{resultId:'fu_hist_15',primaryCode:'ACCESS',followup:true,diagnosticMode:'followup',
+ userTitle:'Проверка',why:['Недостаточно наблюдений'],followupSnapshot:{followupId:'fu_snap_hist_15'}},
+ cycleStatus:'WAITING_FOR_EVIDENCE'});
+ const c=diag.loadHistoryStore().cycles.find(z=>z.cycleId===id);
+ return String(first&&savedFu&&c?.answers?.core_access==='none'&&
+  c.latestFollowupAnswers.fu_effect==='better'&&c.scope.diagnosticMode==='full'&&
+  c.initialDiagnosisSnapshot.userTitle==='Исходный диагноз'&&c.followups.length===1);
+},['true']);
+add('HIST-REPEAT-FU-ORIGINAL-BASE','P0','HISTORY',()=>{
+ const ok=diag.startFollowupForCycle(historyTestId());
+ return String(ok&&s.followupBase.result.userTitle==='Исходный диагноз'&&
+  s.followupBase.answers.core_access==='none'&&s.followupBase.experimentPlan.primaryCode==='ACCESS');
+},['true']);
+add('HIST-RESUME-LATEST-BUT-BASE-ORIGINAL','P0','HISTORY',()=>{
+ const ok=diag.resumeCycle(historyTestId());
+ return String(ok&&s.result.userTitle==='Проверка'&&s.followupBase.result.userTitle==='Исходный диагноз'&&
+  s.answers.core_access==='none'&&!s.result.experimentPlan);
+},['true']);
+add('HIST-ORPHAN-FU-BLOCKED','P0','HISTORY',()=>{
+ reset('followup',{fu_done:'yes'});s.activeCycleId=null;
+ const n=diag.loadHistoryStore().cycles.length;
+ const saved=diag.saveHistory({cycleId:'nonexistent_parent_15',mode:'followup',
+  answers:{fu_done:'yes'},result:{followup:true,primaryCode:'ACCESS'},cycleStatus:'ACTIVE'});
+ return String(!saved&&diag.loadHistoryStore().cycles.length===n);
+},['true']);
+add('HIST-TRANSITION-READS-ORIGINAL-ANSWERS','P0','HISTORY',()=>{
+ reset('followup',{fu_done:'yes',fu_effect:'better'});
+ s.followupBase={result:{primaryCode:'ACCESS',diagnosticMode:'full',businessGoal:'new_sales'},
+ mode:'full',answers:{scope_goal:'new_sales',scope_model:'PRODUCT',
+  gate_legal:'no',gate_fulfillment:'never',gate_economics:'negative',gate_capacity:'reserve',
+  core_access:'none',core_demand:'regular',core_offer:'yes'}};
+ s.precisionExcludedZones=[];
+ const before=JSON.stringify(s.answers);
+ const out=diag.buildStateTransition({outcome:'R+',code:'FOLLOWUP_CONFIRMED',decision:'CONFIRM'});
+ return String(out.nextResult?.primaryCode==='ECONOMICS'&&JSON.stringify(s.answers)===before&&s.mode==='followup');
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
