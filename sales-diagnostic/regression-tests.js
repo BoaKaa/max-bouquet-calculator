@@ -787,6 +787,74 @@ add('NUM-SNAPSHOT-TRUTH','P1','FOLLOWUP',()=>{
   String(s.result.evidence.some(e=>e.questionId==='fu_numeric_after'&&e.value===2));
 },['5|2|-3|true']);
 
+
+/* Metamorphic diagnosis selection: a secondary contradiction must not
+ * overturn an unrelated high-risk gate. Test real diagnoseFull(), not makeResult(). */
+add('SEL-P0-ECON-OVER-OFFER-CONFLICT','P0','SELECTION',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+  reset('full',{scope_model:model,scope_goal:'new_sales',gate_legal:'no',
+   gate_economics:'negative',gate_fulfillment:'never',gate_capacity:'reserve',
+   core_offer:'no',deep_o1:['none'],deep_o2:'easy',core_access:'none'});
+  return code(diag.diagnoseFull())==='ECONOMICS';
+ }));
+},['true']);
+add('SEL-P0-FULFILL-OVER-OFFER-CONFLICT','P0','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',gate_fulfillment:'regular',
+  gate_economics:'good',gate_capacity:'reserve',core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+ return code(diag.diagnoseFull());
+},['FULFILLMENT']);
+add('SEL-P0-CAP-OVER-TRUST-CONFLICT','P0','SELECTION',()=>{
+ reset('full',{scope_model:'EXPERT',scope_goal:'new_sales',gate_capacity:'overload',
+  gate_economics:'good',core_trust:'often',deep_t1:['none'],deep_t2:'yes'});
+ return code(diag.diagnoseFull());
+},['CAPACITY']);
+add('SEL-P0-FULFILL-DISPUTED-ECON-VALID','P0','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',gate_fulfillment:'regular',
+  deep_f1:['none'],deep_f2:'no',gate_economics:'negative',gate_capacity:'reserve'});
+ return code(diag.diagnoseFull());
+},['ECONOMICS']);
+add('SEL-P1-ECON-SELF-CONFLICT','P1','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',gate_economics:'negative',deep_e1:'no',
+  deep_e2:'yes',deep_e3:['none'],gate_capacity:'reserve',gate_fulfillment:'never'});
+ return code(diag.diagnoseFull());
+},['DATA_GAP']);
+add('SEL-P1-FULFILL-SELF-CONFLICT','P1','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',gate_fulfillment:'regular',
+  deep_f1:['none'],deep_f2:'no',gate_capacity:'reserve',gate_economics:'good'});
+ return code(diag.diagnoseFull());
+},['DATA_GAP']);
+add('SEL-P0-LEGAL-STILL-FIRST','P0','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',gate_legal:'yes',gate_economics:'negative',
+  gate_fulfillment:'regular',core_offer:'no',deep_o1:['none'],deep_o2:'easy'});
+ return code(diag.diagnoseFull());
+},['LEGAL_SAFETY_BLOCKER']);
+add('SEL-P0-HARD-OVERRIDES-PERIOD','P0','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',period_integrity:'absence',
+  gate_capacity:'overload',gate_economics:'good',core_access:'none'});
+ return code(diag.diagnoseFull());
+},['CAPACITY']);
+add('SEL-P1-FIT-BEATS-CONVERSION-UNKNOWN','P1','SELECTION',()=>{
+ reset('full',{scope_model:'APPOINTMENT',scope_goal:'new_sales',gate_economics:'good',
+ gate_capacity:'reserve',core_fit:'bad',core_conversion:'unknown',core_access:'regular'});
+ return code(diag.diagnoseFull());
+},['FIT']);
+add('SEL-P1-PAID-DEMAND-IS-NOT-ZERO','P1','SELECTION',()=>{
+ reset('full',{scope_model:'PRODUCT',scope_goal:'new_sales',gate_economics:'good',
+ gate_capacity:'reserve',core_demand:'rare',core_access:'none',deep_d1:'yes'});
+ return code(diag.diagnoseFull());
+},['ACCESS']);
+add('SEL-P0-BUILD-RESEARCH-ZERO-NOT-WEAK','P0','SELECTION',()=>{
+ reset('build',{scope_model:'PRODUCT',build_test_type:'research',gate_legal:'unknown',
+  build_market:'no',build_market_sample:25,build_market_audience:'yes',build_market_test_complete:'yes'},
+  ['build_market','build_market_sample','build_market_audience','build_market_test_complete']);
+ return code(diag.diagnoseBuild());
+},['BUILD_MARKET_TEST']);
+add('SEL-P0-HYBRID-SHARED-CASH','P0','SELECTION',()=>{
+ reset('hybrid',{scope_model:'PRODUCT',shared_impact:'cash',build_market:'paid'});
+ return code(diag.diagnoseBuild());
+},['ECONOMICS']);
+
 const failures=[];
 for (const t of tests) {
   let got;
