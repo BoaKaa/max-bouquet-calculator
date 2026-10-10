@@ -1081,6 +1081,100 @@ add('ROUTE-RESEARCH-NO-FAKE-INCOMPLETE','P1','RESULT',()=>{
    out.evidence.some(e=>e.questionId==='build_test_type'));
 },['true']);
 
+
+/* Back-mutation regressions: assert actual state path and the next question.
+ * A simulated revised answer invokes the same downstream invalidator as the UI. */
+function backMutate(mode,path,changedTo,additional={}){
+ reset(mode,{scope_goal:'new_sales',scope_model:'PRODUCT',
+   gate_fulfillment:'never',gate_economics:'good',gate_capacity:'reserve',
+   ...additional,[path[0]]:changedTo},path);
+ s.index=0;s.deepAdded=path.some(id=>id.startsWith('deep_'));
+ // Pre-existing future answers represent a user going Back after proceeding.
+ for(const id of path.slice(1))s.answers[id]='old-answer';
+ diag.invalidateDownstreamAnswers(0);
+ diag.goNext();
+ return {next:s.path[s.index],path:[...s.path],answers:{...s.answers},result:code(s.result)};
+}
+add('BACK-FULL-RESTORE-DENOM-FIVE-MODELS','P0','BACK',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+  const o=backMutate('full',['core_access','core_offer','deep_a1','deep_a2'],'regular',
+    {scope_model:model});
+  return o.path.join(',')==='core_access,core_offer,core_fit,core_trust,core_conversion' &&
+   o.next==='core_offer' && !('deep_a1' in o.answers);
+ }));
+},['true']);
+add('BACK-FULL-REMOVE-DENOM-FIVE-MODELS','P1','BACK',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+  const o=backMutate('full',['core_access','core_offer','core_fit','core_trust','core_conversion'],'none',
+     {scope_model:model});
+  return o.path.join(',')==='core_access,core_offer' &&
+   !('core_fit' in o.answers) && !('core_conversion' in o.answers);
+ }));
+},['true']);
+add('BACK-RESTORE-CORE-AFTER-GATE','P0','BACK',()=>{
+ const o=backMutate('full',['gate_fulfillment','deep_f1','deep_f2'],'never',
+   {scope_goal:'new_sales',scope_model:'PRODUCT'});
+ return String(o.path.join(',')==='gate_fulfillment,gate_capacity,gate_economics,core_demand,core_access,core_offer,core_fit,core_trust,core_conversion' &&
+  o.next==='gate_capacity' && !('deep_f2' in o.answers));
+},['true']);
+add('BACK-REBUILD-ECON-FULL','P0','BACK',()=>{
+ const o=backMutate('full',['gate_economics','deep_e1','deep_e3'],'good',
+   {scope_goal:'income',scope_target:'per_sale'});
+ return String(o.path.join(',')==='gate_economics,gate_capacity' &&
+   !('deep_e1' in o.answers) && o.next==='gate_capacity');
+},['true']);
+add('BACK-PRUNE-STABLE-PERIOD','P1','BACK',()=>{
+ const o=backMutate('full',['deep_a2','period_context','deep_a4'],'no_decline');
+ return String(o.path.join(',')==='deep_a2,deep_a4' &&
+   o.next==='deep_a4' && !('period_context' in o.answers));
+},['true']);
+add('BACK-RESTORE-CHANGED-PERIOD','P1','BACK',()=>{
+ const o=backMutate('full',['deep_a2','deep_a4'],'views_down');
+ return String(o.path.join(',')==='deep_a2,period_context,deep_a4' &&
+   o.next==='period_context');
+},['true']);
+add('BACK-PRUNE-NO-REPEAT','P1','BACK',()=>{
+ const o=backMutate('full',['deep_r1','deep_r2','deep_r3'],'no',{scope_goal:'repeat'});
+ return String(!o.path.includes('deep_r2') && !o.path.includes('deep_r3') &&
+   !('deep_r3' in o.answers));
+},['true']);
+add('BACK-PRUNE-NO-FULFILL-GROWTH','P1','BACK',()=>{
+ const o=backMutate('full',['deep_f2','deep_cap1','deep_cap2'],'no',
+  {gate_fulfillment:'regular',deep_f1:['overload']});
+ return String(!o.path.includes('deep_cap1') && !o.path.includes('deep_cap2') &&
+   !('deep_cap1' in o.answers));
+},['true']);
+add('BACK-PRUNE-SUB-CANCEL-REASON','P1','BACK',()=>{
+ const o=backMutate('full',['sub_cancel_known','sub_cancel_reason'],'no',
+  {scope_model:'SUBSCRIPTION'});
+ return String(!o.path.includes('sub_cancel_reason') && !('sub_cancel_reason' in o.answers));
+},['true']);
+add('BACK-PRUNE-FIRST-VALUE-CAUSE','P1','BACK',()=>{
+ const o=backMutate('full',['deep_s2','deep_s3'],'most',
+  {scope_model:'EDUCATION',deep_s1:'most'});
+ return String(!o.path.includes('deep_s3') && !('deep_s3' in o.answers));
+},['true']);
+add('BACK-PRUNE-VALUE-CAUSE','P1','BACK',()=>{
+ const o=backMutate('full',['deep_v2','deep_v3'],'no',{core_value:'issues'});
+ return String(!o.path.includes('deep_v3') && !('deep_v3' in o.answers));
+},['true']);
+add('BACK-PRUNE-NONLEARNING-START','P1','BACK',()=>{
+ const o=backMutate('full',['deep_s1','deep_s2','deep_s3'],'no',
+  {scope_model:'APPOINTMENT'});
+ return String(!o.path.includes('deep_s2') && !o.path.includes('deep_s3'));
+},['true']);
+add('BACK-NO-DUPLICATE-DEEP','P1','BACK',()=>{
+ // Deep is already selected, changing its own answer must not select
+ // the very same branch again after the last relevant question.
+ reset('full',{scope_goal:'new_sales',scope_model:'PRODUCT',core_access:'none',
+   gate_capacity:'reserve',gate_economics:'good',
+   deep_a2:'no_decline'},['deep_a2','deep_a4']);
+ s.deepAdded=true;diag.invalidateDownstreamAnswers(0);
+ return String(s.deepAdded === true);
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
