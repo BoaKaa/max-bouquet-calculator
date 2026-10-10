@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.12-dev';
+  const APP_VERSION = '1.13.13-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2851,8 +2851,59 @@ button:focus-visible, input:focus-visible {
       const stale = new Set(changed === 'shared_resources' ? ['shared_materiality','shared_impact'] : ['shared_impact']);
       state.path = state.path.slice(0,fromIndex+1).concat(state.path.slice(fromIndex+1).filter(id => !stale.has(id)));
     }
+    // A changed FULL screen answer must reconstruct its downstream questions.
+    // Otherwise Back: 'no incoming clients' -> 'regular clients' silently loses
+    // FIT/TRUST/CHECKOUT questions, or a previous deep branch remains in use.
+    const fullCoreRoute = state.mode === DIAGNOSTIC_MODE.FULL
+      ? fullQuestionsForTarget(state) : [];
+    const coreIndex = fullCoreRoute.indexOf(changed);
+    if (coreIndex >= 0) {
+      const unavailable = new Set();
+      if (state.answers.core_access === 'none') {
+        ['core_fit','core_trust','core_conversion'].forEach(id => unavailable.add(id));
+      }
+      if (state.answers.scope_model === 'PRODUCT' && state.answers.gate_fulfillment === 'never') {
+        ['core_start','core_value'].forEach(id => unavailable.add(id));
+      }
+      state.path = state.path.slice(0, fromIndex + 1).concat(
+        fullCoreRoute.slice(coreIndex + 1).filter(id => !unavailable.has(id))
+      );
+    }
+
+    // Previously inserted conditional questions must not survive when the
+    // answer that justified them is changed using Back.
+    const obsolete = new Set();
+    if (changed === 'deep_a2' &&
+        !['views_down','responses_down','buy_down'].includes(state.answers.deep_a2))
+      obsolete.add('period_context');
+    if (changed === 'deep_r1' && !['yes','sometimes'].includes(state.answers.deep_r1))
+      ['deep_r2','deep_r3'].forEach(id => obsolete.add(id));
+    if (changed === 'deep_f2' &&
+        !(state.answers.deep_f2 === 'yes' && meaningful(state.answers.deep_f1).includes('overload')))
+      ['deep_cap1','deep_cap2'].forEach(id => obsolete.add(id));
+    if (changed === 'sub_cancel_known' && !['yes','partly'].includes(state.answers.sub_cancel_known))
+      obsolete.add('sub_cancel_reason');
+    if (changed === 'deep_v2' && state.answers.deep_v2 !== 'yes')
+      obsolete.add('deep_v3');
+    if (changed === 'deep_s1' && !['EDUCATION','SUBSCRIPTION'].includes(state.answers.scope_model) &&
+        !['some','many'].includes(state.answers.deep_s1))
+      ['deep_s2','deep_s3'].forEach(id => obsolete.add(id));
+    if (changed === 'deep_s2') {
+      const learning = ['EDUCATION','SUBSCRIPTION'].includes(state.answers.scope_model);
+      const needsCause = learning
+        ? (['half','few'].includes(state.answers.deep_s1) ||
+           (state.answers.deep_s1 === 'most' && ['some','rare'].includes(state.answers.deep_s2)))
+        : ['yes','partly'].includes(state.answers.deep_s2);
+      if (!needsCause) obsolete.add('deep_s3');
+    }
+    if (obsolete.size) state.path = state.path.filter(id => !obsolete.has(id));
+    for (const id of obsolete) delete state.answers[id];
+
     state.result = null;
-    state.deepAdded = false;
+    // Back inside an already selected deep branch must not append the same
+    // discriminator a second time on reaching the end of that branch.
+    state.deepAdded = state.mode === DIAGNOSTIC_MODE.FULL &&
+      state.path.some(id => id.startsWith('deep_'));
   }
 
   function progressMeta(id) {
