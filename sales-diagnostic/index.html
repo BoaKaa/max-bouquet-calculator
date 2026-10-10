@@ -438,7 +438,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.7-dev';
+  const APP_VERSION = '1.13.8-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -4087,13 +4087,18 @@ function finalizePrecision() {
     const a = state.answers;
     if (a.gate_legal === 'yes') return makeResult('LEGAL_SAFETY_BLOCKER');
     const conflict = evidenceConflict();
-    if (conflict) return makeResult('DATA_GAP', [conflict]);
-    if (a.gate_fulfillment === 'regular' && !isPrecisionExcludedCode('FULFILLMENT')) {
+    // An inconsistency about a secondary funnel step cannot hide a separately
+    // reported hard operating risk. But contradiction of the blocker itself
+    // prevents treating THAT blocker as established.
+    const fulfillmentDisputed = conflict.startsWith('Ответы о выполнении противоречат');
+    const economicsDisputed = conflict.startsWith('Ответы об экономике противоречат');
+    if (a.gate_fulfillment === 'regular' && !fulfillmentDisputed && !isPrecisionExcludedCode('FULFILLMENT')) {
       if (meaningful(a.deep_f1).includes('overload') && a.deep_f2 === 'yes' && !isPrecisionExcludedCode('CAPACITY')) return makeResult('CAPACITY');
       return makeResult('FULFILLMENT');
     }
-    if (a.gate_economics === 'negative' && !isPrecisionExcludedCode('ECONOMICS')) return makeResult('ECONOMICS');
+    if (a.gate_economics === 'negative' && !economicsDisputed && !isPrecisionExcludedCode('ECONOMICS')) return makeResult('ECONOMICS');
     if (a.gate_capacity === 'overload' && !isPrecisionExcludedCode('CAPACITY')) return makeResult('CAPACITY');
+    if (conflict) return makeResult('DATA_GAP', [conflict]);
 
     const candidates = collectCandidates();
     const decisionGap = decisionCriticalUnknown(candidates);
