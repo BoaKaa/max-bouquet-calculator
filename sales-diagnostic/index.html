@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.14-dev';
+  const APP_VERSION = '1.13.15-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2447,6 +2447,14 @@ button:focus-visible, input:focus-visible {
   function getHistory() {
     return loadHistoryStore().cycles.map(cycleAdapter);
   }
+  function followupBaseForCycle(cycle) {
+    if (!cycle) return null;
+    const initial = cycle.initialDiagnosisSnapshot ||
+      (cycle.result && !cycle.result.followup ? cycle.result : null);
+    if (!initial) return null;
+    return {...cycleAdapter(cycle),result:initial,
+      answers:cycle.initialAnswersSnapshot || cycle.answers || {}};
+  }
 
   function resolveCycleForItem(store, item) {
     if (item?.cycleId) {
@@ -2514,10 +2522,16 @@ button:focus-visible, input:focus-visible {
         name:item?.scope || item?.answers?.scope_name || cycle.scope?.name || '',
         businessGoal:item?.result?.businessGoal || item?.answers?.scope_goal || cycle.scope?.businessGoal || null,
         diagnosticTarget:item?.result?.diagnosticTarget || item?.answers?.scope_target || cycle.scope?.diagnosticTarget || null,
-        diagnosticMode:item?.result?.diagnosticMode || item?.mode || cycle.scope?.diagnosticMode || null
+        diagnosticMode:item?.result?.followup
+          ? (cycle.scope?.diagnosticMode || cycle.initialDiagnosisSnapshot?.diagnosticMode || null)
+          : (item?.result?.diagnosticMode || item?.mode || cycle.scope?.diagnosticMode || null)
       };
     }
-    if (item?.answers) cycle.answers = {...item.answers};
+    // Follow-up answers are a DIFFERENT questionnaire; do not destroy the diagnosis.
+    if (item?.answers) {
+      if (item?.result?.followup) cycle.latestFollowupAnswers = {...item.answers};
+      else cycle.answers = {...item.answers};
+    }
     if (item?.result) cycle.result = item.result;
     const precision = item?.result?.precisionSnapshot;
     if (precision && !(cycle.precisionSnapshots || []).some(x => x.precisionCode === precision.precisionCode)) {
@@ -2537,6 +2551,7 @@ button:focus-visible, input:focus-visible {
     const store = loadHistoryStore();
     let cycle = resolveCycleForItem(store,item);
     if (cycle?.legacyReadonly) cycle = null;
+    if (!cycle && item?.result?.followup) return false; // Never save orphan Follow-up.
     if (!cycle) {
       cycle = createCycleFromItem(item);
       store.cycles.unshift(cycle);
@@ -2652,9 +2667,11 @@ button:focus-visible, input:focus-visible {
     state.diagnosticMode = cycle.scope?.diagnosticMode || cycle.result?.diagnosticMode || null;
     state.mode = state.diagnosticMode;
     state.result = cycle.result ? {...cycle.result} : null;
-    if (state.result && cycle.experimentPlan) state.result.experimentPlan = cycle.experimentPlan;
+    // The saved Follow-up is a report, not a new experiment-plan card.
+    if (state.result && cycle.experimentPlan && !state.result.followup)
+      state.result.experimentPlan = cycle.experimentPlan;
     state.activeExperiment = cycle.experimentPlan || null;
-    state.followupBase = cycleAdapter(cycle);
+    state.followupBase = followupBaseForCycle(cycle);
     state.resumeContext = resumeContextForCycle(cycle);
     if (state.result) {
       renderResult(state.result);
@@ -2942,7 +2959,7 @@ button:focus-visible, input:focus-visible {
       item.experimentPlan?.experimentId &&
       [CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(item.status)
     );
-    return cycle ? cycleAdapter(cycle) : null;
+    return cycle ? followupBaseForCycle(cycle) : null;
   }
 
   function startFollowupForCycle(cycleId) {
@@ -2957,7 +2974,9 @@ button:focus-visible, input:focus-visible {
     state.deepAdded = false;
     state.resumeContext = null;
     state.precisionBase = null;
-    state.followupBase = cycleAdapter(cycle);
+    state.followupBase = followupBaseForCycle(cycle);
+    if (!state.followupBase) return false;
+    state.precisionExcludedZones = [];
     state.activeCycleId = cycle.cycleId;
     state.scopeId = cycle.scopeId || null;
     state.activeExperiment = cycle.experimentPlan;
@@ -6078,6 +6097,21 @@ function finalizePrecision() {
     return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Эффект остался между заранее заданными ветками решения.' };
   }
 
+  function withOriginalDiagnosticContext(fn) {
+    const base=state.followupBase || {},original=base.answers;
+    if (!original || !base.result || base.result.followup) return null;
+    const old={answers:state.answers,mode:state.mode,diagnosticMode:state.diagnosticMode,
+      businessGoal:state.businessGoal,diagnosticTarget:state.diagnosticTarget};
+    try {
+      state.answers={...original};
+      state.mode=base.result.diagnosticMode || base.mode || state.mode;
+      state.diagnosticMode=state.mode;
+      state.businessGoal=base.result.businessGoal || original.scope_goal || null;
+      state.diagnosticTarget=base.result.diagnosticTarget || original.scope_target || null;
+      return fn();
+    } finally {Object.assign(state,old);}
+  }
+
   function buildStateTransition(followupClass) {
     const { result: previousResult, plan } = followupPlanContext();
     const previousCode = previousResult?.primaryCode || previousResult?.code || plan?.primaryCode || null;
@@ -6098,19 +6132,21 @@ function finalizePrecision() {
         type:'HARD_BLOCKER_EMERGED',
         fromPrimaryCode:previousCode,
         toPrimaryCode:'LEGAL_SAFETY_BLOCKER',
-        nextResult:makeResult('LEGAL_SAFETY_BLOCKER')
+        nextResult:withOriginalDiagnosticContext(()=>makeResult('LEGAL_SAFETY_BLOCKER'))
       };
     }
 
     if (previousCode === 'DATA_GAP' && followupClass.outcome === FOLLOWUP_OUTCOME.R_PLUS && followupClass.redirectCode) {
       let nextResult = null;
       if (followupClass.redirectCode === 'REASSESS') {
-        nextResult = originMode === DIAGNOSTIC_MODE.FULL || originMode === 'full'
-          ? diagnoseFull()
-          : ([DIAGNOSTIC_MODE.BUILD,DIAGNOSTIC_MODE.HYBRID,'build','hybrid'].includes(originMode) ? diagnoseBuild() : null);
+        nextResult = withOriginalDiagnosticContext(()=>
+          originMode === DIAGNOSTIC_MODE.FULL || originMode === 'full'
+            ? diagnoseFull()
+            : ([DIAGNOSTIC_MODE.BUILD,DIAGNOSTIC_MODE.HYBRID,'build','hybrid'].includes(originMode) ? diagnoseBuild() : null)
+        );
         if (nextResult && (nextResult.primaryCode || nextResult.code) === 'DATA_GAP') nextResult = null;
       } else {
-        nextResult = makeResult(followupClass.redirectCode);
+        nextResult = withOriginalDiagnosticContext(()=>makeResult(followupClass.redirectCode));
       }
       return {
         type:'RESOLVED_TO_NEXT',
@@ -6131,7 +6167,7 @@ function finalizePrecision() {
         const originalLegal = state.followupBase?.answers?.gate_legal;
         if (['yes','maybe','unknown'].includes(originalLegal)) {
           return {type:'HARD_BLOCKER_EMERGED',fromPrimaryCode:previousCode,
-            toPrimaryCode:'LEGAL_SAFETY_BLOCKER',nextResult:makeResult('LEGAL_SAFETY_BLOCKER')};
+            toPrimaryCode:'LEGAL_SAFETY_BLOCKER',nextResult:withOriginalDiagnosticContext(()=>makeResult('LEGAL_SAFETY_BLOCKER'))};
         }
       }
       const buildNext = {
@@ -6143,7 +6179,7 @@ function finalizePrecision() {
       }[previousCode];
 
       if (buildNext) {
-        return { type:'BUILD_PHASE_ADVANCED', fromPrimaryCode:previousCode, toPrimaryCode:buildNext, nextResult:makeResult(buildNext) };
+        return { type:'BUILD_PHASE_ADVANCED', fromPrimaryCode:previousCode, toPrimaryCode:buildNext, nextResult:withOriginalDiagnosticContext(()=>makeResult(buildNext)) };
       }
 
       if (previousCode === 'BUILD_CAPACITY') {
@@ -6151,14 +6187,14 @@ function finalizePrecision() {
           type:'RESOLVED_TO_NEXT',
           fromPrimaryCode:previousCode,
           toPrimaryCode:null,
-          nextResult:makeResult('NO_CRITICAL_CONSTRAINT_FOUND')
+          nextResult:withOriginalDiagnosticContext(()=>makeResult('NO_CRITICAL_CONSTRAINT_FOUND'))
         };
       }
 
       const zone = primaryCodeZone(previousCode);
       if (zone && !state.precisionExcludedZones.includes(zone)) state.precisionExcludedZones.push(zone);
       if (originMode === DIAGNOSTIC_MODE.FULL || originMode === 'full') {
-        const nextResult = diagnoseFull();
+        const nextResult = withOriginalDiagnosticContext(()=>diagnoseFull());
         const nextCode = nextResult?.primaryCode || nextResult?.code || null;
         return {
           type: nextCode && nextCode !== previousCode ? 'RESOLVED_TO_NEXT' : 'SAME_CONSTRAINT_NEW_INTERVENTION',
