@@ -749,10 +749,10 @@ add('POP-DETAIL-REAL-SOURCE','P1','EVIDENCE',()=>{
 add('NUM-ROUTE-PRESENT','P1','FOLLOWUP',()=>{
  reset('followup',{fu_measurement_valid:'yes'});
  s.path=['fu_measurement_valid'];s.index=0;
- s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5,primaryMetricDenominatorBefore:10}};
  diag.goNext();const next=s.path[1];s.answers.fu_numeric_after=2;diag.goNext();
  return next+'|'+s.path[2];
-},['fu_numeric_after|fu_effect']);
+},['fu_numeric_after|fu_numeric_denominator_after']);
 add('NUM-ROUTE-LEGACY','P1','FOLLOWUP',()=>{
  reset('followup',{fu_measurement_valid:'yes'});s.path=['fu_measurement_valid'];
  s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT'}};
@@ -760,27 +760,27 @@ add('NUM-ROUTE-LEGACY','P1','FOLLOWUP',()=>{
 },['fu_effect']);
 add('NUM-LESS-IS-BETTER','P1','FOLLOWUP',()=>{
  reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
-  fu_measurement_valid:'yes',fu_numeric_after:2,fu_effect:'better',fu_guardrail:['none']});
- s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+  fu_measurement_valid:'yes',fu_numeric_after:2,fu_numeric_denominator_after:10,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5,primaryMetricDenominatorBefore:10}};
  return diag.followupNumericComparison().movement+'|'+diag.classifyFollowup().code;
 },['better|FOLLOWUP_CONFIRMED']);
 add('NUM-BETTER-CONTRADICTS','P1','FOLLOWUP',()=>{
  reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
-  fu_measurement_valid:'yes',fu_numeric_after:7,fu_effect:'better',fu_guardrail:['none']});
- s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+  fu_measurement_valid:'yes',fu_numeric_after:7,fu_numeric_denominator_after:10,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5,primaryMetricDenominatorBefore:10}};
  return diag.classifyFollowup().outcome+'|'+diag.classifyFollowup().code;
 },['R0|FOLLOWUP_INSUFFICIENT_EVIDENCE']);
 add('NUM-GUARDRAIL-PREVAILS','P0','FOLLOWUP',()=>{
  reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
-  fu_measurement_valid:'yes',fu_numeric_after:2,fu_effect:'better',fu_guardrail:['money']});
- s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+  fu_measurement_valid:'yes',fu_numeric_after:2,fu_numeric_denominator_after:10,fu_effect:'better',fu_guardrail:['money']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5,primaryMetricDenominatorBefore:10}};
  return diag.classifyFollowup().code;
 },['FOLLOWUP_GUARDRAIL_FAIL']);
 add('NUM-SNAPSHOT-TRUTH','P1','FOLLOWUP',()=>{
  reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
-  fu_measurement_valid:'yes',fu_numeric_after:2,fu_effect:'better',fu_guardrail:['none']});
+  fu_measurement_valid:'yes',fu_numeric_after:2,fu_numeric_denominator_after:10,fu_effect:'better',fu_guardrail:['none']});
  s.followupBase={result:{primaryCode:'FULFILLMENT',diagnosticMode:'full',userTitle:'Сбои'},
-  experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5}};
+  experimentPlan:{primaryCode:'FULFILLMENT',primaryMetricBefore:5,primaryMetricDenominatorBefore:10}};
  diag.finalizeFollowup();
  const f=s.result.followupSnapshot;
  return f.primaryMetricBefore+'|'+f.primaryMetricAfter+'|'+f.primaryMetricDelta+'|'+
@@ -854,6 +854,38 @@ add('SEL-P0-HYBRID-SHARED-CASH','P0','SELECTION',()=>{
  reset('hybrid',{scope_model:'PRODUCT',shared_impact:'cash',build_market:'paid'});
  return code(diag.diagnoseBuild());
 },['ECONOMICS']);
+
+
+add('RATE-COUNT-UP-RATE-WORSE','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',fu_measurement_valid:'yes',
+   fu_numeric_after:3,fu_numeric_denominator_after:10,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},
+   experimentPlan:{primaryMetricBefore:5,primaryMetricDenominatorBefore:100}};
+ return diag.followupNumericComparison().movement+'|'+diag.classifyFollowup().code;
+},['worse|FOLLOWUP_INSUFFICIENT_EVIDENCE']);
+add('RATE-ZERO-INVALID','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',fu_measurement_valid:'yes',
+   fu_numeric_after:0,fu_numeric_denominator_after:0,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FIT'},experimentPlan:{primaryMetricBefore:3,primaryMetricDenominatorBefore:12}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_INVALID_MEASUREMENT']);
+add('RATE-OVER-DEN-INVALID','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',fu_measurement_valid:'yes',
+   fu_numeric_after:15,fu_numeric_denominator_after:10,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'SUB_RENEWAL'},experimentPlan:{primaryMetricBefore:3,primaryMetricDenominatorBefore:12}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_INVALID_MEASUREMENT']);
+add('RATE-DENOMINATOR-ROUTE','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_measurement_valid:'yes'});s.path=['fu_measurement_valid'];
+ s.followupBase={result:{primaryCode:'FIT'},experimentPlan:{primaryMetricBefore:3,primaryMetricDenominatorBefore:10}};
+ diag.goNext();s.answers.fu_numeric_after=2;diag.goNext();
+ return s.path[2];
+},['fu_numeric_denominator_after']);
+add('RATE-OLD-PLAN-ROUTE','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_measurement_valid:'yes'});s.path=['fu_measurement_valid'];
+ s.followupBase={result:{primaryCode:'FIT'},experimentPlan:{primaryMetricBefore:3}};
+ diag.goNext();return s.path[1];
+},['fu_effect']);
 
 const failures=[];
 for (const t of tests) {
