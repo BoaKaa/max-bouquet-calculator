@@ -1175,6 +1175,87 @@ add('BACK-NO-DUPLICATE-DEEP','P1','BACK',()=>{
  return String(s.deepAdded === true);
 },['true']);
 
+
+/* Back transitions that can switch noncommercial actions to commitments.
+   Assert safety questions reappear and the legal gate stays authoritative. */
+add('BACK-BUILD-RESEARCH-TO-PAID-5-MODELS','P0','BACK',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+   reset('build',{scope_model:model,build_test_type:'payment',gate_legal:'unknown',
+    build_offer:'yes',build_access:'yes',build_market:'no'},
+    ['build_test_type','gate_legal','build_offer','build_access','build_market']);
+   diag.invalidateDownstreamAnswers(0);diag.goNext();
+   return s.path[1]==='gate_legal' &&
+      s.path.includes('build_econ_plausibility') && s.path.includes('build_pilot_capacity') &&
+      s.path.includes('build_route') && !('gate_legal' in s.answers);
+ }));
+},['true']);
+add('BACK-BUILD-PAID-TO-RESEARCH-5-MODELS','P1','BACK',()=>{
+ const models=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+ return String(models.every(model=>{
+   reset('build',{scope_model:model,build_test_type:'research',gate_legal:'no',
+    build_econ_plausibility:'yes',build_pilot_capacity:'yes',build_route:'yes'},
+    ['build_test_type','gate_legal','build_econ_plausibility','build_pilot_capacity','build_route','build_offer','build_access','build_market']);
+   diag.invalidateDownstreamAnswers(0);diag.goNext();
+   return s.path.includes('gate_legal') && s.path.includes('build_offer') &&
+    !['build_econ_plausibility','build_pilot_capacity','build_route'].some(id=>s.path.includes(id)) &&
+    !('build_econ_plausibility' in s.answers);
+ }));
+},['true']);
+add('BACK-HYBRID-RESEARCH-TO-PAID-LEGAL','P0','BACK',()=>{
+ reset('hybrid',{scope_model:'PRODUCT',inheritance_map:['channel'],build_test_type:'payment',
+  gate_legal:'unknown',build_access:'yes'},['build_test_type','gate_legal','build_access','build_market']);
+ diag.invalidateDownstreamAnswers(0);diag.goNext();
+ const next=s.path[s.index];
+ s.answers.gate_legal='unknown';diag.goNext();
+ return next+'|'+code(s.result);
+},['gate_legal|LEGAL_SAFETY_BLOCKER']);
+add('BACK-BUILD-RESEARCH-TO-PAID-LEGAL','P0','BACK',()=>{
+ reset('build',{scope_model:'PRODUCT',build_test_type:'payment',gate_legal:'unknown'},
+   ['build_test_type','gate_legal','build_offer','build_access','build_market']);
+ diag.invalidateDownstreamAnswers(0);diag.goNext();
+ s.answers.gate_legal='unknown';diag.goNext();
+ return code(s.result);
+},['LEGAL_SAFETY_BLOCKER']);
+add('BACK-BUILD-PAID-NO-MARKET-COMMERCIAL-DENOM','P1','BACK',()=>{
+ reset('build',{scope_model:'PRODUCT',build_test_type:'payment',gate_legal:'no',
+ build_market:'no',build_market_quality:'target_normal'},
+ ['build_market','build_market_quality']);
+ diag.invalidateDownstreamAnswers(0);diag.goNext();
+ return String(!s.result && s.path.includes('build_market_sample') &&
+   s.path.includes('build_market_audience') && !('build_market_quality' in s.answers));
+},['true']);
+add('BACK-HYBRID-PAID-NO-MARKET-COMMERCIAL-DENOM','P1','BACK',()=>{
+ reset('hybrid',{scope_model:'PRODUCT',build_test_type:'payment',gate_legal:'no',
+ build_market:'no',build_market_quality:'target_normal'},
+ ['build_market','build_market_quality']);
+ diag.invalidateDownstreamAnswers(0);diag.goNext();
+ return String(!s.result && s.path.includes('build_market_sample') &&
+   s.path.includes('build_market_audience') && !('build_market_quality' in s.answers));
+},['true']);
+add('FU-UNCERTAIN-CONFOUNDING-STOPS-EARLY','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'unknown'},['fu_execution_match']);
+ s.followupBase={result:{primaryCode:'ACCESS',userTitle:'Новые клиенты'}};
+ diag.goNext();
+ return String(s.result!==null && s.path.length===1 &&
+  !s.path.includes('fu_sample_ready'));
+},['true']);
+add('FU-UNKNOWN-COMPARABILITY-STOPS-EARLY','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+   fu_measurement_valid:'unknown'},['fu_measurement_valid']);
+ s.followupBase={result:{primaryCode:'ACCESS',userTitle:'Новые клиенты'}};
+ diag.goNext();
+ return String(s.result!==null && s.path.length===1 &&
+  !s.path.includes('fu_effect') && !s.path.includes('fu_numeric_after'));
+},['true']);
+add('FU-NO-COMPARABILITY-STILL-STOPS','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+   fu_measurement_valid:'no'},['fu_measurement_valid']);
+ s.followupBase={result:{primaryCode:'ACCESS',userTitle:'Новые клиенты'}};
+ diag.goNext();
+ return String(s.result!==null && !s.path.includes('fu_effect'));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
