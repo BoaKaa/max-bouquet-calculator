@@ -398,7 +398,10 @@ button:focus-visible, input:focus-visible {
   <p id="experimentNumericDescription" class="microcopy"></p>
   <label class="microcopy" for="experimentMetricBefore">Число до изменения (необязательно)</label>
   <input type="number" min="0" step="1" inputmode="numeric" class="text-input" id="experimentMetricBefore" placeholder="Например: 5"/>
-  <p class="microcopy">Сравнивайте одинаковые рабочие периоды и одинаково считайте случаи. Если точной цифры нет — пропустите поле.</p>
+  <div id="experimentDenominatorPanel" hidden><label class="microcopy" for="experimentDenominatorBefore" id="experimentDenominatorLabel"></label>
+<input id="experimentDenominatorBefore" type="number" min="0" step="1" inputmode="numeric" class="text-input" placeholder="Например: 20"/>
+<p class="microcopy">Для доли нужны оба числа: число событий и общее число случаев. Если одного нет, такое сравнение будет неточным.</p></div>
+<p class="microcopy">Сравнивайте одинаковые рабочие периоды и одинаково считайте случаи. Неизвестное число можно оставить пустым.</p>
 </div>
 <p id="experimentBranches" hidden></p>
         <p class="microcopy" id="experimentEarlyStop" hidden></p>
@@ -438,7 +441,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.8-dev';
+  const APP_VERSION = '1.13.9-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2021,6 +2024,11 @@ button:focus-visible, input:focus-visible {
       },
       'Считайте те же случаи, за такой же объём работы, что до изменения. Если сравнение некорректно — вернитесь и отметьте это.',
       'Например: 7', 'count'),
+    fu_numeric_denominator_after: dynamicNumberQ('fu_numeric_denominator_after','Сколько было случаев',
+      s => {
+        const c=s.followupBase?.result?.primaryCode||s.followupBase?.experimentPlan?.primaryCode;
+        return 'Из скольких «'+(followupNumericSpec(c)?.denominator||'подходящих случаев')+'» получено это число после изменения?';
+      },'Нужны сопоставимые случаи за тот же период. Если случаев не было, процент считать нельзя.','Например: 20','count'),
     fu_market_payment: q('fu_market_payment','Была ли покупка','После этой проверки кто-нибудь действительно оплатил заказ или внёс предоплату?','Интерес, бесплатная бронь и обещание купить пока не считаются оплатой.',[
       opt('yes','Да, есть реальная оплата или предоплата от покупателя'),
       opt('no','Нет, были только обращения, интерес или бронь без оплаты'),
@@ -3251,12 +3259,19 @@ button:focus-visible, input:focus-visible {
         }
         const previousCode = state.followupBase?.result?.primaryCode || state.followupBase?.result?.code || state.followupBase?.experimentPlan?.primaryCode;
         const {plan}=followupPlanContext();
-        const hasNumeric=previousCode!=='DATA_GAP' && followupNumericSpec(previousCode) &&
-          Number.isInteger(plan?.primaryMetricBefore) && plan.primaryMetricBefore>=0;
+        const spec=followupNumericSpec(previousCode);
+        const hasNumeric=previousCode!=='DATA_GAP' && spec &&
+          Number.isInteger(plan?.primaryMetricBefore) && plan.primaryMetricBefore>=0 &&
+          (!spec.denominator || Number.isInteger(plan?.primaryMetricDenominatorBefore));
         state.path=state.path.slice(0,state.index+1).concat([
           previousCode==='DATA_GAP'?'fu_data_gap_branch':(hasNumeric?'fu_numeric_after':'fu_effect')
         ]);
-      } else if (currentId === 'fu_numeric_after') {
+      } else if(currentId==='fu_numeric_after'){
+        const c=state.followupBase?.result?.primaryCode||state.followupBase?.experimentPlan?.primaryCode;
+        state.path=state.path.slice(0,state.index+1).concat([
+          followupNumericSpec(c)?.denominator?'fu_numeric_denominator_after':'fu_effect'
+        ]);
+      } else if(currentId==='fu_numeric_denominator_after'){
         state.path=state.path.slice(0,state.index+1).concat(['fu_effect']);
       } else if (currentId === 'fu_data_gap_branch') {
         finalizeFollowup();
@@ -5843,17 +5858,35 @@ function finalizePrecision() {
     RECOVERY_FAILURE:['нерешённых жалоб',-1],SUB_RENEWAL:['состоявшихся продлений',1],
     REACTIVATION_GAP:['реальных возвращений клиентов',1]
   });
+  const FOLLOWUP_DENOMINATORS=Object.freeze({
+    OFFER:'подходящих обращений',FIT:'всех новых обращений',
+    DECISION_GAP:'людей, выбирающих покупку',PURCHASE_FRICTION:'людей, решивших купить',
+    START_FAILURE:'подтверждённых покупок или записей',ACTIVATION_FAILURE:'оплативших участников',
+    FIRST_VALUE_GAP:'начавших пользоваться покупателей',FULFILLMENT:'выполненных заказов или услуг',
+    VALUE_FAILURE:'случаев с известным результатом',NEXT_CYCLE:'клиентов с повторным поводом',
+    CUSTOMER_MEMORY_GAP:'клиентов с повторным поводом',RECOVERY_FAILURE:'полученных жалоб',
+    SUB_RENEWAL:'участников с наступившим сроком продления'
+  });
   function followupNumericSpec(code){
     const x=FOLLOWUP_NUMERIC_SPECS[code];
-    return x ? {label:x[0],direction:x[1]} : null;
+    return x ? {label:x[0],direction:x[1],denominator:FOLLOWUP_DENOMINATORS[code]||null} : null;
   }
   function followupNumericComparison(){
     const {result,plan}=followupPlanContext();
     const spec=followupNumericSpec(result?.primaryCode||result?.code||plan?.primaryCode);
     const before=plan?.primaryMetricBefore,after=state.answers.fu_numeric_after;
-    if (!spec || !Number.isInteger(before) || before<0 ||
-        !Number.isInteger(after) || after<0) return null;
+    if (!spec||!Number.isInteger(before)||before<0||!Number.isInteger(after)||after<0) return null;
     const delta=after-before;
+    if(spec.denominator){
+      const beforeN=plan?.primaryMetricDenominatorBefore,afterN=state.answers.fu_numeric_denominator_after;
+      if(!Number.isInteger(beforeN)||beforeN<0||!Number.isInteger(afterN)||afterN<0)return null;
+      if(!beforeN||!afterN||before>beforeN||after>afterN)
+        return {invalid:true,reason:'Нельзя сравнить доли: общее число случаев должно быть больше нуля, а число событий — не больше числа случаев.'};
+      const shift=(after*beforeN-before*afterN)*spec.direction;
+      return {before,after,delta,beforeN,afterN,label:spec.label,rate:true,
+        beforeRate:before/beforeN,afterRate:after/afterN,
+        movement:shift>0?'better':shift<0?'worse':'same'};
+    }
     return {before,after,delta,label:spec.label,movement:delta*spec.direction>0?'better':delta===0?'same':'worse'};
   }
 
@@ -5923,6 +5956,8 @@ function finalizePrecision() {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный защитный показатель.' };
     }
     const numeric=followupNumericComparison();
+    if(numeric?.invalid)return {outcome:FOLLOWUP_OUTCOME.R_INVALID,code:FOLLOWUP_CODE.INVALID_MEASUREMENT,
+      decision:'REDESIGN',reason:numeric.reason};
     if (numeric && ((a.fu_effect==='better' && numeric.movement!=='better') ||
         (a.fu_effect==='worse' && numeric.movement==='better'))) {
       return {outcome:FOLLOWUP_OUTCOME.R_ZERO,code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
@@ -6163,6 +6198,10 @@ function finalizePrecision() {
       primaryMetricBefore:numericComparison?.before ?? null,
       primaryMetricAfter:numericComparison?.after ?? null,
       primaryMetricDelta:numericComparison?.delta ?? null,
+      primaryMetricDenominatorBefore:numericComparison?.beforeN ?? null,
+      primaryMetricDenominatorAfter:numericComparison?.afterN ?? null,
+      primaryMetricRateBefore:numericComparison?.beforeRate ?? null,
+      primaryMetricRateAfter:numericComparison?.afterRate ?? null,
       primaryMetricLabel:numericComparison?.label ?? null,
       primaryMetricAssessment:a.fu_effect || null,
       guardrailResults:guardrails,
@@ -6193,9 +6232,13 @@ function finalizePrecision() {
         {type:'REPEATED_OBSERVATION',questionId:'fu_done',value:a.fu_done,label:'Выполнение запланированного изменения'},
         {type:'USER_ESTIMATE',questionId:'fu_sample_ready',value:a.fu_sample_ready,label:'Выполнение условия наблюдения'},
         {type:'USER_ESTIMATE',questionId:'fu_measurement_valid',value:a.fu_measurement_valid,label:'Пригодность сравнения'},
-        ...(numericComparison ? [
+        ...(numericComparison&&!numericComparison.invalid ? [
           {type:'NUMBER',questionId:null,source:'experimentPlan.primaryMetricBefore',value:numericComparison.before,label:'Записано до изменения: '+numericComparison.label},
-          {type:'NUMBER',questionId:'fu_numeric_after',value:numericComparison.after,label:'После изменения: '+numericComparison.label}
+          {type:'NUMBER',questionId:'fu_numeric_after',value:numericComparison.after,label:'После изменения: '+numericComparison.label},
+          ...(numericComparison.rate?[
+            {type:'NUMBER',questionId:null,source:'experimentPlan.primaryMetricDenominatorBefore',value:numericComparison.beforeN,label:'Общее число случаев до'},
+            {type:'NUMBER',questionId:'fu_numeric_denominator_after',value:numericComparison.afterN,label:'Общее число случаев после'}
+          ]:[])
         ] : [])
       ],
       confidence:confidenceAfter,
@@ -6228,7 +6271,14 @@ function finalizePrecision() {
       why:[
         'Прошлый вывод: ' + (previousResult?.userTitle || previousResult?.title || 'сохранённый результат') + '.',
         cls.reason,
-        ...(numericComparison?['Сравнение «'+numericComparison.label+'»: до '+numericComparison.before+', после '+numericComparison.after+', разница '+(numericComparison.delta>0?'+':'')+numericComparison.delta+'.']:[]),
+        ...(numericComparison&&!numericComparison.invalid?[
+          numericComparison.rate?
+            'Сравнение «'+numericComparison.label+'»: до '+numericComparison.before+' из '+numericComparison.beforeN+
+            ', после '+numericComparison.after+' из '+numericComparison.afterN+
+            '. Доля: '+fmtNumber(numericComparison.beforeRate*100)+'% → '+fmtNumber(numericComparison.afterRate*100)+'%.'
+          :'Сравнение «'+numericComparison.label+'»: до '+numericComparison.before+', после '+numericComparison.after+
+            ', разница '+(numericComparison.delta>0?'+':'')+numericComparison.delta+'.'
+        ]:[]),
         'Что делать дальше: ' + followupDecisionLabel(cls.decision) + '.'
       ],
       secondary:[],
@@ -6318,12 +6368,20 @@ function finalizePrecision() {
           'Если число известно, запишите до изменения: '+nSpec.label+'.';
         const nInput=document.getElementById('experimentMetricBefore');
         nInput.value=Number.isInteger(experimentPlan.primaryMetricBefore)?String(experimentPlan.primaryMetricBefore):'';
-        nInput.addEventListener('input',()=>{
-          const value=nInput.value.trim();
-          const num=value===''?null:Number(value);
-          experimentPlan.primaryMetricBefore=Number.isInteger(num)&&num>=0?num:null;
+        const setNumber=(input,key)=>{
+          const raw=input.value.trim(),n=raw===''?null:Number(raw);
+          experimentPlan[key]=Number.isInteger(n)&&n>=0?n:null;
           result.experimentPlan=experimentPlan;
-        });
+        };
+        nInput.addEventListener('input',()=>setNumber(nInput,'primaryMetricBefore'));
+        if(nSpec.denominator){
+          document.getElementById('experimentDenominatorPanel').hidden=false;
+          document.getElementById('experimentDenominatorLabel').textContent='Сколько всего было «'+nSpec.denominator+'» до изменения?';
+          const den=document.getElementById('experimentDenominatorBefore');
+          den.value=Number.isInteger(experimentPlan.primaryMetricDenominatorBefore)
+            ?String(experimentPlan.primaryMetricDenominatorBefore):'';
+          den.addEventListener('input',()=>setNumber(den,'primaryMetricDenominatorBefore'));
+        }
       }
       // Detailed outcomes stay in saved data for Follow-up, not on the first result screen.
       document.getElementById('experimentBranches').textContent = '';
