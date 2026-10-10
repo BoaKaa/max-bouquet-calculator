@@ -1306,6 +1306,66 @@ add('HIST-TRANSITION-READS-ORIGINAL-ANSWERS','P0','HISTORY',()=>{
  return String(out.nextResult?.primaryCode==='ECONOMICS'&&JSON.stringify(s.answers)===before&&s.mode==='followup');
 },['true']);
 
+
+add('HIST-STORAGE-CORRUPT-NEVER-OVERWRITE','P0','HISTORY',()=>{
+ const key='salesDiagnosticHistory:v2',old=memory[key];memory[key]='{broken';
+ const blocked=diag.historyStorageProblem();
+ const saved=diag.saveHistory({result:{resultId:'corrupt_test',primaryCode:'ACCESS',why:['x']},mode:'full'});
+ const unchanged=memory[key]==='{broken';
+ if(old===undefined)delete memory[key];else memory[key]=old;
+ return String(!!blocked&&!saved&&unchanged);
+},['true']);
+add('HIST-STORAGE-NEWER-SCHEMA-NEVER-OVERWRITE','P0','HISTORY',()=>{
+ const key='salesDiagnosticHistory:v2',old=memory[key];memory[key]=JSON.stringify({schemaVersion:99,cycles:[{test:true}]});
+ const saved=diag.saveHistory({result:{resultId:'future_schema',primaryCode:'ACCESS',why:['x']},mode:'full'});
+ const unchanged=JSON.parse(memory[key]).schemaVersion===99;
+ if(old===undefined)delete memory[key];else memory[key]=old;
+ return String(!saved&&unchanged);
+},['true']);
+add('HIST-IMPORT-REFUSE-INVALID-JSON','P0','HISTORY',()=>String(!diag.reviewHistoryImport('{invalid').ok),['true']);
+add('HIST-IMPORT-REFUSE-WRONG-SCHEMA','P0','HISTORY',()=>{
+ const payload={exportVersion:1,historySchemaVersion:99,cycles:[]};
+ return String(!diag.reviewHistoryImport(JSON.stringify(payload)).ok);
+},['true']);
+add('HIST-IMPORT-REFUSE-MALFORMED-CYCLE','P0','HISTORY',()=>{
+ const payload={exportVersion:1,historySchemaVersion:2,cycles:[{cycleId:'cycle_wrong',schemaVersion:2}]};
+ return String(!diag.reviewHistoryImport(JSON.stringify(payload)).ok);
+},['true']);
+add('HIST-IMPORT-NEW-CYCLE-AND-IDEMPOTENT','P0','HISTORY',()=>{
+ const key='salesDiagnosticHistory:v2',original=memory[key];
+ // This cycle has no experiment plan and uses a valid result contract.
+ const incoming={cycleId:'cycle_import_single_161',scopeId:'s_i',schemaVersion:2,
+  status:'COMPLETED',legacyReadonly:false,createdAt:'2026-10-10T10:00:00Z',
+  updatedAt:'2026-10-10T10:00:00Z',scope:{name:'Сохранённый тест',diagnosticMode:'full'},
+  answers:{scope_goal:'new_sales'},result:{resultId:'r_import_161',primaryCode:'ACCESS',
+   userTitle:'Сохранённый вывод',why:['Приток нерегулярен']},
+  experimentPlan:null,precisionSnapshots:[],followups:[],transition:null,parentCycleId:null,nextCycleId:null};
+ const text=JSON.stringify({exportVersion:1,historySchemaVersion:2,cycles:[incoming]});
+ const preview=diag.reviewHistoryImport(text);
+ const success=preview.ok&&preview.newCount===1&&diag.commitHistoryImport(text,preview.currentRaw);
+ const repeated=diag.reviewHistoryImport(text);
+ const idempotent=repeated.ok&&repeated.newCount===0&&repeated.duplicateCount===1;
+ const noDuplicate=diag.loadHistoryStore().cycles.filter(c=>c.cycleId===incoming.cycleId).length===1;
+ if(original===undefined)delete memory[key];else memory[key]=original;
+ return String(success&&idempotent&&noDuplicate);
+},['true']);
+add('HIST-IMPORT-CONFLICT-BLOCKS','P0','HISTORY',()=>{
+ const current=diag.loadHistoryStore().cycles[0];
+ if(!current)return 'no cycles';
+ const other={...current,updatedAt:'2000-01-01T00:00:00Z'};
+ const payload=JSON.stringify({exportVersion:1,historySchemaVersion:2,cycles:[other]});
+ return String(!diag.reviewHistoryImport(payload).ok);
+},['true']);
+add('HIST-IMPORT-STALE-PREVIEW-BLOCKS','P0','HISTORY',()=>{
+ const txt=JSON.stringify({exportVersion:1,historySchemaVersion:2,cycles:[]});
+ const review=diag.reviewHistoryImport(txt);
+ return String(review.ok&&!diag.commitHistoryImport(txt,review.currentRaw===null?'stale':'different history'));
+},['true']);
+add('HIST-IMPORT-AVAILABLE-ON-EMPTY-HOME','P1','HISTORY',()=>{
+ return String(html.includes("Import must also be accessible on a fresh browser")&&
+   html.includes("importFile.type='file'")&&html.includes("importButton.addEventListener('click'"));
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
