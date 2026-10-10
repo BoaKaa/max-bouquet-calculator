@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.13-dev';
+  const APP_VERSION = '1.13.14-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3298,7 +3298,9 @@ button:focus-visible, input:focus-visible {
         }
         state.path = state.path.slice(0, state.index + 1).concat(['fu_execution_match']);
       } else if (currentId === 'fu_execution_match') {
-        if (['one','several'].includes(state.answers.fu_execution_match)) {
+        if (['one','several','unknown'].includes(state.answers.fu_execution_match)) {
+          // These outcomes already have a final decision in classifyFollowup.
+          // Continuing to ask for metrics cannot make this comparison valid.
           finalizeFollowup();
           return;
         }
@@ -3317,7 +3319,8 @@ button:focus-visible, input:focus-visible {
       } else if (currentId === 'fu_observed_count') {
         state.path=state.path.slice(0,state.index+1).concat(['fu_measurement_valid']);
       } else if (currentId === 'fu_measurement_valid') {
-        if (['no'].includes(state.answers.fu_measurement_valid)) {
+        if (['no','unknown'].includes(state.answers.fu_measurement_valid)) {
+          // An unusable comparison is not rescued by extra numeric questions.
           finalizeFollowup();
           return;
         }
