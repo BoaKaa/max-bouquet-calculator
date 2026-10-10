@@ -887,6 +887,54 @@ add('RATE-OLD-PLAN-ROUTE','P1','FOLLOWUP',()=>{
  diag.goNext();return s.path[1];
 },['fu_effect']);
 
+
+add('TARGET-N-COUNT-NOT-READY','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+ fu_measurement_valid:'yes',fu_observed_count:4,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{plannedObservationCount:12}};
+ return diag.classifyFollowup().code+'|'+diag.classifyFollowup().decision;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|CONTINUE']);
+add('TARGET-N-COUNT-READY','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+ fu_measurement_valid:'yes',fu_observed_count:12,fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{plannedObservationCount:12}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_CONFIRMED']);
+add('TARGET-N-RATE-TOO-SMALL','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+ fu_measurement_valid:'yes',fu_numeric_after:0,fu_numeric_denominator_after:3,
+ fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},
+  experimentPlan:{plannedObservationCount:20,primaryMetricBefore:5,primaryMetricDenominatorBefore:100}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE']);
+add('TARGET-N-RATE-ENOUGH','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+ fu_measurement_valid:'yes',fu_numeric_after:1,fu_numeric_denominator_after:30,
+ fu_effect:'better',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'FULFILLMENT'},
+  experimentPlan:{plannedObservationCount:20,primaryMetricBefore:8,primaryMetricDenominatorBefore:40}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_CONFIRMED']);
+add('TARGET-N-CONDITIONAL-QUESTION','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_sample_ready:'yes'});s.path=['fu_sample_ready'];
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{plannedObservationCount:12}};
+ diag.goNext();const next=s.path[1];s.answers.fu_observed_count=12;diag.goNext();
+ return next+'|'+s.path[2];
+},['fu_observed_count|fu_measurement_valid']);
+add('TARGET-N-DENOMINATOR-NO-DOUBLE-QUESTION','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_sample_ready:'yes'});s.path=['fu_sample_ready'];
+ s.followupBase={result:{primaryCode:'FIT'},
+  experimentPlan:{plannedObservationCount:12,primaryMetricBefore:3,primaryMetricDenominatorBefore:20}};
+ diag.goNext();return s.path[1];
+},['fu_measurement_valid']);
+add('TARGET-N-GUARDRAIL-HIGHER-PRIORITY','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',
+ fu_measurement_valid:'yes',fu_observed_count:2,fu_effect:'better',fu_guardrail:['safety']});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{plannedObservationCount:12}};
+ return diag.classifyFollowup().code;
+},['FOLLOWUP_GUARDRAIL_FAIL']);
+
 const failures=[];
 for (const t of tests) {
   let got;
