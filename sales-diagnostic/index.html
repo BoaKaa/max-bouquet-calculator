@@ -365,7 +365,7 @@ button:focus-visible, input:focus-visible {
           <span>Что измерить</span>
           <strong id="resultMetric"></strong>
         </div>
-        <div class="metric-box">
+        <div class="metric-box" id="resultObservationBox">
           <span>Когда оценивать</span>
           <strong id="resultObservation"></strong>
         </div>
@@ -6924,6 +6924,9 @@ function finalizePrecision() {
     document.getElementById('resultAction').textContent = result.action;
     document.getElementById('resultMetric').textContent = (result.metrics || [result.metric]).filter(Boolean).join(' · ');
     document.getElementById('resultObservation').textContent = result.observationRule || result.next || '';
+    // Follow-up is already an outcome; the original plan's observation timer
+    // has no independent meaning and otherwise repeats the next-step text.
+    document.getElementById('resultObservationBox').hidden=!!result.followup;
     document.getElementById('resultDont').textContent = (result.holdConstant || [result.dont]).filter(Boolean).join(' ');
     const decisionText = document.getElementById('resultDecisionRule');
     document.getElementById('resultDecisionCard').hidden=!!result.followup;
@@ -7166,9 +7169,9 @@ function finalizePrecision() {
     '\n\nЧто сделать первым:\n' + r.action +
     '\n\nЧто пока не менять:\n' + (r.holdConstant || [r.dont]).filter(Boolean).join(' ') +
     '\n\nЧто записывать:\n' + (r.metrics || [r.metric]).filter(Boolean).join(' · ') +
-    '\n\nКогда проверить:\n' + (r.observationRule || r.next || '') +
-    '\n\nЕсли стало лучше: ' + (r.successRule || '') +
-    '\nЕсли не стало: ' + (r.failureRule || '') +
+    (r.followup?'':'\n\nКогда проверить:\n' + (r.observationRule || r.next || '')) +
+    (r.followup?'':'\n\nЕсли стало лучше: ' + (r.successRule || '') +
+    '\nЕсли не стало: ' + (r.failureRule || '')) +
     '\n\nЧто дальше:\n' + (r.followup ? (r.next||r.nextIfSuccess||'') :
       (r.nextIfSuccess||r.next||'') +
       '\nЕсли результата нет: ' + (r.nextIfFailure||'')) + precision + opportunity;
