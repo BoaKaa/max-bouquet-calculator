@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.19-dev';
+  const APP_VERSION = '1.13.20-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2900,6 +2900,7 @@ button:focus-visible, input:focus-visible {
     return true;
   }
 
+  let historyUiNotice = null;
   function showHome() {
     state.mode = null;
     state.diagnosticMode = null;
@@ -2947,6 +2948,11 @@ button:focus-visible, input:focus-visible {
       const historyCard=document.createElement('article');
       historyCard.className='card result-card';
       historyCard.innerHTML='<h2>История решений</h2><p class="lead">Здесь сохраняются циклы диагностики и проверок, а не клиенты или заказы.</p>';
+      if(historyUiNotice){
+        const note=document.createElement('p'); note.className='note-box';
+        note.setAttribute('role','status'); note.textContent=historyUiNotice;
+        historyCard.appendChild(note); historyUiNotice=null;
+      }
       const list=document.createElement('div');
       list.className='reason-list';
       if (!recent.length) {
@@ -2971,7 +2977,7 @@ button:focus-visible, input:focus-visible {
         titleEl.textContent=title;
         const meta=document.createElement('div');
         meta.className='history-meta';
-        meta.textContent=(cycle.scope?.name || 'Без названия') + ' · ' + formatDate(cycle.updatedAt || cycle.createdAt);
+        meta.textContent=(cycle.scope || 'Без названия') + ' · ' + formatDate(cycle.date);
         const status=document.createElement('span');
         status.className='status-pill';
         status.textContent=cycleStatusLabel(cycle.status,cycle.legacyReadonly);
@@ -3027,62 +3033,115 @@ button:focus-visible, input:focus-visible {
       });
       historyActions.appendChild(exportButton);
 
-      // Preview is read-only. Commit requires a second explicit action and
-      // refuses conflicting IDs, stale preview and any implicit pruning.
+      // Separate read-only preview from the explicit import confirmation.
       const importFile=document.createElement('input');
-      importFile.type='file';importFile.accept='.json,application/json';
-      importFile.className='text-input';
-      importFile.setAttribute('aria-label','Выберите файл экспорта истории');
+      importFile.type='file'; importFile.accept='.json,application/json';
+      importFile.className='text-input'; importFile.setAttribute('aria-label','Выберите файл экспорта истории');
       const importMessage=document.createElement('p');
-      importMessage.className='microcopy';importMessage.setAttribute('role','status');
-      importMessage.textContent='Импорт только добавляет новые циклы. Существующие не перезаписываются.';
+      importMessage.className='note-box'; importMessage.setAttribute('role','status');
+      importMessage.textContent='Выберите JSON-файл с историей. Сначала проверим его, затем предложим добавить только новые записи.';
       const importButton=document.createElement('button');
-      importButton.type='button';importButton.className='ghost-btn';
-      importButton.textContent='Импортировать проверенные записи';importButton.disabled=true;
-      let pendingText=null,pendingRaw=null;
-      importFile.addEventListener('change',async()=>{
-        importButton.disabled=true;pendingText=null;pendingRaw=null;
+      importButton.type='button'; importButton.className='ghost-btn';
+      importButton.textContent='Проверить выбранный файл';
+      const commitButton=document.createElement('button');
+      commitButton.type='button'; commitButton.className='primary-btn';
+      commitButton.hidden=true; commitButton.disabled=true;
+      let pendingText=null,pendingRaw=null,pendingCount=0;
+      function resetImportPreview(){
+        pendingText=null; pendingRaw=null; pendingCount=0;
+        commitButton.hidden=true; commitButton.disabled=true;
+      }
+      importFile.addEventListener('change',()=>{
+        resetImportPreview();
         const file=importFile.files?.[0];
-        if(!file)return;
-        if(file.size>10*1024*1024){
-          importMessage.textContent='Файл слишком большой (максимум 10 МБ).';return;
-        }
-        try {
-          const text=await file.text();
-          const preview=reviewHistoryImport(text);
-          if(!preview.ok){importMessage.textContent=preview.reason;return;}
-          importMessage.textContent='Проверено: новых циклов '+preview.newCount+
-            ', уже имеющихся без изменений '+preview.duplicateCount+'.';
-          pendingText=text;pendingRaw=preview.currentRaw;
-          importButton.disabled=preview.newCount===0;
-        } catch {importMessage.textContent='Не удалось прочитать файл. История не изменена.';}
+        importMessage.textContent=file
+          ? 'Выбран файл «'+file.name+'». Теперь нажмите «Проверить выбранный файл». Ничего пока не импортировано.'
+          : 'Файл не выбран. Выберите JSON-файл экспорта истории.';
       });
-      importButton.addEventListener('click',()=>{
-        if(!pendingText)return;
+      importButton.addEventListener('click',async()=>{
+        resetImportPreview();
+        const file=importFile.files?.[0];
+        if(!file){importMessage.textContent='Сначала выберите файл экспорта истории (.json).';return;}
+        if(file.size>10*1024*1024){
+          importMessage.textContent='Файл слишком большой (максимум 10 МБ). История не изменена.';return;
+        }
+        importButton.disabled=true;
+        importMessage.textContent='Проверяем файл «'+file.name+'»…';
+        try {
+          const content=await file.text();
+          if(importFile.files?.[0]!==file)return; // The selection changed during reading.
+          const preview=reviewHistoryImport(content);
+          if(!preview.ok){importMessage.textContent=preview.reason+' История не изменена.';return;}
+          if(!preview.newCount){
+            importMessage.textContent=preview.total===0
+              ? 'В файле нет сохранённых проверок. Ничего добавлять не нужно.'
+              : 'Новых записей нет: все '+preview.duplicateCount+' записей из файла уже сохранены в этом браузере. История не изменена.';
+            return;
+          }
+          pendingText=content;pendingRaw=preview.currentRaw;pendingCount=preview.newCount;
+          commitButton.textContent='Добавить новые записи ('+preview.newCount+')';
+          commitButton.hidden=false;commitButton.disabled=false;
+          importMessage.textContent='Проверено: '+preview.newCount+' новых записей и '+preview.duplicateCount+
+            ' уже сохранённых. Файл пока не импортирован. Для добавления нажмите вторую кнопку.';
+        } catch {
+          if(importFile.files?.[0]===file)
+            importMessage.textContent='Не удалось прочитать файл. История не изменена.';
+        } finally { importButton.disabled=false; }
+      });
+      commitButton.addEventListener('click',()=>{
+        if(!pendingText || !pendingCount){
+          resetImportPreview();importMessage.textContent='Сначала проверьте выбранный файл.';return;
+        }
         const check=reviewHistoryImport(pendingText);
-        if(!check.ok || check.currentRaw!==pendingRaw){
-          importButton.disabled=true;
-          importMessage.textContent='История изменилась или файл больше не проходит проверку. Выберите файл ещё раз.';
+        if(!check.ok || check.currentRaw!==pendingRaw || check.newCount!==pendingCount){
+          resetImportPreview();
+          importMessage.textContent='История изменилась или файл не прошёл проверку. Проверьте файл ещё раз.';
           return;
         }
-        if(!window.confirm('Добавить '+check.newCount+' новых циклов? Существующие записи не заменяются.'))return;
-        if(commitHistoryImport(pendingText,pendingRaw))showHome();
-        else {importButton.disabled=true;importMessage.textContent='Импорт остановлен. История не изменена.';}
+        if(!window.confirm('Добавить '+check.newCount+' новых записей? Существующие не заменяются.')){
+          importMessage.textContent='Импорт отменён. История не изменена.';return;
+        }
+        if(commitHistoryImport(pendingText,pendingRaw)){
+          historyUiNotice='Импорт завершён: добавлено '+check.newCount+
+            ' записей. Существующие записи не изменены.';
+          showHome();
+        } else {
+          resetImportPreview();
+          importMessage.textContent='Импорт остановлен. История не изменена. Проверьте файл повторно.';
+        }
       });
       historyActions.appendChild(importFile);
       historyActions.appendChild(importButton);
+      historyActions.appendChild(commitButton);
       historyActions.appendChild(importMessage);
 
-      const clearButton=document.createElement('button');
-      clearButton.type='button'; clearButton.className='ghost-btn'; clearButton.textContent='Удалить несвязанные завершённые циклы';
-      clearButton.disabled=!store.cycles.some(c=>!isOpenCycleStatus(c.status));
-      clearButton.addEventListener('click',()=>{
-        if (window.confirm('Удалить завершённые циклы, не связанные с незавершёнными проверками?')) {
-          if (clearClosedHistory()) showHome();
-          else window.alert('Не удалось очистить историю: проверьте связанные циклы или хранилище браузера.');
-        }
-      });
-      historyActions.appendChild(clearButton);
+      const linkedGroups=historyConnectedComponents(store.cycles);
+      const removable=linkedGroups
+        ? linkedGroups.filter(group=>group.every(c=>!isOpenCycleStatus(c.status))).flat()
+        : [];
+      if(removable.length){
+        const clearButton=document.createElement('button');
+        clearButton.type='button';clearButton.className='ghost-btn';
+        clearButton.textContent='Удалить завершённые проверки ('+removable.length+')';
+        clearButton.addEventListener('click',()=>{
+          if(!window.confirm('Безвозвратно удалить '+removable.length+
+            ' завершённых проверок? Активные и связанные с ними записи сохранятся.'))return;
+          if(clearClosedHistory()){
+            historyUiNotice='Удалено '+removable.length+
+              ' завершённых проверок. Активные и связанные с ними записи сохранены.';
+            showHome();
+          } else window.alert('Не удалось очистить историю. Сохранённые записи не изменены.');
+        });
+        historyActions.appendChild(clearButton);
+      } else {
+        const clearHelp=document.createElement('p');clearHelp.className='microcopy';
+        clearHelp.textContent=!linkedGroups
+          ? 'Нельзя безопасно очистить историю: обнаружены повреждённые связи между записями.'
+          : store.cycles.some(c=>!isOpenCycleStatus(c.status))
+            ? 'Завершённые проверки связаны с активными. Их необходимо сохранить, поэтому удалять пока нечего.'
+            : 'Удалять пока нечего: завершённых проверок нет.';
+        historyActions.appendChild(clearHelp);
+      }
       historyCard.appendChild(historyActions);
       app.appendChild(historyCard);
     }
