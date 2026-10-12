@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.20-dev';
+  const APP_VERSION = '1.13.21-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3494,11 +3494,8 @@ button:focus-visible, input:focus-visible {
   }
 
   function shouldAskScopeGeography(s = state) {
-    const model = s.answers.scope_model;
-    // In FULL geography is not an entry question. Ask it only after Access /
-    // Distribution becomes decision-relevant. BUILD/HYBRID may need location
-    // earlier because it can determine where the market test is possible.
-    if ([DIAGNOSTIC_MODE.BUILD, DIAGNOSTIC_MODE.HYBRID].includes(s.mode) && ['PRODUCT','APPOINTMENT'].includes(model)) return true;
+    // Current BUILD/HYBRID decisions never consume the geography answer.
+    // Keep FULL's separate targeted Access geography question as before.
     return false;
   }
 
@@ -3549,7 +3546,7 @@ button:focus-visible, input:focus-visible {
     const add = (...ids) => ids.forEach(id => { if (!out.includes(id)) out.push(id); });
     if (xs.includes('offer')) add('build_offer','build_market');
     if (xs.includes('price')) add('build_offer','build_market');
-    if (xs.includes('audience')) add('build_access','build_market_context','build_market');
+    if (xs.includes('audience')) add('build_access','build_market');
     if (xs.includes('channel')) add('build_access','build_market');
     if (xs.includes('route')) add('build_route','build_market');
     if (xs.includes('fulfillment')) add('build_fulfillment','build_value');
@@ -3566,7 +3563,6 @@ button:focus-visible, input:focus-visible {
       'build_offer',
       'build_route',
       'build_access',
-      'build_market_context',
       'build_market'
     ];
   }
