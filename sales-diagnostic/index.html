@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.18-dev';
+  const APP_VERSION = '1.13.19-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3556,7 +3556,17 @@ button:focus-visible, input:focus-visible {
 
     if (state.mode === DIAGNOSTIC_MODE.FOLLOWUP) {
       if (currentId === 'fu_done') {
-        if (['no','different'].includes(state.answers.fu_done)) {
+        if (state.answers.fu_done === 'no') {
+          finalizeFollowup();
+          return;
+        }
+        // Check harm first, even if the change or measurement later proves invalid.
+        // Otherwise early Follow-up exits can silently miss economic/safety damage.
+        state.path = state.path.slice(0, state.index + 1).concat(['fu_guardrail']);
+      } else if (currentId === 'fu_guardrail') {
+        const harm = Array.isArray(state.answers.fu_guardrail) &&
+          state.answers.fu_guardrail.some(v => v !== 'none');
+        if (harm || state.answers.fu_done === 'different') {
           finalizeFollowup();
           return;
         }
@@ -3611,7 +3621,8 @@ button:focus-visible, input:focus-visible {
         const oldCode = state.followupBase?.result?.primaryCode || state.followupBase?.result?.code || state.followupBase?.experimentPlan?.primaryCode;
         const needPayment = state.answers.fu_effect === 'better' &&
           ['BUILD_MARKET_TEST','BUILD_DEMAND'].includes(oldCode);
-        state.path = state.path.slice(0, state.index + 1).concat(needPayment ? ['fu_market_payment','fu_guardrail'] : ['fu_guardrail']);
+        if (needPayment)
+          state.path = state.path.slice(0, state.index + 1).concat(['fu_market_payment']);
       }
     }
 
@@ -6260,6 +6271,10 @@ function finalizePrecision() {
     if (a.fu_done === 'no') {
       return { outcome:null, code:FOLLOWUP_CODE.NOT_EXECUTED, decision:'CONTINUE', reason:'Основное изменение не было выполнено.' };
     }
+    // Safety and major negative side-effects outrank insufficient or invalid evidence.
+    if (redGuardrail) {
+      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Во время проверки ухудшился важный защитный показатель. Сначала устраните возможный вред, даже если эффективность изменения пока оценить нельзя.' };
+    }
     if (a.fu_done === 'different') {
       return { outcome:FOLLOWUP_OUTCOME.R_INVALID, code:FOLLOWUP_CODE.INVALID_MEASUREMENT, decision:'REDESIGN', reason:'Вместо запланированного было выполнено другое изменение.' };
     }
@@ -6306,9 +6321,6 @@ function finalizePrecision() {
       }
     }
 
-    if (redGuardrail) {
-      return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.GUARDRAIL_FAIL, decision:'ROLLBACK', reason:'Даже при улучшении основной метрики ухудшился важный защитный показатель.' };
-    }
     const numeric=followupNumericComparison();
     if(numeric?.invalid)return {outcome:FOLLOWUP_OUTCOME.R_INVALID,code:FOLLOWUP_CODE.INVALID_MEASUREMENT,
       decision:'REDESIGN',reason:numeric.reason};
@@ -6533,17 +6545,17 @@ function finalizePrecision() {
       title:followupClass.code === FOLLOWUP_CODE.GUARDRAIL_FAIL ? 'Улучшение основной метрики не оправдывает ухудшение важного показателя' : 'Это изменение не прошло проверку',
       summary:followupClass.reason,
       action:followupClass.decision === 'ROLLBACK'
-        ? 'Остановите или откатите это изменение, если это безопасно и возможно. Старую гипотезу не обязательно считать ложной: неудачным мог быть именно intervention.'
-        : 'Не повторяйте то же действие автоматически. Вернитесь к этой проблеме и выберите другой механизм или перепроверьте сам diagnosis.',
+        ? 'Остановите или отмените изменение, если это безопасно и возможно. Саму исходную идею пока нельзя ни подтвердить, ни опровергнуть.'
+        : 'Не повторяйте то же действие автоматически. Перепроверьте прежний вывод или выберите другой способ решения проблемы.',
       metric:primaryMetric,
       dont:'Не масштабируйте это изменение только потому, что уже вложили в него время или деньги.',
-      next:'Новый шаг должен быть отдельным решением, а не автоматическим повтором прошлого intervention.'
+      next:'Следующий шаг выбирайте заново, а не повторяйте прошлое действие автоматически.'
     };
 
     const moved = transition?.toPrimaryCode && transition.toPrimaryCode !== transition.fromPrimaryCode;
     return {
       title:partial ? 'Основное изменение прошло проверку, но вспомогательные шаги проверены не полностью' : 'Изменение прошло проверку',
-      summary:followupClass.reason + (moved ? ' После пересчёта главный constraint переместился.' : ''),
+      summary:followupClass.reason + (moved ? ' После новой оценки главным стал другой участок продаж.' : ''),
       action:moved
         ? 'Сохраните проверенное полезное изменение как рабочее состояние и переходите к новому primary constraint.'
         : 'Сохраните проверенное изменение. Не масштабируйте его автоматически: сначала убедитесь, что экономика, качество и нагрузка остаются приемлемыми.',
@@ -6629,7 +6641,7 @@ function finalizePrecision() {
       metrics:[human.metric],
       observationRule:human.next,
       successRule:'Следующий цикл должен использовать новый результат, а не автоматически повторять старое действие.',
-      failureRule:'Если новое действие снова не проходит проверку, пересчитать diagnosis/state.',
+      failureRule:'Если следующее действие снова не помогает, пересмотреть прежний вывод и выбрать другое решение.',
       nextIfSuccess:transition.nextResult?.userTitle || transition.nextResult?.title || human.next,
       nextIfFailure:human.next,
       precisionAvailable:false,
