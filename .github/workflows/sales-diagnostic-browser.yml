@@ -1,0 +1,31 @@
+name: Sales Diagnostic Browser E2E
+
+on:
+  push:
+    branches: [sales-diagnostic-v2]
+    paths:
+      - "sales-diagnostic/index.html"
+      - "sales-diagnostic/browser-e2e.cjs"
+      - ".github/workflows/sales-diagnostic-browser.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Run actual Chromium browser tests
+        run: node sales-diagnostic/browser-e2e.cjs
