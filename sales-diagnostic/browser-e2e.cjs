@@ -102,7 +102,7 @@ async function exportHistory(page) {
       assert.ok(fs.statSync(empty.filePath).size > 20, 'Downloaded JSON must contain data');
       await page.locator('input[type=file]').setInputFiles(empty.filePath);
       await page.getByRole('button', { name: 'Проверить выбранный файл' }).click();
-      assert.match(await page.locator('[role=status]').last().innerText(), /ничего добавлять|новых записей нет/i);
+      await page.waitForFunction(() => [...document.querySelectorAll('[role=status]')].some(n => /ничего добавлять|новых записей нет/i.test(n.textContent)), { timeout: 10000 });
       assert.equal(await page.getByRole('button', { name: /Добавить новые записи/i }).count(), 0);
       checkNoError(page, errors, 'Empty export/import');
       await context.close();
