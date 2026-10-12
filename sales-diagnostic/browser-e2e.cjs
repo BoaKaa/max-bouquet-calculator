@@ -181,9 +181,9 @@ async function exportHistory(page) {
     // Actual Follow-up: cap reached, sample insufficient, original cycle must be preserved.
     {
       const { page, context, errors } = await newPage(browser);
-      await driveDiagnosis(page, { mode: 'FULL', modelIndex: 0, name: 'Контроль Follow-up' });
+      await driveDiagnosis(page, { mode: 'BUILD', modelIndex: 0, name: 'Контроль Follow-up' });
       const start = page.locator('#startExperimentButton');
-      assert.ok(await start.isVisible(), 'Result must include an actionable experiment plan');
+      assert.ok(await start.isVisible(), 'Result must include a plan: ' + await page.locator('#resultTitle').innerText());
       await page.locator('#experimentLimitsPanel').evaluate(e => { e.open = true; });
       await page.locator('#experimentBudgetCap').fill('1000');
       await page.locator('#experimentPlannedCount').fill('50');
