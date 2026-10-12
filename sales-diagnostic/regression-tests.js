@@ -26,7 +26,7 @@ function node(id) {
     appendChild(x){ this.children.push(x); return x; },
     append(){ this.children.push.apply(this.children, arguments); },
     replaceChildren(){ this.children = Array.from(arguments); },
-    remove(){}, after(){}, _events:{}, addEventListener(type,fn){(this._events[type]||=[]).push(fn);},
+    remove(){}, after(...nodes){(this.afterNodes||=[]).push(...nodes);}, _events:{}, addEventListener(type,fn){(this._events[type]||=[]).push(fn);},
     setAttribute(k,v){ this[k]=v; },
     cloneNode(){ return node(id + '_clone'); },
     focus(){},
@@ -1838,6 +1838,23 @@ add('HANDOFF-RESUME-THEN-NEW-CYCLE','P1','HISTORY',()=>isolatedHistory(key=>{
  const cs=diag.loadHistoryStore().cycles;
  return String(saved&&resumed&&linked&&cs.length===2&&
   cs.find(c=>c.cycleId===f.parentId)?.followups.length===1);
+}),['true']);
+
+
+add('HANDOFF-REAL-FOLLOWUP-BUTTON-HANDLER','P0','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ const f=setupHandoff(key,'ui_event');
+ const before=diag.loadHistoryStore().cycles.find(c=>c.cycleId===f.parentId);
+ diag.finalizeFollowup();
+ const result=s.result;
+ const el=documentMock.getElementById('resultNext');
+ const link=(el.afterNodes||[]).at(-1);
+ if(!result.followup || !result.stateTransition?.nextResult || !link) return 'button missing / '+result.followupCode+' / '+result.stateTransition?.type;
+ await uiFire(link,'click');
+ const cs=diag.loadHistoryStore().cycles;
+ const p=cs.find(c=>c.cycleId===f.parentId), child=cs.find(c=>c.parentCycleId===f.parentId);
+ return String(cs.length===2&&p.result.followup===true&&p.followups.length===1&&
+ p.status==='COMPLETED'&&p.nextCycleId===child?.cycleId&&
+ p.initialDiagnosisSnapshot.resultId===f.firstId);
 }),['true']);
 
 const regressionRun=(async()=>{
