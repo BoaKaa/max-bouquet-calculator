@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.16-dev';
+  const APP_VERSION = '1.13.17-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2475,8 +2475,8 @@ button:focus-visible, input:focus-visible {
 
   function resolveCycleForItem(store, item) {
     if (item?.cycleId) {
-      const direct = store.cycles.find(c => c.cycleId === item.cycleId);
-      if (direct) return direct;
+      // Explicit cycle ownership cannot fall back to a different experiment.
+      return store.cycles.find(c => c.cycleId === item.cycleId) || null;
     }
     const experimentId = item?.experimentPlan?.experimentId || item?.result?.followupSnapshot?.experimentId || item?.result?.experimentPlan?.experimentId;
     if (experimentId) {
@@ -2621,6 +2621,19 @@ button:focus-visible, input:focus-visible {
     }
   }
 
+  function historyObject(x) { return !!x && typeof x==='object' && !Array.isArray(x); }
+  function historyIdentity(c) {
+    return {
+      results:[c?.result?.resultId,c?.initialDiagnosisSnapshot?.resultId]
+        .filter(v=>typeof v==='string' && !!v),
+      experiments:[c?.experimentPlan?.experimentId,c?.result?.experimentPlan?.experimentId]
+        .filter(v=>typeof v==='string' && !!v)
+    };
+  }
+  function historyLinkValid(v) {
+    return v==null || (typeof v==='string' && v.length<=128 &&
+      /^((cycle|legacy)_[a-zA-Z0-9_]+)$/.test(v));
+  }
   function reviewHistoryImport(text) {
     const blocked=historyStorageProblem();
     if (blocked) return {ok:false,reason:blocked};
@@ -2635,7 +2648,12 @@ button:focus-visible, input:focus-visible {
       return {ok:false,reason:'В файле больше 20 циклов. Для этого объёма нужен отдельный перенос без сокращения истории.'};
     const existing=loadHistoryStore();
     const previous=new Map(existing.cycles.map(c=>[c.cycleId,c]));
-    const ids=new Set(),fresh=[];
+    const ids=new Set(),fresh=[],knownIdentities=new Map();
+    for(const c of existing.cycles){
+      const i=historyIdentity(c);
+      for(const v of i.results) if(!knownIdentities.has('result:'+v))knownIdentities.set('result:'+v,c.cycleId);
+      for(const v of i.experiments) if(!knownIdentities.has('experiment:'+v))knownIdentities.set('experiment:'+v,c.cycleId);
+    }
     let duplicate=0;
     for (const c of data.cycles) {
       if (!c || typeof c!=='object' || typeof c.cycleId!=='string' ||
@@ -2643,19 +2661,30 @@ button:focus-visible, input:focus-visible {
           c.cycleId.length>128 || ids.has(c.cycleId) ||
           c.schemaVersion!==HISTORY_SCHEMA_VERSION ||
           typeof c.createdAt!=='string' || typeof c.updatedAt!=='string' ||
-          !c.scope || typeof c.scope!=='object' || Array.isArray(c.scope) ||
-          !c.result || typeof c.result!=='object' ||
-          !c.legacyReadonly && (
+          !historyObject(c.scope) || !historyObject(c.result) ||
+          typeof c.legacyReadonly!=='boolean' ||
+          (!c.legacyReadonly && (
+            !historyObject(c.answers) ||
             !Array.isArray(c.result.why) ||
             !c.result.why.every(v=>typeof v==='string') ||
             typeof (c.result.userTitle||c.result.title)!=='string'
-          ) ||
-          c.experimentPlan && (
-            typeof c.experimentPlan!=='object' ||
+          )) ||
+          (c.initialDiagnosisSnapshot!=null && !historyObject(c.initialDiagnosisSnapshot)) ||
+          (c.initialAnswersSnapshot!=null && !historyObject(c.initialAnswersSnapshot)) ||
+          (c.latestFollowupAnswers!=null && !historyObject(c.latestFollowupAnswers)) ||
+          (c.transition!=null && !historyObject(c.transition)) ||
+          !Array.isArray(c.precisionSnapshots) ||
+          !c.precisionSnapshots.every(historyObject) ||
+          !Array.isArray(c.followups) ||
+          !c.followups.every(historyObject) ||
+          (c.experimentPlan!=null && (
+            !historyObject(c.experimentPlan) ||
             !Array.isArray(c.experimentPlan.executionSteps) ||
             !Array.isArray(c.experimentPlan.secondaryMetrics) ||
             !Array.isArray(c.experimentPlan.holdConstant)
-          ) ||
+          )) ||
+          !historyLinkValid(c.parentCycleId) || !historyLinkValid(c.nextCycleId) ||
+          c.parentCycleId===c.cycleId || c.nextCycleId===c.cycleId ||
           !(Object.values(CYCLE_STATUS).includes(c.status)||c.status==='LEGACY_READONLY'))
         return {ok:false,reason:'В файле есть неполный или повреждённый цикл. Ничего не импортировано.'};
       ids.add(c.cycleId);
@@ -2663,7 +2692,33 @@ button:focus-visible, input:focus-visible {
         if(JSON.stringify(previous.get(c.cycleId))!==JSON.stringify(c))
           return {ok:false,reason:'Совпадает идентификатор цикла, но его данные различаются. Автоматическая перезапись запрещена.'};
         duplicate++;
-      } else fresh.push(c);
+      } else {
+        const identity=historyIdentity(c);
+        for(const [kind,values] of [['result',identity.results],['experiment',identity.experiments]]){
+          for(const v of values){
+            const key=kind+':'+v;
+            const owner=knownIdentities.get(key);
+            if(owner && owner!==c.cycleId)
+              return {ok:false,reason:'У разных циклов совпадает идентификатор результата или проверки. Импорт отменён.'};
+            knownIdentities.set(key,c.cycleId);
+          }
+        }
+        fresh.push(c);
+      }
+    }
+    const merged=new Map([...existing.cycles,...fresh].map(c=>[c.cycleId,c]));
+    for(const c of fresh){
+      if((c.parentCycleId && !merged.has(c.parentCycleId)) ||
+         (c.nextCycleId && !merged.has(c.nextCycleId)))
+        return {ok:false,reason:'Связь импортируемого цикла с другим циклом не найдена. Импорт отменён.'};
+      const seen=new Set([c.cycleId]);
+      let parentId=c.parentCycleId;
+      while(parentId){
+        if(seen.has(parentId))
+          return {ok:false,reason:'В истории обнаружена циклическая ссылка между записями.'};
+        seen.add(parentId);
+        parentId=merged.get(parentId)?.parentCycleId || null;
+      }
     }
     if(existing.cycles.length+fresh.length>HISTORY_MAX_CYCLES)
       return {ok:false,reason:'При объединении будет больше 20 циклов. Импорт остановлен, чтобы не удалить старые записи.'};
