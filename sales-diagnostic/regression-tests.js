@@ -29,7 +29,7 @@ function node(id) {
     remove(){}, after(...nodes){(this.afterNodes||=[]).push(...nodes);}, _events:{}, addEventListener(type,fn){(this._events[type]||=[]).push(fn);},
     setAttribute(k,v){ this[k]=v; },
     cloneNode(){ return node(id + '_clone'); },
-    focus(){},
+    focus(){this.focused=true;},
     classList:{ add(){}, remove(){}, contains(){ return false; } }
   };
   n.content = { cloneNode(){ return node(id + '_content'); } };
@@ -1856,6 +1856,56 @@ add('HANDOFF-REAL-FOLLOWUP-BUTTON-HANDLER','P0','HISTORY-UI',async()=>isolatedHi
  p.status==='COMPLETED'&&p.nextCycleId===child?.cycleId&&
  p.initialDiagnosisSnapshot.resultId===f.firstId);
 }),['true']);
+
+
+/* Keyboard focus contract via actual UI event handlers; native browser still required. */
+add('A11Y-HOME-TITLE-FOCUS','P1','ACCESSIBILITY',()=>{
+ const h=documentMock.getElementById('homeTitle');h.focused=false;
+ diag.showHome();return String(h.focused===true&&h['tabindex']==='-1');
+},['true']);
+add('A11Y-NEW-QUESTION-HEADING-FOCUS','P1','ACCESSIBILITY',()=>{
+ const h=documentMock.getElementById('questionTitle');h.focused=false;
+ diag.startMode('full');return String(h.focused===true&&h['tabindex']==='-1'&&!!h.textContent);
+},['true']);
+add('A11Y-OPTION-FOCUS-PRESERVED','P1','ACCESSIBILITY',async()=>{
+ diag.startMode('full');
+ const area=documentMock.getElementById('answerArea');
+ const pick=area.children.at(-1);
+ await uiFire(pick,'click');
+ const latest=area.children.slice(-diag.questions.scope_goal.options.length);
+ return String(latest.some(x=>x.focused===true&&x['aria-pressed']==='true')&&s.index===0);
+},['true']);
+add('A11Y-NEXT-TEXT-INPUT-FOCUS','P1','ACCESSIBILITY',()=>{
+ diag.startMode('full');s.answers.scope_goal=diag.questions.scope_goal.options[0].value;
+ diag.goNext();
+ const input=documentMock.getElementById('answerArea').children.at(-1);
+ return String(s.path[s.index]==='scope_name'&&input?.focused===true&&
+  input?.['aria-labelledby']==='questionTitle');
+},['true']);
+add('A11Y-BACK-RESTORES-HEADING-FOCUS','P1','ACCESSIBILITY',()=>{
+ diag.startMode('full');s.answers.scope_goal=diag.questions.scope_goal.options[0].value;
+ diag.goNext();
+ const heading=documentMock.getElementById('questionTitle');heading.focused=false;
+ const back=documentMock.getElementById('backButton');
+ back._events.click.at(-1)();
+ return String(s.index===0&&heading.focused===true&&heading['tabindex']==='-1');
+},['true']);
+add('A11Y-RESULT-HEADING-FOCUS','P1','ACCESSIBILITY',()=>isolatedHistory(key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ reset('build',{scope_name:'Тест',scope_goal:'new_sales',scope_model:'PRODUCT'});
+ s.parentCycleId=null;
+ const r=diag.makeResult('BUILD_MARKET_TEST');
+ const stored=diag.saveHistory({mode:'build',scope:'Тест',answers:s.answers,result:r,cycleStatus:'DIAGNOSED'});
+ const h=documentMock.getElementById('resultTitle');h.focused=false;
+ const resumed=stored&&diag.resumeCycle(s.activeCycleId);
+ return String(resumed&&h.focused===true&&h['tabindex']==='-1');
+}),['true']);
+add('A11Y-MAIN-NO-WHOLE-SCREEN-LIVE','P2','ACCESSIBILITY',()=>
+ String(html.includes('<main id="app" class="app"></main>')&&
+ !html.includes('id="app" class="app" aria-live="polite"')),['true']);
+add('A11Y-NARROW-WRAP-CONTRACT','P2','ACCESSIBILITY',()=>
+ String(html.includes('.wizard-actions button { min-width: 0; }')&&
+ html.includes('overflow-wrap: anywhere;')),['true']);
 
 const regressionRun=(async()=>{
  const failures=[];
