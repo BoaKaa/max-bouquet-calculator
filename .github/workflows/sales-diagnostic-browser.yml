@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Run 399+ regression assertions
+        run: node sales-diagnostic/regression-tests.js
       - name: Install Playwright and Chromium
         run: |
           npm install --no-save playwright@1.55.0
