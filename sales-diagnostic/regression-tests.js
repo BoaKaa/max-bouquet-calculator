@@ -1732,6 +1732,114 @@ add('PAID-FRIEND-PURCHASE-5-MODELS','P1','ROUTING',()=>{
   x.visited.includes('build_market_quality')));
 },['true']);
 
+
+/* Atomic Follow-up handoff + simulated clean-profile roundtrip. */
+function setupHandoff(key,tag){
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[],legacyMigratedAt:'2026-10-12'});
+ reset('build',{scope_goal:'new_sales',scope_name:'Подарочный набор',scope_model:'PRODUCT',
+  scope_target:'new_customers',gate_legal:'no',build_market:'no'});
+ s.parentCycleId=null;
+ const first=diag.makeResult('BUILD_MARKET_TEST');
+ const plan={experimentId:'exp_handoff_'+tag,primaryCode:'BUILD_MARKET_TEST',
+   status:'ACTIVE',executionSteps:['Показать предложение'],secondaryMetrics:[],holdConstant:[],
+   changeOneThing:'Изменить показ',observationRule:'После первой проверки'};
+ if(!diag.saveHistory({mode:'build',scope:'Подарочный набор',answers:{...s.answers},
+  result:first,experimentPlan:plan,cycleStatus:'ACTIVE'}))throw Error('could not prepare parent');
+ const parentId=s.activeCycleId,firstId=first.resultId;
+ const initial=JSON.stringify(diag.loadHistoryStore().cycles.find(c=>c.cycleId===parentId).answers);
+ if(!diag.startFollowupForCycle(parentId))throw Error('could not start Follow-up');
+ s.answers={fu_done:'yes',fu_guardrail:['none'],fu_execution_match:'no',
+  fu_sample_ready:'yes',fu_measurement_valid:'yes',fu_effect:'better',fu_market_payment:'yes'};
+ const next=diag.makeResult('BUILD_FULFILLMENT');
+ next.diagnosticMode='build';
+ next.experimentPlan={experimentId:'exp_handoff_next_'+tag,primaryCode:'BUILD_FULFILLMENT',
+  status:'PLANNED',executionSteps:['Выполнить заказ'],secondaryMetrics:[],holdConstant:[],
+  changeOneThing:'Выполнить первый заказ',observationRule:'После доставки'};
+ const fu=diag.makeResult('BUILD_MARKET_TEST');
+ fu.followup=true;
+ fu.resultId='result_handoff_fu_'+tag;
+ fu.userTitle='Результат повторной проверки';
+ fu.why=['Первое действие проверено'];
+ fu.followupSnapshot={followupId:'fu_handoff_'+tag,experimentId:plan.experimentId};
+ fu.stateTransition={type:'BUILD_PHASE_ADVANCED',fromPrimaryCode:'BUILD_MARKET_TEST',
+   toPrimaryCode:'BUILD_FULFILLMENT',nextResult:next};
+ s.result=fu;
+ return {parentId,firstId,initial,fu,next};
+}
+add('HANDOFF-ATOMIC-SAVE-FOLLOWUP','P0','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'atomic');
+ const ok=diag.startLinkedCycle(f.parentId,f.next);
+ const cs=diag.loadHistoryStore().cycles;
+ const p=cs.find(c=>c.cycleId===f.parentId);
+ const child=cs.find(c=>c.parentCycleId===f.parentId);
+ return String(ok&&cs.length===2&&p.status==='COMPLETED'&&
+  p.result.resultId===f.fu.resultId&&p.followups.length===1&&
+  p.latestFollowupAnswers.fu_effect==='better'&&
+  p.initialDiagnosisSnapshot.resultId===f.firstId&&
+  JSON.stringify(p.initialAnswersSnapshot)===f.initial&&
+  p.nextCycleId===child?.cycleId);
+}),['true']);
+add('HANDOFF-PRE-SAVED-NO-DOUBLE-FU','P0','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'saved');
+ const saved=diag.saveHistory({cycleId:f.parentId,mode:'followup',
+  answers:{...s.answers},result:f.fu,cycleStatus:'COMPLETED'});
+ const linked=diag.startLinkedCycle(f.parentId,f.next);
+ const p=diag.loadHistoryStore().cycles.find(c=>c.cycleId===f.parentId);
+ return String(saved&&linked&&p.followups.length===1&&
+  p.result.resultId===f.fu.resultId&&p.initialDiagnosisSnapshot.resultId===f.firstId);
+}),['true']);
+add('HANDOFF-EXPORT-IMPORT-CLEAN-PROFILE','P0','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'clean');
+ if(!diag.startLinkedCycle(f.parentId,f.next))return 'failed link';
+ const original=diag.loadHistoryStore().cycles;
+ const archive=archivePayload(original);
+ delete memory[key];
+ const review=diag.reviewHistoryImport(archive);
+ const imported=review.ok&&diag.commitHistoryImport(archive,review.currentRaw);
+ const stored=diag.loadHistoryStore().cycles;
+ const parent=stored.find(c=>c.cycleId===f.parentId),child=stored.find(c=>c.parentCycleId===f.parentId);
+ const resumed=child&&diag.resumeCycle(child.cycleId);
+ const active=child&&diag.saveHistory({cycleId:child.cycleId,mode:'build',
+   answers:child.answers,result:child.result,
+   experimentPlan:{...child.experimentPlan,status:'ACTIVE'},cycleStatus:'ACTIVE'});
+ const followup=child&&diag.startFollowupForCycle(child.cycleId);
+ return String(imported&&review.newCount===2&&stored.length===2&&
+  parent?.nextCycleId===child?.cycleId &&
+  parent?.initialDiagnosisSnapshot.resultId===f.firstId&&
+  resumed&&active&&followup&&s.followupBase.result.resultId===child.initialDiagnosisSnapshot.resultId);
+}),['true']);
+add('HANDOFF-SECOND-CLICK-NO-NEW-CHILD','P1','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'double');
+ const once=diag.startLinkedCycle(f.parentId,f.next);
+ const raw=memory[key];
+ const twice=diag.startLinkedCycle(f.parentId,f.next);
+ return String(once&&!twice&&memory[key]===raw&&diag.loadHistoryStore().cycles.length===2);
+}),['true']);
+add('HANDOFF-WRITE-ERROR-ROLLBACK','P0','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'quota');
+ const old=memory[key],id=s.activeCycleId,previous=localStorageMock.setItem;
+ localStorageMock.setItem=()=>{throw Error('storage quota')};
+ let saved;
+ try{saved=diag.startLinkedCycle(f.parentId,f.next)}finally{localStorageMock.setItem=previous}
+ return String(!saved&&memory[key]===old&&s.activeCycleId===id&&
+   diag.loadHistoryStore().cycles.length===1);
+}),['true']);
+add('HANDOFF-BAD-PARENT-NO-CHANGES','P0','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'missing');
+ const old=memory[key],ok=diag.startLinkedCycle('cycle_missing',f.next);
+ return String(!ok&&memory[key]===old);
+}),['true']);
+add('HANDOFF-RESUME-THEN-NEW-CYCLE','P1','HISTORY',()=>isolatedHistory(key=>{
+ const f=setupHandoff(key,'resumed');
+ const saved=diag.saveHistory({cycleId:f.parentId,mode:'followup',
+  answers:{...s.answers},result:f.fu,cycleStatus:'COMPLETED'});
+ const resumed=diag.resumeCycle(f.parentId);
+ const linked=diag.startLinkedCycle(f.parentId,f.next);
+ const cs=diag.loadHistoryStore().cycles;
+ return String(saved&&resumed&&linked&&cs.length===2&&
+  cs.find(c=>c.cycleId===f.parentId)?.followups.length===1);
+}),['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
