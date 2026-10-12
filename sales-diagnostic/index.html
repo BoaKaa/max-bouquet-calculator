@@ -411,6 +411,17 @@ button:focus-visible, input:focus-visible {
 <input id="experimentPlannedCount" class="text-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 20"/>
 <p class="microcopy">Выберите число заранее для своей задачи. Универсальной достаточной выборки нет. Считайте сопоставимые случаи.</p>
 </div>
+<details id="experimentLimitsPanel">
+  <summary>Ограничить срок, расходы и число показов (необязательно)</summary>
+  <p class="input-note">Устанавливайте пределы до начала проверки. Когда он достигнут, не увеличивайте его задним числом, чтобы получить желаемый результат.</p>
+  <label class="microcopy" for="experimentTimeCap">Максимум дней проверки</label>
+  <input class="text-input" id="experimentTimeCap" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 14"/>
+  <label class="microcopy" for="experimentBudgetCap">Максимум расходов на проверку, ₽</label>
+  <input class="text-input" id="experimentBudgetCap" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 1500"/>
+  <label class="microcopy" for="experimentExposureCap">Максимум людей, которым покажете конкретное предложение</label>
+  <input class="text-input" id="experimentExposureCap" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 50"/>
+</details>
+<p class="microcopy" id="experimentLimitsReadout" hidden></p>
 <p id="experimentBranches" hidden></p>
         <p class="microcopy" id="experimentEarlyStop" hidden></p>
         <button class="primary-btn" id="startExperimentButton" type="button">Сохранить и начать выполнять</button>
@@ -449,7 +460,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.23-dev';
+  const APP_VERSION = '1.13.24-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2003,6 +2014,13 @@ button:focus-visible, input:focus-visible {
       opt('several','Да, одновременно менялось несколько важных вещей'),
       opt('unknown','Не уверен(а)')
     ]),
+    fu_limit_status: q('fu_limit_status', 'Проверяем заранее установленные пределы',
+      'Вы уже достигли предела по дням, расходам или показам, который указали перед началом проверки?',
+      'Сверьтесь с сохранённым планом. Не увеличивайте ранее выбранный предел ради продолжения неудачной проверки.', [
+        opt('no','Нет, ни один предел пока не достигнут'),
+        opt('yes','Да, хотя бы один предел достигнут'),
+        opt('unknown','Не могу уверенно определить')
+      ]),
     fu_sample_ready: q('fu_sample_ready', 'Хватило ли наблюдений', 'Вы уже собрали столько обращений, заказов или дней наблюдения, сколько планировали?', 'Сравните с тем, что решили записать при первой диагностике. Если ещё мало случаев — так и ответьте.', [
       opt('yes','Да, условие выполнено'),
       opt('not_yet','Нет, нужные случаи / цикл ещё не набраны'),
@@ -3269,6 +3287,7 @@ button:focus-visible, input:focus-visible {
         fu_done:'Что было сделано',
         fu_execution_match:'Проверяем чистоту изменения',
         fu_sample_ready:'Хватило ли наблюдений',
+        fu_limit_status:'Не достигнуты ли заранее выбранные пределы',
         fu_measurement_valid:'Можно ли доверять сравнению',
         fu_effect:'Что произошло с главным показателем',
         fu_guardrail:'Проверяем важные побочные эффекты'
@@ -3661,6 +3680,11 @@ button:focus-visible, input:focus-visible {
           finalizeFollowup();
           return;
         }
+        const limits=followupPlanLimits(followupPlanContext().plan);
+        state.path = state.path.slice(0, state.index + 1).concat([
+          limits.configured ? 'fu_limit_status' : 'fu_execution_match'
+        ]);
+      } else if (currentId === 'fu_limit_status') {
         state.path = state.path.slice(0, state.index + 1).concat(['fu_execution_match']);
       } else if (currentId === 'fu_execution_match') {
         if (['one','several','unknown'].includes(state.answers.fu_execution_match)) {
@@ -6353,9 +6377,21 @@ function finalizePrecision() {
     return { base, result, plan };
   }
 
+  function followupPlanLimits(plan) {
+    const valid=x=>Number.isFinite(x)&&x>0;
+    const configured=['timeCap','budgetCap','exposureCap'].some(k=>valid(plan?.[k]));
+    const startedAt=Date.parse(plan?.startedAt||'');
+    const timeExpired=valid(plan?.timeCap)&&Number.isFinite(startedAt)&&
+      Date.now()-startedAt>=plan.timeCap*24*60*60*1000;
+    const declaredHit=configured && state.answers.fu_limit_status==='yes';
+    const unknown=configured && state.answers.fu_limit_status==='unknown';
+    return {configured,hit:!!(timeExpired||declaredHit),unknown,timeExpired};
+  }
+
   function classifyFollowup() {
     const a = state.answers;
     const { plan } = followupPlanContext();
+    const limits=followupPlanLimits(plan);
     const guard = Array.isArray(a.fu_guardrail) ? a.fu_guardrail : [];
     const redGuardrail = guard.some(x => x !== 'none');
 
@@ -6379,7 +6415,13 @@ function finalizePrecision() {
       return { outcome:FOLLOWUP_OUTCOME.R_MINUS, code:FOLLOWUP_CODE.EARLY_STOP, decision:'ROLLBACK', reason:'Проверку остановили раньше из-за риска или вреда.' };
     }
     if (['not_yet','unknown'].includes(a.fu_sample_ready)) {
-      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'CONTINUE', reason:'Условие наблюдения ещё не выполнено.' };
+      return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
+        decision:limits.hit||limits.unknown ? 'REDESIGN' : 'CONTINUE',
+        reason:limits.hit
+          ? 'Заранее установленный предел проверки достигнут, а нужных наблюдений ещё нет. Не увеличивайте срок, расходы или число показов задним числом.'
+          : limits.unknown
+            ? 'Недостаточно наблюдений и неизвестно, достигнут ли установленный предел. Сначала проверьте срок, расходы и показы, прежде чем продолжать.'
+            : 'Условие наблюдения ещё не выполнено.' };
     }
     if (a.fu_sample_ready === 'cap') {
       return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE, decision:'REDESIGN', reason:'Лимит проверки достигнут, а данных для решения всё ещё недостаточно.' };
@@ -6419,9 +6461,12 @@ function finalizePrecision() {
       const actual=numeric?.rate?numeric.afterN:a.fu_observed_count;
       if(!Number.isInteger(actual)||actual<plan.plannedObservationCount){
         return {outcome:FOLLOWUP_OUTCOME.R_ZERO,code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
-          decision:'CONTINUE',reason:'Запланировано '+plan.plannedObservationCount+
+          decision:limits.hit||limits.unknown?'REDESIGN':'CONTINUE',
+          reason:'Запланировано '+plan.plannedObservationCount+
           ' сопоставимых случаев. Пока учтено '+(Number.isInteger(actual)?actual:'неизвестное количество')+
-          '. Вывод об улучшении делать рано.'};
+          '. Вывод об улучшении делать рано.'+
+          (limits.hit ? ' Предел времени, расходов или показов достигнут: не продолжайте эту же проверку сверх плана.'
+            : limits.unknown ? ' Пока не выяснен статус ранее установленного предела, не продолжайте проверку автоматически.' : '')};
       }
     }
     if (numeric && ((a.fu_effect==='better' && numeric.movement!=='better') ||
@@ -6677,6 +6722,11 @@ function finalizePrecision() {
       executionFidelity:a.fu_execution_match || null,
       contaminationStatus:['one','several'].includes(a.fu_execution_match) ? 'MATERIAL' : (a.fu_execution_match === 'unknown' ? 'UNKNOWN' : 'NONE'),
       observationCompletion:a.fu_sample_ready || null,
+      limitStatus:a.fu_limit_status || null,
+      capTimeDays:plan?.timeCap ?? null,
+      capBudgetRub:plan?.budgetCap ?? null,
+      capExposures:plan?.exposureCap ?? null,
+      capReached:followupPlanLimits(plan).hit,
       measurementValidity:a.fu_measurement_valid || null,
       primaryMetricBefore:numericComparison?.before ?? null,
       primaryMetricAfter:numericComparison?.after ?? null,
@@ -6857,6 +6907,32 @@ function finalizePrecision() {
       document.getElementById('experimentHold').textContent =
         experimentPlan.holdConstant.length ? experimentPlan.holdConstant.join(' ') : 'Не добавляйте второе независимое изменение во время этой проверки.';
       document.getElementById('experimentObservation').textContent = experimentPlan.observationRule || '';
+      const capConfig=[
+        ['timeCap','experimentTimeCap','дней'],
+        ['budgetCap','experimentBudgetCap','₽'],
+        ['exposureCap','experimentExposureCap','показов']
+      ];
+      const limitsPanel=document.getElementById('experimentLimitsPanel');
+      if (experimentPlan.status===EXPERIMENT_STATUS.ACTIVE) {
+        limitsPanel.hidden=true;
+        const existingLimits=capConfig.filter(([key])=>Number.isInteger(experimentPlan[key])&&experimentPlan[key]>0);
+        if (existingLimits.length) {
+          const readout=document.getElementById('experimentLimitsReadout');
+          readout.hidden=false;
+          readout.textContent='Установленные пределы: '+existingLimits.map(([key,,unit])=>experimentPlan[key]+' '+unit).join(' · ')+'.';
+        }
+      } else {
+        capConfig.forEach(([key,inputId])=>{
+          const input=document.getElementById(inputId);
+          input.value=Number.isInteger(experimentPlan[key])&&experimentPlan[key]>0
+            ?String(experimentPlan[key]):'';
+          input.addEventListener('input',()=>{
+            const raw=input.value.trim(),n=raw===''?null:Number(raw);
+            experimentPlan[key]=Number.isInteger(n)&&n>0?n:null;
+            result.experimentPlan=experimentPlan;
+          });
+        });
+      }
       const nSpec=followupNumericSpec(result.primaryCode || result.code);
       if (nSpec && experimentPlan.status!==EXPERIMENT_STATUS.ACTIVE) {
         document.getElementById('experimentNumericPanel').hidden=false;
