@@ -1366,6 +1366,77 @@ add('HIST-IMPORT-AVAILABLE-ON-EMPTY-HOME','P1','HISTORY',()=>{
    html.includes("importFile.type='file'")&&html.includes("importButton.addEventListener('click'"));
 },['true']);
 
+
+function archiveFixture(id,resultId,expId=null,more={}){
+ return {cycleId:id,scopeId:'scope_import',schemaVersion:2,status:'COMPLETED',
+ legacyReadonly:false,createdAt:'2026-10-12T10:00:00Z',updatedAt:'2026-10-12T10:00:00Z',
+ scope:{name:'Архив',diagnosticMode:'full'},answers:{scope_model:'PRODUCT'},
+ result:{resultId,primaryCode:'ACCESS',userTitle:'Архивный вывод',why:['Один факт']},
+ experimentPlan:expId?{experimentId:expId,executionSteps:[],secondaryMetrics:[],holdConstant:[]}:null,
+ precisionSnapshots:[],followups:[],transition:null,parentCycleId:null,nextCycleId:null,...more};
+}
+function archivePayload(c){return JSON.stringify({exportVersion:1,historySchemaVersion:2,cycles:c})}
+add('ARCHIVE-INITIAL-DIAG-ID-COLLISION','P0','HISTORY',()=>{
+ const c=diag.loadHistoryStore().cycles.find(c=>c.initialDiagnosisSnapshot?.resultId==='initial_hist_15');
+ return String(!!c&&!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_conflict_initial','initial_hist_15')])).ok);
+},['true']);
+add('ARCHIVE-LATEST-DIAG-ID-COLLISION','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_conflict_latest','fu_hist_15')])).ok),['true']);
+add('ARCHIVE-EXPERIMENT-ID-COLLISION','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_conflict_exp','import_unique_r','exp_hist_15')])).ok),['true']);
+add('ARCHIVE-DUPLICATE-RESULT-IN-FILE','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([
+ archiveFixture('cycle_duble1','same_r'),archiveFixture('cycle_duble2','same_r')])).ok),['true']);
+add('ARCHIVE-DUPLICATE-EXPERIMENT-IN-FILE','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([
+ archiveFixture('cycle_duble3','r3','same_e'),archiveFixture('cycle_duble4','r4','same_e')])).ok),['true']);
+add('ARCHIVE-ORPHAN-PARENT','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_orphan','r_orphan',null,
+ {parentCycleId:'cycle_nonexistent'})])).ok),['true']);
+add('ARCHIVE-SELF-CYCLE','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_self','r_self',null,
+ {parentCycleId:'cycle_self'})])).ok),['true']);
+add('ARCHIVE-LOOP-TWO-CYCLES','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([
+ archiveFixture('cycle_loop_a','r_loop_a',null,{parentCycleId:'cycle_loop_b'}),
+ archiveFixture('cycle_loop_b','r_loop_b',null,{parentCycleId:'cycle_loop_a'})])).ok),['true']);
+add('ARCHIVE-BAD-FOLLOWUP-ARRAY','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_bad_followup','r_bad_fu',null,
+ {followups:'corrupted'})])).ok),['true']);
+add('ARCHIVE-BAD-PRECISION-ARRAY','P0','HISTORY',()=>
+ String(!diag.reviewHistoryImport(archivePayload([archiveFixture('cycle_bad_precision','r_bad_p',null,
+ {precisionSnapshots:[null]})])).ok),['true']);
+add('ARCHIVE-COLLISION-NO-WRITE','P0','HISTORY',()=>{
+ const before=memory['salesDiagnosticHistory:v2'];
+ const payload=archivePayload([archiveFixture('cycle_no_write','initial_hist_15')]);
+ const reviewed=diag.reviewHistoryImport(payload);
+ const applied=diag.commitHistoryImport(payload,reviewed.currentRaw);
+ return String(!reviewed.ok&&!applied&&memory['salesDiagnosticHistory:v2']===before);
+},['true']);
+add('ARCHIVE-LINKED-PAIR-RESTORES','P1','HISTORY',()=>{
+ const before=memory['salesDiagnosticHistory:v2'];
+ const payload=archivePayload([
+ archiveFixture('cycle_linked_1','r_linked_1',null,{nextCycleId:'cycle_linked_2'}),
+ archiveFixture('cycle_linked_2','r_linked_2',null,{parentCycleId:'cycle_linked_1'})]);
+ const preview=diag.reviewHistoryImport(payload);
+ const saved=preview.ok&&diag.commitHistoryImport(payload,preview.currentRaw);
+ const count=diag.loadHistoryStore().cycles.filter(c=>c.cycleId.startsWith('cycle_linked_')).length;
+ if(before===undefined)delete memory['salesDiagnosticHistory:v2'];
+ else memory['salesDiagnosticHistory:v2']=before;
+ return String(saved&&count===2);
+},['true']);
+add('ARCHIVE-EXPLICIT-CYCLE-ID-AUTHORITATIVE','P0','HISTORY',()=>{
+ const before=diag.loadHistoryStore().cycles.find(c=>c.result?.resultId==='fu_hist_15');
+ if(!before)return 'fixture missing';
+ const snap=JSON.stringify(before);
+ const result=diag.saveHistory({cycleId:'cycle_missing_but_experiment_matches',
+ experimentPlan:{experimentId:'exp_hist_15'},mode:'followup',answers:{fu_done:'yes'},
+ result:{resultId:'wrong_history_fu',followup:true,primaryCode:'ACCESS',why:['wrong']},
+ cycleStatus:'WAITING_FOR_EVIDENCE'});
+ const after=diag.loadHistoryStore().cycles.find(c=>c.cycleId===before.cycleId);
+ return String(!result&&JSON.stringify(after)===snap);
+},['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
