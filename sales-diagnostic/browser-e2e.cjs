@@ -186,7 +186,7 @@ async function exportHistory(page) {
       assert.ok(await start.isVisible(), 'Result must include a plan: ' + await page.locator('#resultTitle').innerText());
       await page.locator('#experimentLimitsPanel').evaluate(e => { e.open = true; });
       await page.locator('#experimentBudgetCap').fill('1000');
-      await page.locator('#experimentPlannedCount').fill('50');
+      if (await page.locator('#experimentPlannedCount').isVisible()) await page.locator('#experimentPlannedCount').fill('50');
       await start.click();
       await page.locator('#brandButton').click();
       const followup = page.locator('.history-row').first().getByRole('button', { name: 'Проверить результат' });
