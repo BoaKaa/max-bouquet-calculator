@@ -1594,7 +1594,7 @@ add('UI-HISTORY-BULK-DELETE-COUNT-AND-STATUS','P1','HISTORY-UI',async()=>isolate
  await uiFire(uiFind(n=>n.textContent==='Удалить завершённые проверки (1)'),'click');
  const ids=diag.loadHistoryStore().cycles.map(c=>c.cycleId);
  return String(ids.includes(parent.cycleId)&&ids.includes(child.cycleId)&&!ids.includes(other.cycleId)&&
-  !!uiFind(n=>n.textContent?.includes('Удалено 1 завершённых проверок')));
+  !!uiFind(n=>n.textContent?.includes('Удалено завершённых проверок: 1')));
 }),['true']);
 add('UI-IMPORT-NO-FILE-EXPLAINS','P2','HISTORY-UI',async()=>isolatedHistory(async key=>{
  memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
@@ -1623,7 +1623,7 @@ add('UI-IMPORT-VALID-REQUIRES-SECOND-ACTION','P1','HISTORY-UI',async()=>isolated
  await uiFire(button,'click');
  const after=diag.loadHistoryStore().cycles.length;
  return String(before===0&&after===1&&
-  !!uiFind(n=>n.textContent?.includes('Импорт завершён: добавлено 1')));
+  !!uiFind(n=>n.textContent?.includes('Добавлено записей: 1')));
 }),['true']);
 add('UI-IMPORT-INVALID-BLOCKED-WITH-REASON','P0','HISTORY-UI',async()=>isolatedHistory(async key=>{
  memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
@@ -1647,6 +1647,16 @@ add('UI-IMPORT-CANCEL-DOES-NOT-WRITE','P1','HISTORY-UI',async()=>isolatedHistory
  finally{windowMock.confirm=originalConfirm;}
  return String(memory[key]===before &&
   !!uiFind(n=>n.textContent?.includes('Импорт отменён')));
+}),['true']);
+
+
+add('UI-HISTORY-LINKED-PARENT-NO-INDIVIDUAL-DELETE','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+ const parent=archiveFixture('cycle_uilinkedparent','uilinkedparent');
+ const child=archiveFixture('cycle_uilinkedchild','uilinkedchild',null,{parentCycleId:parent.cycleId,status:'ACTIVE'});
+ parent.nextCycleId=child.cycleId;
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[parent,child],activeCycleIds:[child.cycleId]});
+ diag.showHome();
+ return String(!uiFind(n=>n.textContent==='Удалить'&&n.type==='button'));
 }),['true']);
 
 const regressionRun=(async()=>{
