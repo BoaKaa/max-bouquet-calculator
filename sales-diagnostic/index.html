@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.21-dev';
+  const APP_VERSION = '1.13.22-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2866,36 +2866,52 @@ button:focus-visible, input:focus-visible {
   }
 
   function startLinkedCycle(parentCycleId, nextResult) {
-    const store = loadHistoryStore();
-    const parent = store.cycles.find(c => c.cycleId === parentCycleId);
-    if (!parent || !nextResult) return false;
-    state.activeCycleId = null;
-    state.parentCycleId = parentCycleId;
-    state.scopeId = parent.scopeId || state.scopeId;
-    state.answers = {...(parent.answers || {})};
-    state.businessGoal = parent.scope?.businessGoal || null;
-    state.diagnosticTarget = parent.scope?.diagnosticTarget || null;
-    state.diagnosticMode = nextResult.diagnosticMode || parent.scope?.diagnosticMode || null;
-    state.mode = state.diagnosticMode;
-    state.result = nextResult;
-    const item = {
-      parentCycleId,
-      appVersion:APP_VERSION,
-      date:nextResult.date || new Date().toISOString(),
-      mode:state.mode,
-      scope:parent.scope?.name || '',
-      answers:state.answers,
-      result:nextResult,
-      experimentPlan:nextResult.experimentPlan || null,
+    // Save the successful Follow-up and both cycle links in one transaction.
+    const store=loadHistoryStore();
+    const parent=store.cycles.find(c=>c.cycleId===parentCycleId);
+    if (!parent || parent.legacyReadonly || !nextResult || parent.nextCycleId) return false;
+    const pending=state.activeCycleId===parentCycleId && state.result?.followup
+      ? state.result : null;
+    if (!pending && !parent.result?.followup) return false;
+
+    if (pending && parent.result?.resultId!==pending.resultId) {
+      mergeItemIntoCycle(parent,{
+        cycleId:parentCycleId,
+        answers:state.mode===DIAGNOSTIC_MODE.FOLLOWUP ? {...state.answers} : undefined,
+        result:pending,
+        cycleStatus:CYCLE_STATUS.COMPLETED
+      });
+    }
+    parent.status=CYCLE_STATUS.COMPLETED;
+    const mode=nextResult.diagnosticMode || parent.scope?.diagnosticMode || null;
+    const originalAnswers={...(parent.answers||{})};
+    const item={
+      parentCycleId,appVersion:APP_VERSION,date:nextResult.date || new Date().toISOString(),
+      mode,scope:parent.scope?.name || '',answers:originalAnswers,
+      result:nextResult,experimentPlan:nextResult.experimentPlan || null,
       cycleStatus:nextResult.experimentPlan ? CYCLE_STATUS.PLANNED : CYCLE_STATUS.DIAGNOSED
     };
-    const saved = saveHistory(item);
-    if (!saved) return false;
-    const refreshed = loadHistoryStore();
-    const child = refreshed.cycles.find(c => c.cycleId === state.activeCycleId);
-    const refreshedParent = refreshed.cycles.find(c => c.cycleId === parentCycleId);
-    if (refreshedParent) refreshedParent.nextCycleId = child?.cycleId || null;
-    writeHistoryStore(refreshed);
+    const beforeId=state.activeCycleId, beforeScope=state.scopeId;
+    state.scopeId=parent.scopeId || state.scopeId;
+    const child=createCycleFromItem(item);
+    state.activeCycleId=beforeId;
+    state.scopeId=beforeScope;
+    store.cycles.unshift(child);
+    parent.nextCycleId=child.cycleId;
+    if (!writeHistoryStore(store)) return false;
+
+    state.activeCycleId=child.cycleId;
+    state.parentCycleId=parentCycleId;
+    state.scopeId=child.scopeId;
+    state.answers=originalAnswers;
+    state.businessGoal=parent.scope?.businessGoal || originalAnswers.scope_goal || null;
+    state.diagnosticTarget=parent.scope?.diagnosticTarget || originalAnswers.scope_target || null;
+    state.diagnosticMode=mode;
+    state.mode=mode;
+    state.result=nextResult;
+    state.followupBase=null;
+    state.activeExperiment=child.experimentPlan || null;
+    state.resumeContext=null;
     renderResult(nextResult);
     return true;
   }
@@ -6790,8 +6806,19 @@ function finalizePrecision() {
       nextCycleButton.type='button';
       nextCycleButton.className='primary-btn';
       nextCycleButton.textContent='Перейти к следующему циклу';
-      nextCycleButton.addEventListener('click',()=>startLinkedCycle(state.activeCycleId,result.stateTransition.nextResult));
+      const fromCycleId=state.activeCycleId;
+      const transitionMessage=document.createElement('p');
+      transitionMessage.className='note-box';
+      transitionMessage.setAttribute('role','status');
+      transitionMessage.hidden=true;
+      nextCycleButton.addEventListener('click',()=>{
+        if (!startLinkedCycle(fromCycleId,result.stateTransition.nextResult)) {
+          transitionMessage.textContent='Не удалось сохранить переход. Откройте прежнюю проверку из истории повторно или проверьте доступ к сохранённым данным.';
+          transitionMessage.hidden=false;
+        }
+      });
       document.getElementById('resultNext').after(nextCycleButton);
+      nextCycleButton.after(transitionMessage);
     }
 
     const experimentCard = document.getElementById('experimentPlanCard');
