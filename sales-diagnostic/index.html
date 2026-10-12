@@ -346,7 +346,7 @@ button:focus-visible, input:focus-visible {
         <div id="resultWhy" class="reason-list"></div>
       </article>
 
-      <article class="card result-card">
+      <article class="card result-card" id="resultMeaningCard">
         <h2>Что этот вывод означает</h2>
         <p id="resultProven"></p>
         <p class="microcopy" id="resultBoundary"></p>
@@ -371,7 +371,7 @@ button:focus-visible, input:focus-visible {
         </div>
       </article>
 
-      <article class="card result-card decision-card">
+      <article class="card result-card decision-card" id="resultDecisionCard">
         <h2>Как понять, что делать дальше</h2>
         <p id="resultDecisionRule"></p>
       </article>
@@ -460,7 +460,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.24-dev';
+  const APP_VERSION = '1.13.25-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2668,6 +2668,30 @@ button:focus-visible, input:focus-visible {
     return writeHistoryStore(store);
   }
 
+  function clearAllHistory() {
+    // Write an empty v2 record with a migration marker. Simply removing it
+    // would resurrect the old v1 archive on the next page load.
+    if (historyStorageProblem()) return false;
+    const empty=emptyHistoryStore();
+    empty.legacyMigratedAt=new Date().toISOString();
+    if (!writeHistoryStore(empty)) return false;
+    try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch { /* already safe from remigration */ }
+    return true;
+  }
+
+  function historyScopeName(cycle) {
+    const scope=cycle?.scope;
+    const name=typeof scope==='string' ? scope : scope?.name;
+    return typeof name==='string'&&name.trim()?name.trim():'Без названия';
+  }
+  function historyDateTime(value) {
+    const date=new Date(value);
+    if (!Number.isFinite(date.getTime())) return 'дата неизвестна';
+    return new Intl.DateTimeFormat('ru-RU',{
+      day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'
+    }).format(date);
+  }
+
   function exportHistory() {
     if (historyStorageProblem()) return false;
     const store = loadHistoryStore();
@@ -2976,6 +3000,10 @@ button:focus-visible, input:focus-visible {
     const grid = document.getElementById('modeGrid');
     const store = loadHistoryStore();
     const history = store.cycles.map(cycleAdapter);
+    const ordered=[...store.cycles].sort((a,b)=>
+      String(a.createdAt||'').localeCompare(String(b.createdAt||''))||
+      String(a.cycleId).localeCompare(String(b.cycleId)));
+    const cycleNumbers=new Map(ordered.map((cycle,i)=>[cycle.cycleId,i+1]));
     const followupBase = latestFollowupBase();
     const modes = [
       { id: 'full', title: 'Проверить текущие продажи', text: 'Короткая проверка по вашей текущей цели, затем только вопросы, которые могут изменить решение.' },
@@ -3021,14 +3049,28 @@ button:focus-visible, input:focus-visible {
         const title=cycle.result?.userTitle || cycle.result?.title || (cycle.legacyReadonly ? 'Старый сохранённый результат' : 'Незавершённая диагностика');
         const info=document.createElement('div');
         const titleEl=document.createElement('strong');
-        titleEl.textContent=title;
+        const number=cycleNumbers.get(cycle.cycleId);
+        titleEl.textContent='Диагностика №'+number+': '+title;
         const meta=document.createElement('div');
         meta.className='history-meta';
-        meta.textContent=(cycle.scope || 'Без названия') + ' · ' + formatDate(cycle.date);
+        meta.textContent=historyScopeName(cycle)+' · создана '+historyDateTime(cycle.createdAt)+
+          ' · обновлена '+historyDateTime(cycle.updatedAt);
         const status=document.createElement('span');
         status.className='status-pill';
         status.textContent=cycleStatusLabel(cycle.status,cycle.legacyReadonly);
         info.append(titleEl,meta);
+        if(cycle.parentCycleId && cycleNumbers.has(cycle.parentCycleId)){
+          const parent=document.createElement('div');
+          parent.className='history-meta';
+          parent.textContent='Продолжение диагностики №'+cycleNumbers.get(cycle.parentCycleId);
+          info.appendChild(parent);
+        }
+        if((cycle.followups||[]).length){
+          const followupCount=document.createElement('div');
+          followupCount.className='history-meta';
+          followupCount.textContent='Повторных проверок результата: '+cycle.followups.length;
+          info.appendChild(followupCount);
+        }
         if (cycle.result?.followup && cycle.initialDiagnosisSnapshot?.userTitle) {
           const original=document.createElement('div');
           original.className='history-meta';
@@ -3190,6 +3232,27 @@ button:focus-visible, input:focus-visible {
             ? 'Завершённые проверки связаны с активными. Их необходимо сохранить, поэтому удалять пока нечего.'
             : 'Удалять пока нечего: завершённых проверок нет.';
         historyActions.appendChild(clearHelp);
+      }
+      if(store.cycles.length && !storageWarning){
+        const warning=document.createElement('p');
+        warning.className='microcopy';
+        warning.textContent='Чтобы начать с нуля, можно очистить всю историю, включая активные проверки. Сначала рекомендуется экспортировать данные.';
+        historyActions.appendChild(warning);
+        const wipe=document.createElement('button');
+        wipe.type='button';wipe.className='ghost-btn';
+        wipe.textContent='Очистить всю историю…';
+        wipe.addEventListener('click',()=>{
+          const count=loadHistoryStore().cycles.length;
+          if(!count){historyUiNotice='История уже пустая.';showHome();return;}
+          if(!window.confirm('Безвозвратно удалить всю историю ('+count+
+            ' записей), включая активные планы? Перед удалением можно нажать «Экспортировать историю».'))return;
+          if(window.prompt('Для подтверждения введите УДАЛИТЬ:', '')!=='УДАЛИТЬ')return;
+          if(clearAllHistory()){
+            historyUiNotice='Вся история очищена. Можно начинать диагностику с нуля.';
+            showHome();
+          } else window.alert('Не удалось очистить историю. Данные сохранены.');
+        });
+        historyActions.appendChild(wipe);
       }
       historyCard.appendChild(historyActions);
       app.appendChild(historyCard);
@@ -6851,23 +6914,29 @@ function finalizePrecision() {
       ? 'Повторная проверка'
       : ((result.kind || 'Вывод') + (result.precisionRefined ? ' · уточнено цифрами' : '') + ' · уверенность: ' + (result.confidenceLabel || confidenceLabel(result.confidence)).toLowerCase());
     const why = document.getElementById('resultWhy');
-    result.why.forEach(x => { const d=document.createElement('div'); d.className='reason'; d.textContent=x; why.appendChild(d); });
-    document.getElementById('resultProven').textContent = result.proven || '';
-    document.getElementById('resultBoundary').textContent = result.boundary || '';
+    const reasons=(result.why||[]).filter(x=>!result.followup||!/^\s*Что делать дальше\s*:/i.test(x));
+    reasons.forEach(x=>{const d=document.createElement('div');d.className='reason';d.textContent=x;why.appendChild(d);});
+    const proven=typeof result.proven==='string'?result.proven.trim():'';
+    const boundary=typeof result.boundary==='string'?result.boundary.trim():'';
+    document.getElementById('resultProven').textContent=proven;
+    document.getElementById('resultBoundary').textContent=boundary;
+    document.getElementById('resultMeaningCard').hidden=!proven&&!boundary;
     document.getElementById('resultAction').textContent = result.action;
     document.getElementById('resultMetric').textContent = (result.metrics || [result.metric]).filter(Boolean).join(' · ');
     document.getElementById('resultObservation').textContent = result.observationRule || result.next || '';
     document.getElementById('resultDont').textContent = (result.holdConstant || [result.dont]).filter(Boolean).join(' ');
     const decisionText = document.getElementById('resultDecisionRule');
+    document.getElementById('resultDecisionCard').hidden=!!result.followup;
     decisionText.style.whiteSpace = 'pre-line';
     decisionText.textContent =
       'Если стало лучше: ' + (result.successRule || 'оставьте изменение, если оно не ухудшает деньги и качество') +
       '\nЕсли не стало: ' + (result.failureRule || 'не увеличивайте расходы, сначала выясните причину');
     const nextText = document.getElementById('resultNext');
     nextText.style.whiteSpace = 'pre-line';
-    nextText.textContent =
-      'Если помогло: ' + (result.nextIfSuccess || result.next || 'сохраните изменение') +
-      '\nЕсли нет: ' + (result.nextIfFailure || 'вернитесь к диагностике и выберите другую причину.');
+    nextText.textContent = result.followup
+      ? (result.next||result.nextIfSuccess||result.nextIfFailure||'Выберите следующий шаг.')
+      : 'Если помогло: ' + (result.nextIfSuccess || result.next || 'сохраните изменение') +
+        '\nЕсли нет: ' + (result.nextIfFailure || 'вернитесь к диагностике и выберите другую причину.');
 
     if (result.followup && result.stateTransition?.nextResult && state.activeCycleId) {
       const nextCycleButton=document.createElement('button');
@@ -7091,7 +7160,8 @@ function finalizePrecision() {
   const precision = r.precisionSummary ? '\n\nЧто показывают цифры:\n' + r.precisionSummary : '';
   const opportunity = r.optionalOpportunity ? '\n\nДополнительная возможность:\n' + r.optionalOpportunity.title : '';
   return (r.userTitle || r.title) +
-    '\n\nПочему:\n' + r.why.map(x=>'• '+x).join('\n') +
+    '\n\nПочему:\n' + (r.why||[]).filter(x=>!r.followup||
+      !/^\s*Что делать дальше\s*:/i.test(x)).map(x=>'• '+x).join('\n') +
     '\n\nНасколько уверенный вывод: ' + (r.confidenceLabel || confidenceLabel(r.confidence)) +
     '\n\nЧто сделать первым:\n' + r.action +
     '\n\nЧто пока не менять:\n' + (r.holdConstant || [r.dont]).filter(Boolean).join(' ') +
@@ -7099,8 +7169,9 @@ function finalizePrecision() {
     '\n\nКогда проверить:\n' + (r.observationRule || r.next || '') +
     '\n\nЕсли стало лучше: ' + (r.successRule || '') +
     '\nЕсли не стало: ' + (r.failureRule || '') +
-    '\n\nЧто дальше:\n' + (r.nextIfSuccess || r.next || '') +
-    '\nЕсли результата нет: ' + (r.nextIfFailure || '') + precision + opportunity;
+    '\n\nЧто дальше:\n' + (r.followup ? (r.next||r.nextIfSuccess||'') :
+      (r.nextIfSuccess||r.next||'') +
+      '\nЕсли результата нет: ' + (r.nextIfFailure||'')) + precision + opportunity;
 }
 
   function isAnswered(id) {
@@ -7123,7 +7194,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, clearAllHistory, historyScopeName, historyDateTime, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
