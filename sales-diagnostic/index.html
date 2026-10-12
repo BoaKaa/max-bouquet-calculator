@@ -102,6 +102,7 @@ h1 {
 h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
 .lead { font-size: 18px; color: #454944; max-width: 62ch; margin-bottom: 28px; }
 .note-box {
+  overflow-wrap: anywhere;
   margin-top: 24px;
   padding: 16px 18px;
   border-radius: 16px;
@@ -141,7 +142,7 @@ button:focus-visible, input:focus-visible {
 .history-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid #eeeae2; }
 .history-row:last-child { border-bottom: 0; }
 .history-row .history-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.history-meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.history-meta { color: var(--muted); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
 .status-pill { display: inline-flex; align-items: center; width: fit-content; margin-top: 7px; padding: 5px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 750; }
 
 .wizard-card { overflow: hidden; }
@@ -259,6 +260,11 @@ button:focus-visible, input:focus-visible {
   .history-row { grid-template-columns: 1fr; }
   .history-row .history-actions { justify-content: stretch; }
   .history-row .history-actions button { flex: 1 1 100%; }
+  .wizard-actions button { min-width: 0; }
+}
+@media (max-width: 360px) {
+  .wizard-actions { gap: 8px; padding: 12px; }
+  .wizard-actions button { padding: 0 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -280,7 +286,7 @@ button:focus-visible, input:focus-visible {
       <button class="ghost-btn top-reset" id="resetButton" type="button" hidden>Начать заново</button>
     </header>
 
-    <main id="app" class="app" aria-live="polite"></main>
+    <main id="app" class="app"></main>
 
     <footer class="footer">
       <p>Ответы сохраняются только в вашем браузере. Никакой регистрации и отправки данных на сервер.</p>
@@ -289,7 +295,7 @@ button:focus-visible, input:focus-visible {
 
   <template id="homeTemplate">
     <section class="hero card">
-      <h1>Поймите, что мешает продажам именно сейчас</h1>
+      <h1 id="homeTitle">Поймите, что мешает продажам именно сейчас</h1>
       <p class="lead">Ответьте на понятные вопросы. Лишние вопросы будут пропущены автоматически. Инструмент проверит весь путь: от спроса и покупки до выполнения, денег и повторных продаж.</p>
       <div class="mode-grid" id="modeGrid"></div>
       <div class="note-box">
@@ -443,7 +449,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.22-dev';
+  const APP_VERSION = '1.13.23-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2916,6 +2922,13 @@ button:focus-visible, input:focus-visible {
     return true;
   }
 
+  // Focus newly rendered headings so keyboard focus never disappears with the old screen.
+  function focusScreenHeading(id) {
+    const heading=document.getElementById(id);
+    if (!heading) return;
+    heading.setAttribute('tabindex','-1');
+    heading.focus({preventScroll:true});
+  }
   let historyUiNotice = null;
   function showHome() {
     state.mode = null;
@@ -3163,6 +3176,7 @@ button:focus-visible, input:focus-visible {
       historyCard.appendChild(historyActions);
       app.appendChild(historyCard);
     }
+    focusScreenHeading('homeTitle');
   }
 
   function setDiagnosticMode(mode) {
@@ -3339,7 +3353,7 @@ button:focus-visible, input:focus-visible {
     renderQuestion();
   }
 
-  function renderQuestion() {
+  function renderQuestion(focusOptionValue = null) {
     const id = state.path[state.index];
     const question = questions[id];
     if (!question) return finalizeDiagnosis();
@@ -3395,9 +3409,10 @@ button:focus-visible, input:focus-visible {
       input.addEventListener('keydown', e => { if (e.key === 'Enter' && isAnswered(id)) goNext(); });
       answerArea.appendChild(input);
       nextButton.disabled = !isAnswered(id);
-      setTimeout(() => input.focus(), 0);
+      input.focus({preventScroll:true});
     } else {
       const options = question.optionsFn ? question.optionsFn(state) : question.options;
+      let focusedChoice=null;
       options.forEach(o => {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'option-card';
         const selected = question.type === 'multi' ? Array.isArray(current) && current.includes(o.value) : current === o.value;
@@ -3417,11 +3432,14 @@ button:focus-visible, input:focus-visible {
             }
           } else state.answers[id] = o.value;
           if (previous !== JSON.stringify(state.answers[id])) invalidateDownstreamAnswers(state.index);
-          renderQuestion();
+          renderQuestion(o.value);
         });
         answerArea.appendChild(b);
+        if (focusOptionValue===o.value) focusedChoice=b;
       });
       nextButton.disabled = question.type === 'multi' ? !(Array.isArray(current) && current.length) : current == null;
+      if (focusedChoice) focusedChoice.focus({preventScroll:true});
+      else focusScreenHeading('questionTitle');
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -6989,6 +7007,7 @@ function finalizePrecision() {
       }
     });
     resetButton.hidden = false;
+    focusScreenHeading('resultTitle');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
