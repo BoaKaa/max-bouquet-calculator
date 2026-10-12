@@ -3008,7 +3008,9 @@ button:focus-visible, input:focus-visible {
             actions.appendChild(followup);
           }
         }
-        if (!cycle.legacyReadonly && !isOpenCycleStatus(cycle.status)) {
+        if (!cycle.legacyReadonly && !isOpenCycleStatus(cycle.status) &&
+            !store.cycles.some(other => other.cycleId !== cycle.cycleId &&
+              (other.parentCycleId === cycle.cycleId || other.nextCycleId === cycle.cycleId))) {
           const del=document.createElement('button');
           del.type='button'; del.className='ghost-btn'; del.textContent='Удалить';
           del.addEventListener('click',()=>{
@@ -3075,14 +3077,14 @@ button:focus-visible, input:focus-visible {
           if(!preview.newCount){
             importMessage.textContent=preview.total===0
               ? 'В файле нет сохранённых проверок. Ничего добавлять не нужно.'
-              : 'Новых записей нет: все '+preview.duplicateCount+' записей из файла уже сохранены в этом браузере. История не изменена.';
+              : 'Новых записей нет. Уже есть в этом браузере: '+preview.duplicateCount+' из файла. История не изменена.';
             return;
           }
           pendingText=content;pendingRaw=preview.currentRaw;pendingCount=preview.newCount;
           commitButton.textContent='Добавить новые записи ('+preview.newCount+')';
           commitButton.hidden=false;commitButton.disabled=false;
-          importMessage.textContent='Проверено: '+preview.newCount+' новых записей и '+preview.duplicateCount+
-            ' уже сохранённых. Файл пока не импортирован. Для добавления нажмите вторую кнопку.';
+          importMessage.textContent='Проверка завершена. Новых записей: '+preview.newCount+'. Уже сохранённых: '+preview.duplicateCount+
+            '. Файл пока не импортирован. Для добавления нажмите вторую кнопку.';
         } catch {
           if(importFile.files?.[0]===file)
             importMessage.textContent='Не удалось прочитать файл. История не изменена.';
@@ -3102,8 +3104,8 @@ button:focus-visible, input:focus-visible {
           importMessage.textContent='Импорт отменён. История не изменена.';return;
         }
         if(commitHistoryImport(pendingText,pendingRaw)){
-          historyUiNotice='Импорт завершён: добавлено '+check.newCount+
-            ' записей. Существующие записи не изменены.';
+          historyUiNotice='Импорт завершён. Добавлено записей: '+check.newCount+
+            '. Существующие записи не изменены.';
           showHome();
         } else {
           resetImportPreview();
@@ -3124,11 +3126,11 @@ button:focus-visible, input:focus-visible {
         clearButton.type='button';clearButton.className='ghost-btn';
         clearButton.textContent='Удалить завершённые проверки ('+removable.length+')';
         clearButton.addEventListener('click',()=>{
-          if(!window.confirm('Безвозвратно удалить '+removable.length+
-            ' завершённых проверок? Активные и связанные с ними записи сохранятся.'))return;
+          if(!window.confirm('Безвозвратно удалить завершённые проверки ('+removable.length+
+            ')? Активные и связанные с ними записи сохранятся.'))return;
           if(clearClosedHistory()){
-            historyUiNotice='Удалено '+removable.length+
-              ' завершённых проверок. Активные и связанные с ними записи сохранены.';
+            historyUiNotice='История очищена. Удалено завершённых проверок: '+removable.length+
+              '. Активные и связанные с ними записи сохранены.';
             showHome();
           } else window.alert('Не удалось очистить историю. Сохранённые записи не изменены.');
         });
