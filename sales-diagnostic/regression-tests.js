@@ -1990,6 +1990,68 @@ add('CAP-MEASURED-N-LOW-WHILE-CAP-HIT','P0','FOLLOWUP',()=>{
  return result.decision+'|'+result.code;
 },['REDESIGN|FOLLOWUP_INSUFFICIENT_EVIDENCE']);
 
+
+add('CAP-UI-INPUTS-SAVE-RESUME-HISTORY','P0','FOLLOWUP-UI',()=>isolatedHistory(key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ reset('build',{scope_goal:'new_sales',scope_name:'Цветы',scope_model:'PRODUCT'});
+ s.parentCycleId=null;
+ const first=diag.makeResult('BUILD_MARKET_TEST');
+ first.diagnosticMode='build';
+ first.experimentPlan=diag.experimentPlanFor(first);
+ const prepared=diag.saveHistory({mode:'build',scope:'Цветы',answers:{...s.answers},
+   result:first,experimentPlan:first.experimentPlan,cycleStatus:'PLANNED'});
+ const parentId=s.activeCycleId;
+ const resumed=prepared&&diag.resumeCycle(parentId);
+ if(!resumed)return 'resume_failed';
+ for(const [id,value] of [['experimentTimeCap','14'],['experimentBudgetCap','1500'],['experimentExposureCap','40']]){
+   const input=documentMock.getElementById(id);
+   input.value=value;
+   const fn=input._events?.input?.at(-1);
+   if(!fn)return 'input_missing_'+id;
+   fn();
+ }
+ const start=documentMock.getElementById('startExperimentButton');
+ const activate=start._events?.click?.at(-1);
+ if(!activate)return 'activate_missing';
+ activate();
+ const stored=diag.loadHistoryStore().cycles.find(c=>c.cycleId===parentId);
+ const limits=stored?.experimentPlan;
+ const reentered=diag.startFollowupForCycle(parentId);
+ return String(stored?.status==='ACTIVE' && limits?.timeCap===14 &&
+   limits?.budgetCap===1500 && limits?.exposureCap===40 &&
+   limits?.startedAt && reentered &&
+   s.followupBase.experimentPlan.budgetCap===1500);
+}),['true']);
+add('CAP-INPUT-INVALID-REFUSED','P1','FOLLOWUP-UI',()=>isolatedHistory(key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ reset('build',{scope_goal:'new_sales',scope_model:'PRODUCT',scope_name:'Тест'});
+ s.parentCycleId=null;
+ const result=diag.makeResult('BUILD_MARKET_TEST');
+ result.diagnosticMode='build';result.experimentPlan=diag.experimentPlanFor(result);
+ diag.saveHistory({mode:'build',scope:'Тест',answers:{...s.answers},
+   result,experimentPlan:result.experimentPlan,cycleStatus:'PLANNED'});
+ diag.resumeCycle(s.activeCycleId);
+ const values=[['experimentTimeCap','0'],['experimentBudgetCap','-2'],['experimentExposureCap','1.5']];
+ for(const [id,v] of values){
+   const input=documentMock.getElementById(id);
+   input.value=v;input._events?.input?.at(-1)?.();
+ }
+ const plan=s.result?.experimentPlan;
+ return String(plan?.timeCap===null&&plan?.budgetCap===null&&plan?.exposureCap===null);
+}),['true']);
+add('CAP-ROUTE-STOP-WHEN-NOT-ENOUGH-AND-EXPIRED','P0','FOLLOWUP',()=>{
+ const old=new Date(Date.now()-4*86400000).toISOString();
+ const outcome=capScenario({caps:{timeCap:3,startedAt:old},
+  answers:{fu_limit_status:'no',fu_sample_ready:'not_yet'}});
+ return outcome.code+'|'+outcome.decision;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|REDESIGN']);
+add('CAP-LEGACY-PLAN-NO-CAP-EXTRA-Q','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{plannedObservationCount:20}};
+ s.path=['fu_done','fu_guardrail'];s.index=1;diag.goNext();
+ return String(!s.path.includes('fu_limit_status')&&s.path[2]==='fu_execution_match');
+},['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
