@@ -26,7 +26,7 @@ function node(id) {
     appendChild(x){ this.children.push(x); return x; },
     append(){ this.children.push.apply(this.children, arguments); },
     replaceChildren(){ this.children = Array.from(arguments); },
-    remove(){}, after(){}, addEventListener(){},
+    remove(){}, after(){}, _events:{}, addEventListener(type,fn){(this._events[type]||=[]).push(fn);},
     setAttribute(k,v){ this[k]=v; },
     cloneNode(){ return node(id + '_clone'); },
     focus(){},
@@ -1440,7 +1440,12 @@ add('ARCHIVE-EXPLICIT-CYCLE-ID-AUTHORITATIVE','P0','HISTORY',()=>{
 
 function isolatedHistory(run) {
  const key='salesDiagnosticHistory:v2', before=memory[key];
- try { return run(key); } finally { if(before===undefined)delete memory[key];else memory[key]=before; }
+ const restore=()=>{if(before===undefined)delete memory[key];else memory[key]=before;};
+ try{
+  const result=run(key);
+  if(result && typeof result.then==='function')return result.finally(restore);
+  restore();return result;
+ }catch(e){restore();throw e;}
 }
 add('HIST-PRUNE-PRESERVES-ACTIVE-ANCESTOR','P0','HISTORY',()=>isolatedHistory(key=>{
  const store={schemaVersion:2,cycles:[],activeCycleIds:[],lastActiveCycleId:null,legacyMigratedAt:'2026-10-12',updatedAt:'2026-10-12'};
@@ -1540,18 +1545,123 @@ add('SAFETY-FU-NO-REPEATED-GUARDRAIL','P1','FOLLOWUP',()=>{
  return s.path.slice(-2).join('|')+'|'+s.path.filter(v=>v==='fu_guardrail').length;
 },['fu_effect|fu_market_payment|1']);
 
-const failures=[];
-for (const t of tests) {
-  let got;
-  try { got=t.run(); } catch (e) { got='ERROR:' + e.message; }
-  if (!t.allowed.includes(got)) failures.push({id:t.id,priority:t.priority,group:t.group,got,allowed:t.allowed});
-}
-const summary={total:tests.length,pass:tests.length-failures.length,fail:failures.length,p0:failures.filter(x=>x.priority==='P0').length,p1:failures.filter(x=>x.priority==='P1').length};
 
-console.log(JSON.stringify(summary,null,2));
-if (failures.length) {
+/* History UI E2E with real event handlers + simulated file objects.
+ * This is not a native browser test. */
+function uiFind(pred){
+ const queue=[documentMock.getElementById('app')];
+ while(queue.length){
+  const el=queue.shift();
+  if(pred(el))return el;
+  queue.push(...(el.children||[]));
+ }
+ return null;
+}
+async function uiFire(el,type){
+ if(!el)throw Error('UI target not found: '+type);
+ for(const handler of el._events?.[type]||[])await handler();
+}
+function uiPicker(){return uiFind(n=>n.type==='file');}
+function uiCheckButton(){return uiFind(n=>n.textContent==='Проверить выбранный файл');}
+function uiAddVisible(){return uiFind(n=>n.type==='button'&&n.textContent?.startsWith('Добавить новые записи')&&!n.hidden);}
+function uiSelectedArchive(payload){
+ const picker=uiPicker();
+ picker.files=[{name:'sales-diagnostic-history.json',size:payload.length,text:async()=>payload}];
+ return picker;
+}
+add('UI-HISTORY-NO-BULK-DELETE-WHEN-EMPTY','P2','HISTORY-UI',()=>isolatedHistory(key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ diag.showHome();
+ return String(!uiFind(n=>n.textContent?.startsWith('Удалить завершённые проверки'))&&
+  !!uiFind(n=>n.textContent?.includes('Удалять пока нечего')));
+}),['true']);
+add('UI-HISTORY-NO-BULK-DELETE-IF-LINKED','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+ const parent=archiveFixture('cycle_uiparent','uiparent');
+ const child=archiveFixture('cycle_uichild','uichild',null,{parentCycleId:parent.cycleId,status:'ACTIVE'});
+ parent.nextCycleId=child.cycleId;
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[parent,child],activeCycleIds:[child.cycleId]});
+ diag.showHome();
+ return String(!uiFind(n=>n.textContent?.startsWith('Удалить завершённые проверки'))&&
+   !!uiFind(n=>n.textContent?.includes('Завершённые проверки связаны с активными')));
+}),['true']);
+add('UI-HISTORY-BULK-DELETE-COUNT-AND-STATUS','P1','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ const parent=archiveFixture('cycle_uiparent2','uiparent2');
+ const child=archiveFixture('cycle_uichild2','uichild2',null,{parentCycleId:parent.cycleId,status:'ACTIVE'});
+ parent.nextCycleId=child.cycleId;
+ const other=archiveFixture('cycle_uiother','uiother');
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[parent,child,other],activeCycleIds:[child.cycleId]});
+ diag.showHome();
+ await uiFire(uiFind(n=>n.textContent==='Удалить завершённые проверки (1)'),'click');
+ const ids=diag.loadHistoryStore().cycles.map(c=>c.cycleId);
+ return String(ids.includes(parent.cycleId)&&ids.includes(child.cycleId)&&!ids.includes(other.cycleId)&&
+  !!uiFind(n=>n.textContent?.includes('Удалено 1 завершённых проверок')));
+}),['true']);
+add('UI-IMPORT-NO-FILE-EXPLAINS','P2','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ diag.showHome();
+ await uiFire(uiCheckButton(),'click');
+ return String(!!uiFind(n=>n.textContent?.includes('Сначала выберите файл экспорта истории')));
+}),['true']);
+add('UI-IMPORT-UNCHANGED-ARCHIVE-EXPLAINS','P1','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ const one=archiveFixture('cycle_uisame','uisame');
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[one],activeCycleIds:[]});
+ diag.showHome();
+ const picker=uiSelectedArchive(archivePayload([one]));
+ await uiFire(picker,'change');
+ await uiFire(uiCheckButton(),'click');
+ return String(!!uiFind(n=>n.textContent?.includes('Новых записей нет'))&&!uiAddVisible());
+}),['true']);
+add('UI-IMPORT-VALID-REQUIRES-SECOND-ACTION','P1','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ diag.showHome();
+ const one=archiveFixture('cycle_uinew','uinew');
+ const picker=uiSelectedArchive(archivePayload([one]));
+ await uiFire(picker,'change');
+ await uiFire(uiCheckButton(),'click');
+ const button=uiAddVisible(),before=diag.loadHistoryStore().cycles.length;
+ if(!button)return 'no confirmation button';
+ await uiFire(button,'click');
+ const after=diag.loadHistoryStore().cycles.length;
+ return String(before===0&&after===1&&
+  !!uiFind(n=>n.textContent?.includes('Импорт завершён: добавлено 1')));
+}),['true']);
+add('UI-IMPORT-INVALID-BLOCKED-WITH-REASON','P0','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ diag.showHome();const before=memory[key];
+ const picker=uiSelectedArchive('{bad json}');
+ await uiFire(picker,'change');
+ await uiFire(uiCheckButton(),'click');
+ return String(!!uiFind(n=>n.textContent?.includes('не содержит корректный JSON'))&&
+  !uiAddVisible() && memory[key]===before);
+}),['true']);
+add('UI-IMPORT-CANCEL-DOES-NOT-WRITE','P1','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ diag.showHome();
+ const one=archiveFixture('cycle_uicancel','uicancel');
+ const picker=uiSelectedArchive(archivePayload([one]));
+ await uiFire(picker,'change');await uiFire(uiCheckButton(),'click');
+ const originalConfirm=windowMock.confirm;
+ windowMock.confirm=()=>false;
+ const before=memory[key];
+ try{await uiFire(uiAddVisible(),'click');}
+ finally{windowMock.confirm=originalConfirm;}
+ return String(memory[key]===before &&
+  !!uiFind(n=>n.textContent?.includes('Импорт отменён')));
+}),['true']);
+
+const regressionRun=(async()=>{
+ const failures=[];
+ for (const t of tests) {
+  let got;
+  try { got=await t.run(); } catch(e) { got='ERROR:' + e.message; }
+  if(!t.allowed.includes(got))failures.push({id:t.id,priority:t.priority,group:t.group,got,allowed:t.allowed});
+ }
+ const summary={total:tests.length,pass:tests.length-failures.length,fail:failures.length,
+ p0:failures.filter(x=>x.priority==='P0').length,p1:failures.filter(x=>x.priority==='P1').length};
+ console.log(JSON.stringify(summary,null,2));
+ if(failures.length) {
   failures.forEach(x=>console.error(x.id+' '+x.priority+' ['+x.group+'] got='+x.got+' expected='+x.allowed.join('|')));
   process.exitCode=1;
-} else {
-  console.log('REGRESSION PASS');
-}
+ } else console.log('REGRESSION PASS');
+})();
+regressionRun.catch(e=>{console.error(e);process.exitCode=1;});
