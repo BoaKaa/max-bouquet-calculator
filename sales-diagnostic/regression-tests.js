@@ -1907,6 +1907,89 @@ add('A11Y-NARROW-WRAP-CONTRACT','P2','ACCESSIBILITY',()=>
  String(html.includes('.wizard-actions button { min-width: 0; }')&&
  html.includes('overflow-wrap: anywhere;')),['true']);
 
+
+/* FOLLOW-UP planned time, budget, exposure caps: optional and enforceable. */
+function capScenario({caps={},answers={}}={}) {
+ reset('followup',{fu_done:'yes',fu_guardrail:['none'],fu_execution_match:'no',
+   fu_sample_ready:'not_yet',...answers});
+ s.followupBase={
+   result:{primaryCode:'ACCESS',userTitle:'Привлечение',diagnosticMode:'full',
+      experimentPlan:{experimentId:'cap_example',primaryCode:'ACCESS',...caps}},
+   experimentPlan:{experimentId:'cap_example',primaryCode:'ACCESS',...caps}
+ };
+ return diag.classifyFollowup();
+}
+add('CAP-NO-LIMITS-LEGACY-CONTINUES','P1','FOLLOWUP',()=>{
+ const result=capScenario();
+ return result.code+'|'+result.decision;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|CONTINUE']);
+add('CAP-REACHED-BUDGET-STOPS-EXTENSION','P0','FOLLOWUP',()=>{
+ const result=capScenario({caps:{budgetCap:1500},answers:{fu_limit_status:'yes'}});
+ return result.code+'|'+result.decision;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|REDESIGN']);
+add('CAP-REACHED-EXPOSURE-STOPS-EXTENSION','P0','FOLLOWUP',()=>{
+ const result=capScenario({caps:{exposureCap:50},answers:{fu_limit_status:'yes'}});
+ return result.decision;
+},['REDESIGN']);
+add('CAP-NOT-HIT-YET-CONTINUES','P1','FOLLOWUP',()=>{
+ const result=capScenario({caps:{budgetCap:1500},answers:{fu_limit_status:'no'}});
+ return result.decision;
+},['CONTINUE']);
+add('CAP-UNKNOWN-AND-N-LOW-DO-NOT-CONTINUE','P1','FOLLOWUP',()=>{
+ const result=capScenario({caps:{exposureCap:30,plannedObservationCount:20},
+   answers:{fu_limit_status:'unknown',fu_sample_ready:'yes',fu_observed_count:10,
+    fu_measurement_valid:'yes',fu_effect:'better'}});
+ return result.code+'|'+result.decision;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|REDESIGN']);
+add('CAP-DAYS-ELAPSED-AUTO-STOPS-EXTENSION','P0','FOLLOWUP',()=>{
+ const result=capScenario({caps:{timeCap:7,startedAt:'2020-01-01T00:00:00.000Z'},
+   answers:{fu_limit_status:'no'}});
+ return result.code+'|'+result.decision;
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|REDESIGN']);
+add('CAP-VALID-SUCCESS-DESPITE-CAP','P1','FOLLOWUP',()=>{
+ const result=capScenario({caps:{budgetCap:1000,plannedObservationCount:5},
+   answers:{fu_limit_status:'yes',fu_sample_ready:'yes',fu_observed_count:5,
+    fu_measurement_valid:'yes',fu_effect:'better'}});
+ return result.code+'|'+result.decision;
+},['FOLLOWUP_CONFIRMED|CONFIRM']);
+add('CAP-GUARDRAIL-OVERRIDES-LIMIT','P0','FOLLOWUP',()=>{
+ const result=capScenario({caps:{budgetCap:1000},
+   answers:{fu_limit_status:'yes',fu_guardrail:['money']}});
+ return result.code+'|'+result.decision;
+},['FOLLOWUP_GUARDRAIL_FAIL|ROLLBACK']);
+add('CAP-ROUTE-ASKS-ONLY-WHEN-PLANNED','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{budgetCap:500}};
+ s.path=['fu_done','fu_guardrail'];s.index=1;
+ diag.goNext();
+ const withCap=s.path[2];
+ reset('followup',{fu_done:'yes',fu_guardrail:['none']});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{}};
+ s.path=['fu_done','fu_guardrail'];s.index=1;
+ diag.goNext();
+ return withCap+'|'+s.path[2];
+},['fu_limit_status|fu_execution_match']);
+add('CAP-ROUTE-AFTER-LIMIT-CONTINUES-TO-CLEANLINESS','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_guardrail:['none'],fu_limit_status:'yes'});
+ s.followupBase={result:{primaryCode:'ACCESS'},experimentPlan:{timeCap:7}};
+ s.path=['fu_done','fu_guardrail','fu_limit_status'];s.index=2;diag.goNext();
+ return s.path[3];
+},['fu_execution_match']);
+add('CAP-PLAN-HAS-OPTIONAL-UI','P1','FOLLOWUP',()=>{
+ reset('build',{scope_goal:'launch',scope_model:'PRODUCT'});
+ const result=diag.makeResult('BUILD_MARKET_TEST');
+ const plan=diag.experimentPlanFor(result);
+ return String(plan && plan.timeCap===null && plan.budgetCap===null&&plan.exposureCap===null &&
+  html.includes('id="experimentTimeCap"') && html.includes('id="experimentBudgetCap"') &&
+  html.includes('id="experimentExposureCap"'));
+},['true']);
+add('CAP-MEASURED-N-LOW-WHILE-CAP-HIT','P0','FOLLOWUP',()=>{
+ const result=capScenario({caps:{budgetCap:2000,plannedObservationCount:12},
+   answers:{fu_limit_status:'yes',fu_sample_ready:'yes',fu_observed_count:4,
+     fu_measurement_valid:'yes',fu_effect:'better'}});
+ return result.decision+'|'+result.code;
+},['REDESIGN|FOLLOWUP_INSUFFICIENT_EVIDENCE']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
