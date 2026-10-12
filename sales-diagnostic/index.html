@@ -443,7 +443,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.17-dev';
+  const APP_VERSION = '1.13.18-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2417,15 +2417,59 @@ button:focus-visible, input:focus-visible {
     return [CYCLE_STATUS.DIAGNOSED,CYCLE_STATUS.PLANNED,CYCLE_STATUS.ACTIVE,CYCLE_STATUS.WAITING_FOR_EVIDENCE,CYCLE_STATUS.FOLLOWUP_DUE].includes(status);
   }
 
+  function historyConnectedComponents(cycles) {
+    const byId = new Map();
+    for (const cycle of cycles) {
+      if (!cycle?.cycleId || byId.has(cycle.cycleId)) return null;
+      byId.set(cycle.cycleId, cycle);
+    }
+    const edges = new Map(cycles.map(c => [c.cycleId, new Set()]));
+    for (const cycle of cycles) {
+      for (const link of [cycle.parentCycleId, cycle.nextCycleId]) {
+        if (!link) continue;
+        if (!byId.has(link) || link === cycle.cycleId) return null;
+        edges.get(cycle.cycleId).add(link);
+        edges.get(link).add(cycle.cycleId);
+      }
+    }
+    const visited = new Set(), components = [];
+    for (const cycle of cycles) {
+      if (visited.has(cycle.cycleId)) continue;
+      const group = [], pending = [cycle.cycleId];
+      while (pending.length) {
+        const id = pending.pop();
+        if (visited.has(id)) continue;
+        visited.add(id);
+        group.push(byId.get(id));
+        for (const neighbor of edges.get(id)) if (!visited.has(neighbor)) pending.push(neighbor);
+      }
+      components.push(group);
+    }
+    return components;
+  }
+
   function pruneHistoryStore(store) {
-    const active = store.cycles.filter(cycle => isOpenCycleStatus(cycle.status));
-    const closed = store.cycles
-      .filter(cycle => !isOpenCycleStatus(cycle.status))
-      .sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-    const keptClosed = closed.slice(0, Math.max(0, HISTORY_MAX_CYCLES - active.length));
-    store.cycles = [...active, ...keptClosed].sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-    store.activeCycleIds = store.cycles.filter(cycle => isOpenCycleStatus(cycle.status)).map(cycle => cycle.cycleId);
-    if (store.lastActiveCycleId && !store.cycles.some(c => c.cycleId === store.lastActiveCycleId)) store.lastActiveCycleId = null;
+    // Never silently sever a parent/next link when enforcing the 20-cycle cap.
+    const components = historyConnectedComponents(store.cycles);
+    if (!components || components.some(group => group.length > HISTORY_MAX_CYCLES)) return null;
+    const protectedGroups = components.filter(group => group.some(c => isOpenCycleStatus(c.status)));
+    const otherGroups = components.filter(group => !group.some(c => isOpenCycleStatus(c.status)));
+    const mandatoryCount = protectedGroups.reduce((n, group) => n + group.length, 0);
+    if (mandatoryCount > HISTORY_MAX_CYCLES) return null;
+    const newest = group => group.map(c => String(c.updatedAt || '')).sort().at(-1) || '';
+    otherGroups.sort((a,b) => newest(b).localeCompare(newest(a)));
+    const selected = [...protectedGroups];
+    let count = mandatoryCount;
+    for (const group of otherGroups) {
+      if (count + group.length > HISTORY_MAX_CYCLES) continue;
+      selected.push(group);
+      count += group.length;
+    }
+    store.cycles = selected.flat().sort((a,b) =>
+      String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    store.activeCycleIds = store.cycles.filter(c => isOpenCycleStatus(c.status)).map(c => c.cycleId);
+    if (store.lastActiveCycleId && !store.cycles.some(c => c.cycleId === store.lastActiveCycleId))
+      store.lastActiveCycleId = null;
     return store;
   }
 
@@ -2434,7 +2478,7 @@ button:focus-visible, input:focus-visible {
     if (historyStorageProblem()) return false;
     try {
       store.updatedAt = new Date().toISOString();
-      pruneHistoryStore(store);
+      if (!pruneHistoryStore(store)) return false;
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(store));
       return true;
     } catch {
@@ -2586,13 +2630,17 @@ button:focus-visible, input:focus-visible {
     const store = loadHistoryStore();
     const cycle = store.cycles.find(c => c.cycleId === cycleId);
     if (!cycle || isOpenCycleStatus(cycle.status)) return false;
+    if (store.cycles.some(c => c.cycleId !== cycleId &&
+        (c.parentCycleId === cycleId || c.nextCycleId === cycleId))) return false;
     store.cycles = store.cycles.filter(c => c.cycleId !== cycleId);
     return writeHistoryStore(store);
   }
 
   function clearClosedHistory() {
     const store = loadHistoryStore();
-    store.cycles = store.cycles.filter(cycle => isOpenCycleStatus(cycle.status));
+    const components = historyConnectedComponents(store.cycles);
+    if (!components) return false;
+    store.cycles = components.filter(group => group.some(c => isOpenCycleStatus(c.status))).flat();
     return writeHistoryStore(store);
   }
 
@@ -2637,8 +2685,8 @@ button:focus-visible, input:focus-visible {
   function reviewHistoryImport(text) {
     const blocked=historyStorageProblem();
     if (blocked) return {ok:false,reason:blocked};
-    if (typeof text!=='string' || text.length>1024*1024)
-      return {ok:false,reason:'Файл истории слишком большой (максимум 1 МБ).'};
+    if (typeof text!=='string' || text.length>10*1024*1024)
+      return {ok:false,reason:'Файл истории слишком большой (максимум 10 МБ).'};
     let data;
     try {data=JSON.parse(text);}catch{return {ok:false,reason:'Файл не содержит корректный JSON.'};}
     if (data?.exportVersion!==1 || data?.historySchemaVersion!==HISTORY_SCHEMA_VERSION ||
@@ -2959,8 +3007,8 @@ button:focus-visible, input:focus-visible {
           del.type='button'; del.className='ghost-btn'; del.textContent='Удалить';
           del.addEventListener('click',()=>{
             if (window.confirm('Удалить этот завершённый цикл из истории?')) {
-              deleteCycle(cycle.cycleId);
-              showHome();
+              if (deleteCycle(cycle.cycleId)) showHome();
+              else window.alert('Не удалось удалить: цикл связан с другой проверкой или история недоступна.');
             }
           });
           actions.appendChild(del);
@@ -2996,8 +3044,8 @@ button:focus-visible, input:focus-visible {
         importButton.disabled=true;pendingText=null;pendingRaw=null;
         const file=importFile.files?.[0];
         if(!file)return;
-        if(file.size>1024*1024){
-          importMessage.textContent='Файл слишком большой (максимум 1 МБ).';return;
+        if(file.size>10*1024*1024){
+          importMessage.textContent='Файл слишком большой (максимум 10 МБ).';return;
         }
         try {
           const text=await file.text();
@@ -3026,12 +3074,12 @@ button:focus-visible, input:focus-visible {
       historyActions.appendChild(importMessage);
 
       const clearButton=document.createElement('button');
-      clearButton.type='button'; clearButton.className='ghost-btn'; clearButton.textContent='Удалить завершённую историю';
+      clearButton.type='button'; clearButton.className='ghost-btn'; clearButton.textContent='Удалить несвязанные завершённые циклы';
       clearButton.disabled=!store.cycles.some(c=>!isOpenCycleStatus(c.status));
       clearButton.addEventListener('click',()=>{
-        if (window.confirm('Удалить завершённые циклы? Незавершённые проверки останутся.')) {
-          clearClosedHistory();
-          showHome();
+        if (window.confirm('Удалить завершённые циклы, не связанные с незавершёнными проверками?')) {
+          if (clearClosedHistory()) showHome();
+          else window.alert('Не удалось очистить историю: проверьте связанные циклы или хранилище браузера.');
         }
       });
       historyActions.appendChild(clearButton);
