@@ -38,7 +38,7 @@ async function newPage(browser, options = {}) {
   return { page, context, errors };
 }
 
-async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Тестовый товар' } = {}) {
+async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Тестовый товар', legalRisk = false } = {}) {
   const modeLabel = mode === 'BUILD' ? 'Проверить новый или сильно изменённый продукт' : 'Проверить текущие продажи';
   await page.getByRole('button', { name: new RegExp(modeLabel) }).click();
   const seen = [];
@@ -67,6 +67,7 @@ async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Т�
       if (step === 2) ix = Math.min(modelIndex, n - 1); // Scope business model
       if (step === 4) ix = mode === 'BUILD' ? Math.min(2, n - 1)
         : mode === 'HYBRID' ? Math.min(3, n - 1) : 0; // Real business maturity
+      if (legalRisk && /вопрос по безопасности или обязательным требованиям/i.test(title)) ix = 1;
       // In BUILD, never invent paid transactions in the browser smoke.
       const eyebrow = (await page.locator('#questionEyebrow').innerText()).trim();
       if (mode === 'BUILD' && (/после того, как.*показали/i.test(title) || /что произошло.*показали/i.test(eyebrow))) ix = n - 1;
@@ -121,6 +122,16 @@ async function exportHistory(page) {
       }
     }
 
+    // Safety blocker: no sales-growth recommendation when mandatory requirements remain uncertain.
+    {
+      const { page, context, errors } = await newPage(browser);
+      const result = await driveDiagnosis(page, { mode: 'FULL', modelIndex: 0, legalRisk: true });
+      assert.match(result.title, /требован|безопас/i, 'Open legal question must dominate result');
+      checkNoError(page, errors, 'Mandatory requirements gate');
+      await context.close();
+      log('unresolved mandatory requirements -> safe result');
+    }
+
     // 3. Persistence/history/export/irreversible wipe/import/cancel/confirm/resume.
     {
       const { page, context, errors } = await newPage(browser);
@@ -165,6 +176,55 @@ async function exportHistory(page) {
       checkNoError(page, errors, 'Full clear/import/resume');
       await context.close();
       log('history numbering, export, cancel, full clear, confirmed import, resume');
+    }
+
+    // Actual Follow-up: cap reached, sample insufficient, original cycle must be preserved.
+    {
+      const { page, context, errors } = await newPage(browser);
+      await driveDiagnosis(page, { mode: 'FULL', modelIndex: 0, name: 'Контроль Follow-up' });
+      const start = page.locator('#startExperimentButton');
+      assert.ok(await start.isVisible(), 'Result must include an actionable experiment plan');
+      await page.locator('#experimentLimitsPanel').evaluate(e => { e.open = true; });
+      await page.locator('#experimentBudgetCap').fill('1000');
+      await page.locator('#experimentPlannedCount').fill('50');
+      await start.click();
+      await page.locator('#brandButton').click();
+      const followup = page.locator('.history-row').first().getByRole('button', { name: 'Проверить результат' });
+      await followup.click();
+      const seen = [];
+      for (let step = 0; step < 18; step++) {
+        if (await page.locator('#resultTitle').count()) break;
+        const title = (await page.locator('#questionTitle').innerText()).trim();
+        seen.push(title);
+        const input = page.locator('#answerArea input.text-input');
+        if (await input.count()) await input.fill('0');
+        else {
+          const opts = page.locator('#answerArea .option-card');
+          const n = await opts.count();
+          assert.ok(n > 0, 'Follow-up question has no answers: ' + title);
+          let ix = 0;
+          if (/ухудшилось что-то важное/i.test(title)) ix = n - 1;
+          else if (/достигли предела/i.test(title)) ix = 1;
+          else if (/собрали столько/i.test(title)) ix = 1;
+          await opts.nth(ix).click();
+        }
+        const next = page.locator('#nextButton');
+        assert.equal(await next.isDisabled(), false, 'Follow-up blocked: ' + title);
+        await next.click();
+      }
+      assert.ok(await page.locator('#resultTitle').count(), 'Follow-up result must finish');
+      const conclusion = await page.locator('#resultTitle').innerText();
+      const next = await page.locator('#resultNext').innerText();
+      assert.ok(/пересмотр|недостаточно|предел/i.test(conclusion + ' ' + next),
+        'Reached cap with insufficient sample must request redesign: ' + conclusion + ' | ' + next);
+      assert.ok(!(await page.locator('#resultWhy').innerText()).includes('Что делать дальше:'),
+        'Follow-up explanations must not repeat next action');
+      await page.getByRole('button', { name: 'Сохранить результат проверки' }).click();
+      await page.locator('#brandButton').click();
+      assert.ok(await page.locator('.history-row').count() >= 1, 'Completed Follow-up stays in history');
+      checkNoError(page, errors, 'Follow-up cap/insufficient sample');
+      await context.close();
+      log('Follow-up with budget cap + insufficient observations + saved result (' + seen.length + ' questions)');
     }
 
     // 4. Narrow viewport and keyboard navigation, without horizontal scrolling.
