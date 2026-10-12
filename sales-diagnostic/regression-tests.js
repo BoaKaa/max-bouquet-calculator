@@ -634,7 +634,7 @@ add('AUD-ROUTE-RESEARCH-12','P2','ROUTE',()=>{
   build_test_type:'research',gate_legal:'unknown',build_offer:'yes',build_access:'yes',build_market:'unknown'});
  return x.ids.length+'|'+x.result+'|'+String(['build_econ_plausibility','build_pilot_capacity',
     'build_route','build_market_context'].every(id=>!x.ids.includes(id)));
-},['12|BUILD_MARKET_TEST|true']);
+},['11|BUILD_MARKET_TEST|true']);
 add('AUD-ROUTE-RESEARCH-NO-DEMAND','P1','BUILD',()=>{
  reset('build',{scope_model:'PRODUCT',build_test_type:'research',gate_legal:'no',build_market:'no',
   build_market_sample:30,build_market_audience:'yes',build_market_test_complete:'yes'},
@@ -1658,6 +1658,79 @@ add('UI-HISTORY-LINKED-PARENT-NO-INDIVIDUAL-DELETE','P1','HISTORY-UI',()=>isolat
  diag.showHome();
  return String(!uiFind(n=>n.textContent==='Удалить'&&n.type==='button'));
 }),['true']);
+
+
+/* Full paid routes through actual goNext across all five business models. */
+const paidModels=['PRODUCT','APPOINTMENT','EXPERT','EDUCATION','SUBSCRIPTION'];
+function paidRoute(model,variant,changes={}){
+ diag.startMode('full');
+ const visited=[],problems=[];
+ const a={scope_goal:variant==='full'?'income':'new_sales',
+  scope_name:'Offer '+model,scope_model:model,scope_target:variant==='full'?'revenue':'new_customers',
+  maturity_state:variant==='full'?'repeatable':variant.startsWith('hybrid')?'changed':'none',
+  scope_period:'month',period_integrity:'normal',scope_geography:'local',
+  gate_legal:'no',gate_fulfillment:'never',gate_economics:'good',gate_capacity:'reserve',
+  core_access:'regular',core_offer:'yes',core_demand:'regular',core_fit:'most',core_trust:'rare',core_conversion:'most',
+  inheritance_entry:variant.startsWith('hybrid')?'existing':'none',
+  inheritance_map:variant==='hybrid_price'?['price']:variant==='hybrid_audience'?['audience']:['channel'],
+  build_test_type:'payment',build_econ_plausibility:'yes',build_pilot_capacity:'yes',
+  build_offer:'yes',build_route:'yes',build_access:'yes',build_market_context:'yes',
+  build_market:'paid',build_market_quality:'target_normal',
+  shared_resources:['none'],shared_materiality:'no',shared_impact:'none',
+  deep_e1:'no',deep_e2:'yes',deep_e3:['none'],...changes};
+ for(let i=0;i<60&&!s.result;i++){
+  const id=s.path[s.index];
+  if(!(id in a)){problems.push('unexpected '+id);break;}
+  visited.push(id);s.answers[id]=a[id];
+  try{diag.goNext()}catch(e){problems.push(e.message);break;}
+ }
+ return {model,variant,visited,code:code(s.result),problems,businessGoal:s.businessGoal};
+}
+add('PAID-BUILD-5-MODELS-REDUCED','P1','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'build'));
+ return String(xs.every(x=>!x.problems.length && x.code==='BUILD_FULFILLMENT'&&
+  x.visited.length<=16 && x.businessGoal==='new_sales'&&
+  !x.visited.includes('scope_geography')&&!x.visited.includes('build_market_context')));
+},['true']);
+add('PAID-HYBRID-PRICE-5-MODELS','P1','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'hybrid_price'));
+ return String(xs.every(x=>!x.problems.length&&x.code==='BUILD_FULFILLMENT'&&
+  x.visited.length<=14&&x.visited.includes('build_econ_plausibility')&&
+  !x.visited.includes('scope_geography')));
+},['true']);
+add('PAID-HYBRID-CHANNEL-5-MODELS','P1','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'hybrid_channel'));
+ return String(xs.every(x=>!x.problems.length&&x.code==='BUILD_FULFILLMENT'&&
+  x.visited.length<=13&&x.visited.includes('build_access')&&
+  !['scope_geography','build_offer','build_route'].some(id=>x.visited.includes(id))));
+},['true']);
+add('PAID-HYBRID-AUDIENCE-5-MODELS','P1','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'hybrid_audience'));
+ return String(xs.every(x=>!x.problems.length&&x.code==='BUILD_FULFILLMENT'&&
+  x.visited.includes('build_access')&&
+  !['scope_geography','build_market_context'].some(id=>x.visited.includes(id))));
+},['true']);
+add('PAID-FULL-REVENUE-5-MODELS','P1','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'full'));
+ return String(xs.every(x=>!x.problems.length&&x.code==='NO_CRITICAL_CONSTRAINT_FOUND'&&
+  x.visited.length<=12&&x.businessGoal==='income'&&
+  x.visited.includes('gate_economics')&&x.visited.includes('gate_capacity')));
+},['true']);
+add('PAID-BUILD-LEGAL-5-MODELS','P0','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'build',{gate_legal:'unknown'}));
+ return String(xs.every(x=>!x.problems.length&&x.code==='LEGAL_SAFETY_BLOCKER'&&
+  x.visited.includes('gate_legal')&&!x.visited.includes('build_market')));
+},['true']);
+add('PAID-HYBRID-LEGAL-5-MODELS','P0','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'hybrid_channel',{gate_legal:'unknown'}));
+ return String(xs.every(x=>!x.problems.length&&x.code==='LEGAL_SAFETY_BLOCKER'&&
+  x.visited.includes('gate_legal')&&!x.visited.includes('build_market')));
+},['true']);
+add('PAID-FRIEND-PURCHASE-5-MODELS','P1','ROUTING',()=>{
+ const xs=paidModels.map(m=>paidRoute(m,'build',{build_market_quality:'friend_support'}));
+ return String(xs.every(x=>!x.problems.length&&x.code==='BUILD_MARKET_TEST'&&
+  x.visited.includes('build_market_quality')));
+},['true']);
 
 const regressionRun=(async()=>{
  const failures=[];
