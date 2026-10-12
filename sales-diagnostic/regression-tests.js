@@ -1437,6 +1437,59 @@ add('ARCHIVE-EXPLICIT-CYCLE-ID-AUTHORITATIVE','P0','HISTORY',()=>{
  return String(!result&&JSON.stringify(after)===snap);
 },['true']);
 
+
+function isolatedHistory(run) {
+ const key='salesDiagnosticHistory:v2', before=memory[key];
+ try { return run(key); } finally { if(before===undefined)delete memory[key];else memory[key]=before; }
+}
+add('HIST-PRUNE-PRESERVES-ACTIVE-ANCESTOR','P0','HISTORY',()=>isolatedHistory(key=>{
+ const store={schemaVersion:2,cycles:[],activeCycleIds:[],lastActiveCycleId:null,legacyMigratedAt:'2026-10-12',updatedAt:'2026-10-12'};
+ const parent=archiveFixture('cycle_prune_parent','prune_parent');
+ parent.updatedAt='2000-01-01T00:00:00Z';
+ const child=archiveFixture('cycle_prune_active','prune_active',null,{parentCycleId:parent.cycleId,status:'ACTIVE'});
+ parent.nextCycleId=child.cycleId;
+ store.cycles=[parent,...Array.from({length:21},(_,i)=>archiveFixture('cycle_prune_other_'+i,'prune_other_'+i)),child];
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ const saved=diag.writeHistoryStore(store);
+ const kept=diag.loadHistoryStore().cycles,ids=new Set(kept.map(c=>c.cycleId));
+ const importable=diag.reviewHistoryImport(archivePayload(kept)).ok;
+ return String(saved && kept.length<=20 && ids.has(parent.cycleId) && ids.has(child.cycleId) && importable);
+}),['true']);
+add('HIST-PRUNE-REFUSES-OVERLIMIT-LINKED-GROUP','P0','HISTORY',()=>isolatedHistory(key=>{
+ const previous=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]}); memory[key]=previous;
+ const cycles=Array.from({length:21},(_,i)=>archiveFixture('cycle_limit_'+i,'limit_'+i));
+ cycles.forEach((c,i)=>{c.parentCycleId=i?cycles[i-1].cycleId:null;c.nextCycleId=i<cycles.length-1?cycles[i+1].cycleId:null;});
+ const store={schemaVersion:2,cycles,activeCycleIds:[],lastActiveCycleId:null};
+ return String(!diag.writeHistoryStore(store) && memory[key]===previous);
+}),['true']);
+add('HIST-CLEAR-PRESERVES-ACTIVE-ANCESTORS','P0','HISTORY',()=>isolatedHistory(key=>{
+ const parent=archiveFixture('cycle_clear_parent','clear_parent');
+ const child=archiveFixture('cycle_clear_child','clear_child',null,{parentCycleId:parent.cycleId,status:'ACTIVE'});
+ parent.nextCycleId=child.cycleId;
+ const extra=archiveFixture('cycle_clear_unrelated','clear_unrelated');
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[parent,child,extra],activeCycleIds:[child.cycleId]});
+ const ok=diag.clearClosedHistory(),kept=diag.loadHistoryStore().cycles.map(c=>c.cycleId);
+ return String(ok && kept.includes(parent.cycleId)&&kept.includes(child.cycleId)&&!kept.includes(extra.cycleId));
+}),['true']);
+add('HIST-DELETE-REFERENCED-CLOSED-BLOCKED','P0','HISTORY',()=>isolatedHistory(key=>{
+ const parent=archiveFixture('cycle_delete_parent','delete_parent');
+ const child=archiveFixture('cycle_delete_child','delete_child',null,{parentCycleId:parent.cycleId,status:'ACTIVE'});
+ parent.nextCycleId=child.cycleId;
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[parent,child],activeCycleIds:[child.cycleId]});
+ const previous=memory[key],result=diag.deleteCycle(parent.cycleId);
+ return String(!result && memory[key]===previous);
+}),['true']);
+add('HIST-LARGE-EXPORT-ROUNDTRIP','P1','HISTORY',()=>isolatedHistory(key=>{
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[],activeCycleIds:[]});
+ const cycles=Array.from({length:20},(_,i)=>archiveFixture('cycle_large_'+i,'large_'+i,null,{answers:{note:'z'.repeat(56000)}}));
+ const payload=archivePayload(cycles);
+ return String(payload.length>1024*1024 && diag.reviewHistoryImport(payload).ok);
+}),['true']);
+add('HIST-OVER-10MB-REJECTED','P1','HISTORY',()=>isolatedHistory(key=>{
+ const payload=archivePayload([archiveFixture('cycle_huge','huge',null,{answers:{note:'X'.repeat(11*1024*1024)}})]);
+ return String(!diag.reviewHistoryImport(payload).ok);
+}),['true']);
+
 const failures=[];
 for (const t of tests) {
   let got;
