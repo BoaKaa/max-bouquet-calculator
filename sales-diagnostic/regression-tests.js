@@ -460,7 +460,7 @@ add('AUD-FU-05','P1','FOLLOWUP',()=>{
   reset('followup',{fu_effect:'better'});s.path=['fu_effect'];s.index=0;
   s.followupBase={result:{primaryCode:'BUILD_MARKET_TEST'},experimentPlan:{primaryCode:'BUILD_MARKET_TEST'}};
   diag.goNext();return s.path.join('|');
-},['fu_effect|fu_market_payment|fu_guardrail']);
+},['fu_effect|fu_market_payment']);
 add('AUD-HIST-01','P1','HISTORY',()=>{
   reset('build',{scope_name:'Товар',scope_goal:'new_sales',build_market:'unknown'});
   s.scopeId='audit-history-' + Date.now();s.activeCycleId=null;
@@ -1489,6 +1489,56 @@ add('HIST-OVER-10MB-REJECTED','P1','HISTORY',()=>isolatedHistory(key=>{
  const payload=archivePayload([archiveFixture('cycle_huge','huge',null,{answers:{note:'X'.repeat(11*1024*1024)}})]);
  return String(!diag.reviewHistoryImport(payload).ok);
 }),['true']);
+
+
+add('SAFETY-FU-CONFLICT-HARM-FIRST','P0','FOLLOWUP',()=>{
+ const v=classify({fu_done:'yes',fu_execution_match:'unknown',fu_guardrail:['money']});
+ return v.code+'|'+v.decision;
+},['FOLLOWUP_GUARDRAIL_FAIL|ROLLBACK']);
+add('SAFETY-FU-LOW-SAMPLE-HARM-FIRST','P0','FOLLOWUP',()=>{
+ const v=classify({fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'not_yet',fu_guardrail:['quality']});
+ return v.code;
+},['FOLLOWUP_GUARDRAIL_FAIL']);
+add('SAFETY-FU-CAP-SAFETY-FIRST','P0','FOLLOWUP',()=>{
+ const v=classify({fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'cap',fu_guardrail:['safety']});
+ return v.code;
+},['FOLLOWUP_GUARDRAIL_FAIL']);
+add('SAFETY-FU-BAD-COMPARISON-HARM-FIRST','P0','FOLLOWUP',()=>{
+ const v=classify({fu_done:'yes',fu_execution_match:'no',fu_sample_ready:'yes',fu_measurement_valid:'no',fu_guardrail:['load']});
+ return v.code;
+},['FOLLOWUP_GUARDRAIL_FAIL']);
+add('SAFETY-FU-DIFFERENT-CHANGE-HARM-FIRST','P0','FOLLOWUP',()=>{
+ const v=classify({fu_done:'different',fu_guardrail:['safety']});
+ return v.code;
+},['FOLLOWUP_GUARDRAIL_FAIL']);
+add('SAFETY-FU-NOT-EXECUTED-UNCHANGED','P1','FOLLOWUP',()=>{
+ const v=classify({fu_done:'no',fu_guardrail:['money']});
+ return v.code;
+},['FOLLOWUP_NOT_EXECUTED']);
+add('SAFETY-FU-ENTRY-ROUTE-GUARD-FIRST','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes'});s.path=['fu_done'];s.index=0;
+ diag.goNext();
+ return s.path[1];
+},['fu_guardrail']);
+add('SAFETY-FU-HARM-ROUTE-EARLY-STOP','P0','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_guardrail:['money']});
+ s.path=['fu_done','fu_guardrail'];s.index=1;
+ s.followupBase={result:{primaryCode:'ACCESS',userTitle:'Поток новых клиентов',diagnosticMode:'full'},experimentPlan:{primaryCode:'ACCESS'}};
+ diag.goNext();
+ return s.result?.followupCode+'|'+String(s.path.includes('fu_execution_match'));
+},['FOLLOWUP_GUARDRAIL_FAIL|false']);
+add('SAFETY-FU-NO-HARM-ROUTE-CONTINUES','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_done:'yes',fu_guardrail:['none']});
+ s.path=['fu_done','fu_guardrail'];s.index=1;
+ diag.goNext();return s.path[2];
+},['fu_execution_match']);
+add('SAFETY-FU-NO-REPEATED-GUARDRAIL','P1','FOLLOWUP',()=>{
+ reset('followup',{fu_effect:'better',fu_guardrail:['none']});
+ s.path=['fu_done','fu_guardrail','fu_execution_match','fu_sample_ready','fu_measurement_valid','fu_effect'];s.index=5;
+ s.followupBase={result:{primaryCode:'BUILD_MARKET_TEST'},experimentPlan:{primaryCode:'BUILD_MARKET_TEST'}};
+ diag.goNext();
+ return s.path.slice(-2).join('|')+'|'+s.path.filter(v=>v==='fu_guardrail').length;
+},['fu_effect|fu_market_payment|1']);
 
 const failures=[];
 for (const t of tests) {
