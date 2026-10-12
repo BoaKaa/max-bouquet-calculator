@@ -2052,6 +2052,109 @@ add('CAP-LEGACY-PLAN-NO-CAP-EXTRA-Q','P1','FOLLOWUP',()=>{
  return String(!s.path.includes('fu_limit_status')&&s.path[2]==='fu_execution_match');
 },['true']);
 
+
+/* Regression for owner-reported history and Follow-up UX */
+add('OWNER-HIST-SCOPE-NO-OBJECT','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+ const c=archiveFixture('cycle_owner1','owner1',null,{scope:{name:'Букеты',diagnosticMode:'build'}});
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[],legacyMigratedAt:'2026-10-12'});
+ diag.showHome();
+ return String(!!uiFind(n=>n.textContent?.includes('Букеты · создана')) &&
+ !uiFind(n=>n.textContent?.includes('[object Object]')));
+}),['true']);
+add('OWNER-HIST-FIRST-SECOND-DATETIME','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+ const old=archiveFixture('cycle_ownerold','ownerold',null,{createdAt:'2026-10-11T08:00:00Z',updatedAt:'2026-10-11T10:00:00Z'});
+ const young=archiveFixture('cycle_owneryoung','owneryoung',null,{createdAt:'2026-10-12T09:00:00Z',updatedAt:'2026-10-12T11:00:00Z'});
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[young,old],activeCycleIds:[],legacyMigratedAt:'2026-10-12'});
+ diag.showHome();
+ return String(!!uiFind(n=>n.textContent?.startsWith('Диагностика №1:'))&&
+  !!uiFind(n=>n.textContent?.startsWith('Диагностика №2:'))&&
+  !!uiFind(n=>n.textContent?.includes('создана 11.10.2026')&&n.textContent?.includes('обновлена')));
+}),['true']);
+add('OWNER-HIST-LINKED-CHILD-INDICATOR','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+ const p=archiveFixture('cycle_ownerparent','ownerparent',null,{createdAt:'2026-10-11T08:00:00Z'});
+ const c=archiveFixture('cycle_ownerchild','ownerchild',null,{parentCycleId:p.cycleId,createdAt:'2026-10-12T08:00:00Z'});
+ p.nextCycleId=c.cycleId;p.followups=[{followupId:'fu_owner'}];
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c,p],activeCycleIds:[],legacyMigratedAt:'2026-10-12'});
+ diag.showHome();
+ return String(!!uiFind(n=>n.textContent==='Продолжение диагностики №1')&&
+ !!uiFind(n=>n.textContent==='Повторных проверок результата: 1'));
+}),['true']);
+add('OWNER-HIST-WIPE-ALL-ACTIVE-AND-LEGACY','P0','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ const c=archiveFixture('cycle_owneractive','owneractive',null,{status:'ACTIVE'});
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[c.cycleId]});
+ const legacyKey='salesDiagnosticHistoryV1',prev=memory[legacyKey];
+ memory[legacyKey]=JSON.stringify([]);
+ const promptBefore=windowMock.prompt;windowMock.prompt=()=> 'УДАЛИТЬ';
+ try{
+  diag.showHome();
+  await uiFire(uiFind(n=>n.textContent==='Очистить всю историю…'),'click');
+  return String(diag.loadHistoryStore().cycles.length===0 &&
+   diag.loadHistoryStore().legacyMigratedAt && memory[legacyKey]===undefined &&
+   !uiFind(n=>n.textContent==='Очистить всю историю…') &&
+   !!uiFind(n=>n.textContent?.includes('Вся история очищена')));
+ }finally{
+  windowMock.prompt=promptBefore;
+  if(prev===undefined)delete memory[legacyKey];else memory[legacyKey]=prev;
+ }
+}),['true']);
+add('OWNER-HIST-WIPE-PROMPT-CANCEL-NO-CHANGE','P0','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ const c=archiveFixture('cycle_ownercancel','ownercancel',null,{status:'ACTIVE'});
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[c.cycleId]});
+ const raw=memory[key],old=windowMock.prompt;windowMock.prompt=()=> '';
+ try{
+  diag.showHome();await uiFire(uiFind(n=>n.textContent==='Очистить всю историю…'),'click');
+  return String(memory[key]===raw&&diag.loadHistoryStore().cycles.length===1);
+ }finally{windowMock.prompt=old}
+}),['true']);
+add('OWNER-HIST-WIPE-CONFIRM-CANCEL-NO-CHANGE','P0','HISTORY-UI',async()=>isolatedHistory(async key=>{
+ const c=archiveFixture('cycle_ownerrefuse','ownerrefuse');
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[]});
+ const raw=memory[key],old=windowMock.confirm;windowMock.confirm=()=> false;
+ try{
+  diag.showHome();await uiFire(uiFind(n=>n.textContent==='Очистить всю историю…'),'click');
+  return String(memory[key]===raw);
+ }finally{windowMock.confirm=old}
+}),['true']);
+add('OWNER-HIST-WIPE-QUOTA-FAIL-NO-CHANGE','P0','HISTORY',()=>isolatedHistory(key=>{
+ const c=archiveFixture('cycle_ownerquota','ownerquota');
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[]});
+ const raw=memory[key],old=localStorageMock.setItem;localStorageMock.setItem=()=>{throw Error('quota')};
+ let ok;try{ok=diag.clearAllHistory()}finally{localStorageMock.setItem=old}
+ return String(!ok&&memory[key]===raw&&diag.loadHistoryStore().cycles.length===1);
+}),['true']);
+add('OWNER-HIST-INVALID-STORAGE-PROTECTED','P0','HISTORY',()=>isolatedHistory(key=>{
+ memory[key]='{bad json';
+ return String(!diag.clearAllHistory()&&memory[key]==='{bad json');
+}),['true']);
+add('OWNER-FU-EMPTY-AND-NEXT-NO-DUPLICATE','P1','RESULT-UI',()=>isolatedHistory(key=>{
+ const c=archiveFixture('cycle_ownerfollow','ownerfollow');
+ c.result={...c.result,followup:true,proven:'',boundary:'',userTitle:'Пока мало данных',
+ userSummary:'Достигнут предел',next:'Выберите новый план.',
+ nextIfSuccess:'Выберите новый план.',nextIfFailure:'Выберите новый план.',
+ observationRule:'Выберите новый план.',
+ action:'Пересмотрите условия.',why:['Прошлый вывод: оформление','Достигнут лимит','Что делать дальше: новый план.']};
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[],legacyMigratedAt:'2026-10-12'});
+ const before=documentMock.getElementById('resultWhy').children.length;
+ const opened=diag.resumeCycle(c.cycleId);
+ const reasons=documentMock.getElementById('resultWhy').children.slice(before).map(n=>n.textContent);
+ const copied=diag.resultText(c.result);
+ return String(opened&&documentMock.getElementById('resultMeaningCard').hidden&&
+ documentMock.getElementById('resultDecisionCard').hidden&&
+ documentMock.getElementById('resultObservationBox').hidden&&
+ reasons.length===2&&copied.split('Выберите новый план.').length===2&&
+ documentMock.getElementById('resultNext').textContent==='Выберите новый план.');
+}),['true']);
+add('OWNER-HIST-RESET-THEN-IMPORT-BACKUP','P0','HISTORY',()=>isolatedHistory(key=>{
+ const c=archiveFixture('cycle_ownerrestore','ownerrestore');
+ memory[key]=JSON.stringify({schemaVersion:2,cycles:[c],activeCycleIds:[],legacyMigratedAt:'2026-10-12'});
+ const backup=archivePayload([c]);
+ const empty=diag.clearAllHistory();
+ const check=diag.reviewHistoryImport(backup);
+ const imported=check.ok&&diag.commitHistoryImport(backup,check.currentRaw);
+ return String(empty&&imported&&check.newCount===1&&
+ diag.loadHistoryStore().cycles[0]?.cycleId===c.cycleId);
+}),['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
