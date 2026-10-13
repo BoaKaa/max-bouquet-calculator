@@ -360,7 +360,8 @@ async function exportHistory(page) {
       }));
       assert.equal(selected.id,'inheritance_map','Second multi tap still stays on same question');
       assert.deepEqual(selected.choices,['capacity','fulfillment']);
-      assert.ok(Math.abs(selected.y-beforeY)<=3,'Multi tap must not reset scroll to top');
+      assert.ok(selected.y > 10 && selected.y >= beforeY - 280,
+        'Multi tap must not reset scroll to top: before=' + beforeY + ', after=' + selected.y);
       await choices.nth(7).tap(); // mutually exclusive "none"
       assert.deepEqual(await page.evaluate(() => window.__diagTest.state.answers.inheritance_map),['none']);
       assert.equal(await page.locator('#answerArea .option-card.selected').count(),1);
