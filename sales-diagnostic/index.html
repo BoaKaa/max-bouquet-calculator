@@ -154,6 +154,17 @@ button:focus-visible, input:focus-visible {
 .question-title { font-size: clamp(27px, 6vw, 40px); max-width: 18ch; }
 .question-help { color: var(--muted); max-width: 62ch; margin-bottom: 24px; }
 .answer-area { display: grid; gap: 10px; }
+.multi-select-hint {
+  margin: 0 0 14px;
+  padding: 12px 15px;
+  border-left: 4px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+}
 .option-card {
   position: relative;
   width: 100%;
@@ -314,6 +325,7 @@ button:focus-visible, input:focus-visible {
         <div class="eyebrow" id="questionEyebrow"></div>
         <h1 class="question-title" id="questionTitle"></h1>
         <p class="question-help" id="questionHelp"></p>
+        <p class="multi-select-hint" id="multiSelectHint" hidden>Можно выбрать один или несколько вариантов ответа. Затем нажмите «Далее».</p>
         <div id="answerArea" class="answer-area"></div>
       </div>
       <div class="wizard-actions">
@@ -464,7 +476,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.27-dev';
+  const APP_VERSION = '1.13.28-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3465,6 +3477,11 @@ button:focus-visible, input:focus-visible {
     backButton.disabled = state.index === 0;
     backButton.addEventListener('click', () => { state.index--; renderQuestion(); });
     nextButton.addEventListener('click', goNext);
+    const multiChoice = question.type === 'multi';
+    const singleChoice = question.type === 'single';
+    document.getElementById('multiSelectHint').hidden = !multiChoice;
+    // One tap advances single-choice questions. Text/number and multi keep "Next".
+    nextButton.hidden = singleChoice;
 
     const current = state.answers[id];
     if (question.type === 'text' || question.type === 'number') {
@@ -3506,6 +3523,7 @@ button:focus-visible, input:focus-visible {
         const selected = question.type === 'multi' ? Array.isArray(current) && current.includes(o.value) : current === o.value;
         if (selected) b.classList.add('selected');
         b.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        if (multiChoice) b.setAttribute('aria-describedby', 'multiSelectHint');
         b.innerHTML = `<span class="option-dot" aria-hidden="true"></span><span class="option-text"><strong>${o.label}</strong>${o.hint ? `<small>${o.hint}</small>` : ''}</span>`;
         b.addEventListener('click', () => {
           const previous = JSON.stringify(state.answers[id]);
@@ -3520,7 +3538,21 @@ button:focus-visible, input:focus-visible {
             }
           } else state.answers[id] = o.value;
           if (previous !== JSON.stringify(state.answers[id])) invalidateDownstreamAnswers(state.index);
-          renderQuestion(o.value);
+          if (multiChoice) {
+            // Never rebuild or scroll on checkbox-like selection: preserve the
+            // tap location, focused option and position on long mobile pages.
+            const selectedValues = state.answers[id] || [];
+            answerArea.querySelectorAll('.option-card').forEach((button, index) => {
+              const isSelected = selectedValues.includes(options[index].value);
+              button.classList.toggle('selected', isSelected);
+              button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+            });
+            nextButton.disabled = selectedValues.length === 0;
+          } else {
+            // Back remains available on the next question. A changed answer
+            // passes through the same downstream-invalidation logic as before.
+            goNext();
+          }
         });
         answerArea.appendChild(b);
         if (focusOptionValue===o.value) focusedChoice=b;
