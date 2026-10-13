@@ -2228,6 +2228,76 @@ add('OWNER-COUNTS-INTERFACE-LABELS','P1','LANG',()=>{
  !html.includes('Для доли нужны оба числа: число событий'));
 },['true']);
 
+
+/* Owner finding: a completed but unsuccessful intervention must offer
+   one grounded next investigation, and a linkable cycle, not a dead end. */
+function failedFollowupFixture(code='ACCESS',clue='at_step',effect='same') {
+ reset('followup',{
+   fu_done:'yes',fu_guardrail:['none'],fu_execution_match:'no',
+   fu_sample_ready:'yes',fu_measurement_valid:'yes',
+   fu_effect:effect,fu_failure_location:clue
+ });
+ s.followupBase={
+   answers:{scope_goal:'new_sales',scope_model:'PRODUCT',gate_legal:'no'},
+   result:{primaryCode:code,diagnosticMode:'full',userTitle:'Первоначальная проблема'},
+   experimentPlan:{primaryCode:code,changeOneThing:'Первое действие',experimentId:'failed_test'}
+ };
+ return diag.classifyFollowup();
+}
+add('OWNER-FAIL-NEXT-QUESTION-ROUTE','P1','FOLLOWUP',()=>{
+ failedFollowupFixture('ACCESS','before');
+ s.path=['fu_effect'];s.index=0;
+ diag.goNext();
+ return s.path.join('|');
+},['fu_effect|fu_failure_location']);
+add('OWNER-FAIL-SAME-RESULT-PRODUCES-NEXT','P1','FOLLOWUP',()=>{
+ const classified=failedFollowupFixture('PURCHASE_FRICTION','at_step');
+ const next=diag.buildStateTransition(classified).nextResult;
+ return String(classified.code==='FOLLOWUP_FAILED' &&
+   next?.experimentPlan?.planType==='EVIDENCE_COLLECTION' &&
+   next?.experimentPlan?.nonCommercialOnly===true &&
+   next?.primaryCode==='PURCHASE_FRICTION' &&
+   next?.action.includes('обращени') &&
+   next?.action!==diag.experimentPlanFor(next).changeOneThing &&
+   next?.confidence==='PRELIMINARY');
+},['true']);
+add('OWNER-FAIL-DIFFERENT-CLUES-DIFFERENT-ACTIONS','P1','FOLLOWUP',()=>{
+ const before=diag.followupFailureAdvice('ACCESS','before').action;
+ const during=diag.followupFailureAdvice('ACCESS','at_step').action;
+ const after=diag.followupFailureAdvice('ACCESS','after').action;
+ const money=diag.followupFailureAdvice('ECONOMICS','at_step').action;
+ const delivery=diag.followupFailureAdvice('FULFILLMENT','at_step').action;
+ const unknown=diag.followupFailureAdvice('SUB_RENEWAL','unknown').action;
+ return String(new Set([before,during,after,money,delivery,unknown]).size===6 &&
+   money.includes('расход') && delivery.includes('сбо') &&
+   unknown.includes('клиент'));
+},['true']);
+add('OWNER-FAIL-HARM-NO-UNSAFE-NEW-CYCLE','P0','FOLLOWUP',()=>{
+ failedFollowupFixture('ACCESS','at_step');
+ s.answers.fu_guardrail=['money'];
+ const cls=diag.classifyFollowup(),trans=diag.buildStateTransition(cls);
+ return cls.code+'|'+String(trans.nextResult===null);
+},['FOLLOWUP_GUARDRAIL_FAIL|true']);
+add('OWNER-FAIL-MISSING-SAMPLE-NO-NEW-CYCLE','P1','FOLLOWUP',()=>{
+ failedFollowupFixture('ACCESS','at_step');
+ s.answers.fu_sample_ready='not_yet';
+ const cls=diag.classifyFollowup(),trans=diag.buildStateTransition(cls);
+ return cls.code+'|'+String(trans.nextResult===null);
+},['FOLLOWUP_INSUFFICIENT_EVIDENCE|true']);
+add('OWNER-FAIL-NUMERIC-CONTRADICTION-SKIPS-RECHECK','P1','FOLLOWUP',()=>{
+ failedFollowupFixture('PURCHASE_FRICTION','after','same');
+ s.followupBase.experimentPlan.primaryMetricBefore=3;
+ s.followupBase.experimentPlan.primaryMetricDenominatorBefore=10;
+ s.answers.fu_numeric_after=8;
+ s.answers.fu_numeric_denominator_after=10;
+ s.path=['fu_effect'];s.index=0;diag.goNext();
+ return String(!s.path.includes('fu_failure_location'));
+},['true']);
+add('OWNER-FAIL-RESULT-PLAIN-CTA','P1','UX',()=>String(
+ html.includes("'Открыть следующий шаг'") &&
+ html.includes('fu_failure_location') &&
+ html.includes('Предыдущее действие не улучшило главный результат.')),['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
