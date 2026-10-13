@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
+import {runInNewContext} from 'node:vm';
 import gate from '../src/worker.mjs';
 globalThis.crypto ||= webcrypto;
 const env={VK_APP_ID:'12345',VK_GROUP_ID:'45678',VK_GROUP_TOKEN:'mock-group-credential',SESSION_SECRET:'x'.repeat(40),
@@ -135,4 +136,28 @@ test('locked origin offers same-origin history JSON download without exposing ap
   assert.doesNotMatch(h,/DIAGNOSIS/);
   assert.match(r.headers.get('content-security-policy'),/script-src 'nonce-/);
   assert.match(r.headers.get('cache-control'),/no-store/);
+});
+
+test('locked-screen history export JSON matches diagnostic import contract',async()=>{
+  const response=await run('/'),html=await response.text();
+  const script=html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(script,'export script exists');
+  const saved={schemaVersion:2,cycles:[{cycleId:'cycle_abc',status:'ACTIVE',answers:{a:1}}]};
+  const message={textContent:''};let handler,downloaded,clicked=false,downloadName;
+  const button={addEventListener:(event,fn)=>{assert.equal(event,'click');handler=fn;}};
+  const dom={
+    getElementById:id=>id==='download-history'?button:id==='history-message'?message:null,
+    createElement:()=>({href:'',set download(v){downloadName=v;},get download(){return downloadName;},click(){clicked=true;},remove(){}}),
+    body:{appendChild(){}}
+  };
+  const fakeUrl={createObjectURL:b=>{downloaded=b;return 'blob:local';},revokeObjectURL(){}};
+  runInNewContext(script,{document:dom,localStorage:{getItem:key=>key==='salesDiagnosticHistory:v2'?JSON.stringify(saved):null},Blob,URL:fakeUrl,Date,JSON,setTimeout:()=>0});
+  handler();
+  assert.equal(clicked,true);
+  assert.equal(downloadName,'sales-diagnostic-history.json');
+  const exported=JSON.parse(await downloaded.text());
+  assert.equal(exported.exportVersion,1);
+  assert.equal(exported.historySchemaVersion,2);
+  assert.deepEqual(exported.cycles,saved.cycles);
+  assert.ok(Number.isFinite(Date.parse(exported.exportedAt)));
 });
