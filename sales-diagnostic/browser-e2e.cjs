@@ -604,7 +604,8 @@ async function exportHistory(page) {
       assert.equal(await row.count(),9,'All nine saved closed cycles must remain in DOM');
       assert.equal(await row.filter({visible:true}).count(),6,
         'Initially show only six closed cycles');
-      const more=page.getByRole('button',{name:/Показать остальные завершённые/});
+      const more=page.locator('.reason-list > button[aria-expanded]');
+      assert.match(await more.innerText(),/Показать остальные завершённые/);
       assert.ok(await more.isVisible(),'Show more must appear for the extra cycles');
       assert.equal(await more.getAttribute('aria-expanded'),'false');
       await more.tap();
