@@ -7345,8 +7345,11 @@ function finalizePrecision() {
             startExperimentButton.hidden=true;
             const saveButton=document.getElementById('saveResultButton');
             if(saveButton) saveButton.hidden=true;
-            const inputs=experimentCard.querySelectorAll('input');
-            inputs.forEach(input=>{input.disabled=true;});
+            // The plan has six known editable fields; freeze all of them,
+            // including currently hidden optional inputs, after a successful save.
+            ['experimentMetricBefore','experimentDenominatorBefore','experimentPlannedCount',
+              'experimentTimeCap','experimentBudgetCap','experimentExposureCap']
+              .forEach(id=>{const input=document.getElementById(id);if(input)input.disabled=true;});
             guide.textContent='Проверка уже начата. Исходные условия сохранены и больше не редактируются в этом цикле.';
             shortcutToFollowup();
           }
