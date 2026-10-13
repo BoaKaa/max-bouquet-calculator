@@ -620,6 +620,78 @@ async function exportHistory(page) {
       log('stage 14 mobile: all older closed history cycles expand and collapse');
     }
 
+
+    // Stage 14: text enlargement on a narrow touch viewport must not force
+    // horizontal scrolling on home, question, result, or history.
+    {
+      const {page,context,errors}=await newPage(browser,{
+        viewport:{width:320,height:640},isMobile:true,hasTouch:true
+      });
+      // Emulates text-enlargement preferences rather than claiming that the
+      // CSS override is identical to every platform's native zoom.
+      await page.addStyleTag({content:`
+        .brand-text strong, .top-reset, .mode-card strong, .mode-card span,
+        .mode-card .arrow, .history-row strong, .history-meta, .status-pill,
+        .history-actions button, .result-actions button, .plan-action-grid button,
+        .microcopy, .note-box, .input-note, .result-card p,
+        .option-text strong, .option-text small, .question-help,
+        .progress-meta, .result-summary, .footer, .lead {
+          font-size: 28px !important; line-height: 1.35 !important;
+        }
+        h1, .question-title, .result-hero h1 {
+          font-size: 42px !important; line-height: 1.18 !important;
+        }
+        h2 {font-size: 34px !important; line-height: 1.25 !important;}
+      `});
+      const noOverflow=async where=>{
+        const state=await page.evaluate(()=>({
+          overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
+          root:document.documentElement.scrollWidth,
+          viewport:document.documentElement.clientWidth
+        }));
+        assert.ok(state.overflow<=2,where+': unexpected horizontal scroll '+JSON.stringify(state));
+      };
+      await noOverflow('home / large text');
+      await page.getByRole('button',{name:/Проверить текущие продажи/}).tap();
+      await noOverflow('question / large text');
+      await page.locator('#brandButton').tap(); // no recorded answers yet
+      await driveDiagnosis(page,{mode:'BUILD',modelIndex:0,name:'Крупный шрифт'});
+      await noOverflow('result and experiment / large text');
+      await page.getByRole('button',{name:'Сохранить план на потом'}).tap();
+      await page.locator('#restartResultButton').tap();
+      await noOverflow('history and import / large text');
+      checkNoError(page,errors,'stage 14 large text 320px');
+      await context.close();
+      log('stage 14 mobile: 320px enlarged text home, question, result and history without horizontal scrolling');
+    }
+
+    // Stage 14: corrupt history must not be presented as an empty archive,
+    // nor offer apparently functional export/import controls.
+    {
+      const {page,context,errors}=await newPage(browser,{
+        viewport:{width:320,height:640},isMobile:true,hasTouch:true
+      });
+      await page.evaluate(()=>localStorage.setItem('salesDiagnosticHistory:v2','{invalid-json'));
+      await page.reload();
+      assert.ok(await page.getByRole('alert').isVisible(),'Corrupt store must produce an alert');
+      assert.match(await page.getByRole('alert').innerText(),/не считайте эту историю пустой/i);
+      assert.equal(await page.getByText(/Пока нет сохранённых проверок/).count(),0,
+        'Corrupt history cannot be labelled as an empty history');
+      assert.equal(await page.getByRole('button',{name:'Экспортировать историю'}).isDisabled(),true);
+      assert.equal(await page.getByRole('button',{name:'Проверить выбранный файл'}).isDisabled(),true);
+      assert.equal(await page.getByLabel('Выберите файл экспорта истории').isDisabled(),true);
+      assert.equal(await page.evaluate(()=>localStorage.getItem('salesDiagnosticHistory:v2')),
+        '{invalid-json','Viewing a corrupt archive must not modify its contents');
+      await page.evaluate(()=>localStorage.removeItem('salesDiagnosticHistory:v2'));
+      await page.reload();
+      assert.ok(await page.getByText(/Пока нет сохранённых проверок/).isVisible(),
+        'A genuinely empty history needs a simple empty-state explanation');
+      assert.equal(await page.getByRole('button',{name:'Проверить выбранный файл'}).isEnabled(),true);
+      checkNoError(page,errors,'stage 14 corrupt vs empty history');
+      await context.close();
+      log('stage 14 mobile: corrupt history shows alert and locks misleading actions; fresh history works');
+    }
+
     // 4. Narrow viewport and keyboard navigation, without horizontal scrolling.
     {
       const { page, context, errors } = await newPage(browser, { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
