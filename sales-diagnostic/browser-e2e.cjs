@@ -67,7 +67,7 @@ async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Т�
       if (step === 2) ix = Math.min(modelIndex, n - 1); // Scope business model
       if (step === 4) ix = mode === 'BUILD' ? Math.min(2, n - 1)
         : mode === 'HYBRID' ? Math.min(3, n - 1) : 0; // Real business maturity
-      if (legalRisk && /вопрос по безопасности или обязательным требованиям/i.test(title)) ix = 1;
+      if (legalRisk && /вопрос по безопасности или обязательным требованиям|сомнения.*обязательные правила/i.test(title)) ix = 1;
       // In BUILD, never invent paid transactions in the browser smoke.
       const eyebrow = (await page.locator('#questionEyebrow').innerText()).trim();
       if (mode === 'BUILD' && (/после того, как.*показали/i.test(title) || /что произошло.*показали/i.test(eyebrow))) ix = n - 1;
