@@ -6,7 +6,7 @@ Frozen diagnostic: `sales-diagnostic/index.html`, v1.13.32-dev. The Worker at a 
 
 - Official [VK API schema](https://github.com/VKCOM/vk-api-schema/blob/master/groups/methods.json) lists `groups.getMembers` with `filter=donut` and accepts `group` access-token type; the filtered response schema permits member objects with an integer `id`. The gate handles both integer IDs and objects with integer `id`.
 - The [VK ID SDK](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts) implements PKCE `s256`, code exchange at `/oauth2/auth`, identity lookup at `/oauth2/user_info`. The gate follows the same endpoints.
-- Mock tests do not replace live VK tests. Owner-confirmed LIVE positive: a paid test account entered the diagnostic on this Worker. LIVE negative: an unsubscribed administrator was redirected to `/?error=no_subscription` and saw only the locked screen. Subscription expiry/revocation and the new logout/account selection remain to be tested live.
+- Mock tests do not replace live VK tests. Owner-confirmed LIVE positive: a paid test account entered the diagnostic on this Worker, signed out using both the link and visible button, then signed in successfully again. LIVE negative: an unsubscribed administrator was redirected to `/?error=no_subscription` and saw only the locked screen. Subscription expiry/revocation remains to be tested live.
 - Protected origin denies `/`, `/index.html` and every other asset without current membership; `assets.run_worker_first=true`. GitHub source and legacy HTMLPreview URL remain public by deliberate business decision.
 
 ## Staging deployment through Cloudflare Builds (owner-approved, 13 October 2026)
@@ -24,19 +24,19 @@ The dashboard shows runtime `VK_APP_ID=54820831`, `VK_GROUP_ID=50026534`, encryp
 5. Keep the **community access token** (`VK_GROUP_TOKEN`) and a newly generated random `SESSION_SECRET` of at least 32 strong random characters **only in Cloudflare Worker secrets**, not in GitHub, chat, commit messages, screenshots or plaintext Wrangler vars. If deployment is explicitly approved and credentials exist, use `npx wrangler secret put VK_GROUP_TOKEN` and `npx wrangler secret put SESSION_SECRET` from `access-gate/` (or Cloudflare dashboard Worker → Settings → Variables and Secrets). Use actual secret-type bindings, not regular vars.
 6. After explicit staging permission: from `access-gate/`, run `npm install`, `npm test`, `npm run build` and `npx wrangler deploy`. Build copies unchanged source HTML into ignored `dist/index.html`; Worker protects it via `ASSETS`. **Do not run these commands as a public production launch by default.**
 
-## Local logout and account switching (pending live acceptance)
+## Local logout and owner access (staging)
 
-- Authenticated diagnostic: a small **«Выйти»** link is injected into the top bar by the Worker HTMLRewriter, without changing the frozen diagnostic HTML. It invokes `GET /auth/logout`, expires both `sd_session` and `sd_vk_flow` cookies, and redirects to `/?status=signed_out`.
-- Locked screen: **«Войти под другим аккаунтом VK»** invokes `GET /auth/switch`, creates a fresh PKCE/state flow, requests official VK ID `prompt=select_account`, and expires an old app session. Ordinary `/auth/start` also expires an old app session.
-- This is logout from the diagnostic website, not a global VK ID / VK logout. VK ID controls its own identity-provider cookies and may require selecting an alternate profile or using a separate browser profile.
-- Logout does not clear localStorage; same-origin history remains available for export.
-- Denied non-subscriber screen explicitly explains why access was refused.
-- Next: verify automated tests, Cloudflare Ready/traffic, and live sign-out/account selection.
+- Live-tested: **«Выйти»** in the diagnostic top bar clears `sd_session` and `sd_vk_flow` cookies. The owner confirmed sign-out and re-login under an active VK Donut test account. The signed-out screen retains access to same-origin local-history export; logout does not delete localStorage.
+- The separate **«Войти под другим аккаунтом VK»** button and `/auth/switch` endpoint were removed as unnecessary UX. Only standard `/auth/start` remains; a normal login starts a fresh PKCE flow and expires any previous diagnostic session. Logging out of the diagnostic is not a global VK logout.
+- Live-tested negative: an administrative personal VK account without a paid subscription is denied. This is correct default behavior. Administration in the VK community does **not** automatically grant access.
+- For a single authorized owner, configure optional Cloudflare runtime variable `VK_OWNER_USER_ID` with the **numeric personal VK user ID**. The Worker compares it to an identity verified by VK ID and permits only that matching user without Donut membership. It does not permit all admins. The variable is not required for public subscribers. The user must configure their own account ID; never enter a VK access token in this field.
+- Owner bypass still requires a live test after configuration; do not mark it tested based solely on mocks.
+- Next remaining security tests: direct `/index.html` denial without subscription, expired Donut membership including already-open tabs, and export while access denied.
 
 ## Staging acceptance — do not claim success until witnessed
 
-- Account A: live paid subscriber successfully completes VK ID login and sees HTML. API membership response and correct community must be checked server-side without logging access tokens.
-- Account B: non-paying account receives denial both for `/` and `/index.html`, despite forwarding of the URL; check unknown routes and no direct asset bypass.
+- Account A (LIVE PASS): live paid subscriber completed VK ID login and saw HTML. Also signed out and signed back in successfully. API membership response and correct community must be checked server-side without logging access tokens.
+- Account B (PARTIAL LIVE PASS): non-paying administrator received `?error=no_subscription` and was denied HTML at `/`. Direct `/index.html`, unknown routes, and asset bypass still require live verification.
 - Account A after a real paid-access expiry: check current VK status and deny new loads; an open tab rechecks about every 10 minutes and on return. Billing cancellation **before** expiry may leave current paid time; the authoritative criterion is current Donut status.
 - Owner login: only exact configured numeric personal VK ID bypasses membership after identity verification; a different account must not.
 - VK timeout/API error, malformed response or revoked token: fail closed with an explanatory screen.
