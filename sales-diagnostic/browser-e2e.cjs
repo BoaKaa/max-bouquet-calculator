@@ -502,6 +502,35 @@ async function exportHistory(page) {
       log('320px touch: single auto-advance + Back, multi no-scroll + multiple selection + explicit Next');
     }
 
+
+    // Stage 14: inadvertent taps on header/navigation must not discard a
+    // questionnaire in progress without explicit confirmation.
+    {
+      const {page,context,errors}=await newPage(browser,{
+        viewport:{width:320,height:640},isMobile:true,hasTouch:true
+      });
+      await page.getByRole('button',{name:/Проверить текущие продажи/}).click();
+      await page.locator('#answerArea .option-card').first().tap();
+      assert.equal(await page.evaluate(()=>window.__diagTest.state.path[
+        window.__diagTest.state.index]),'scope_name');
+      page.once('dialog',async d=>{
+        assert.equal(d.type(),'confirm');
+        assert.match(d.message(),/будут потеряны/i);
+        await d.dismiss();
+      });
+      await page.locator('#resetButton').tap();
+      assert.equal(await page.evaluate(()=>window.__diagTest.state.answers.scope_goal),
+        'new_sales','Cancel must preserve question answers');
+      assert.equal(await page.evaluate(()=>window.__diagTest.state.path[
+        window.__diagTest.state.index]),'scope_name','Cancel must preserve place in questionnaire');
+      page.once('dialog',async d=>{assert.equal(d.type(),'confirm');await d.accept();});
+      await page.locator('#brandButton').tap();
+      assert.ok(await page.locator('#homeTitle').isVisible(),'Confirm must return home');
+      checkNoError(page,errors,'stage 14 accidental exit mobile');
+      await context.close();
+      log('stage 14 mobile: accidental exit rejected, answers preserved, confirmed exit resets');
+    }
+
     // 4. Narrow viewport and keyboard navigation, without horizontal scrolling.
     {
       const { page, context, errors } = await newPage(browser, { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
