@@ -9,7 +9,7 @@
     "run_worker_first": true
   },
   "vars": {
-    "VK_APP_ID": "SET_VK_ID_APP_ID",
-    "VK_GROUP_ID": "SET_VK_COMMUNITY_ID"
+    "VK_APP_ID": "54820831",
+    "VK_GROUP_ID": "50026534"
   }
 }
