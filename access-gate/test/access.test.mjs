@@ -166,7 +166,7 @@ test('subscription offer appears for lost membership or expired return, not for 
   assert.doesNotMatch(unavailableHtml,/Подписаться через VK Donut/);
  }finally{members=[10];apiBroken=false;}
 });
-test('gate injects visible sign-out into topbar without changing frozen diagnostic HTML',async()=>{
+test('gate shows explicit logout only on home, not in questions, result or history details',async()=>{
  const old=globalThis.HTMLRewriter,inserted={};
  globalThis.HTMLRewriter=class{
   on(selector,handler){
@@ -178,11 +178,36 @@ test('gate injects visible sign-out into topbar without changing frozen diagnost
  try{
   members=[10];const {end}=await signIn(),c=jar(end);
   assert.equal((await run('/',c)).status,200);
-  assert.match(inserted['.topbar'],/href="\/auth\/logout"/);
-  assert.match(inserted['.topbar'],/>Выйти<\/a>/);
-  assert.match(inserted['head'],/flex-wrap:wrap/);
+  assert.match(inserted['.topbar'],/href="\/auth\/logout" hidden/);
+  assert.match(inserted['.topbar'],/>Выйти из диагностики<\/a>/);
+  assert.match(inserted['head'],/\.sd-gate-logout\[hidden\]\{display:none!important\}/);
   assert.match(inserted['head'],/max-width:420px/);
   assert.match(inserted['body'],/\/api\/access/);
+  const js=inserted['body'].replace(/^<script>/,'').replace(/<\/script>$/,'');
+  let mode='home',observer,observerTarget,observerOpts,timerDelay;
+  const button={hidden:true};
+  const app={querySelector(selector){assert.equal(selector,'#modeGrid');return mode==='home'?{}:null;}};
+  const document={
+   querySelector:selector=>selector==='.sd-gate-logout'?button:null,
+   getElementById:id=>id==='app'?app:null,
+   addEventListener:(event,callback)=>{assert.equal(event,'visibilitychange');assert.equal(typeof callback,'function');},
+  };
+  const MutationObserver=class{
+    constructor(callback){observer=callback;}
+    observe(target,opts){observerTarget=target;observerOpts=opts;}
+  };
+  runInNewContext(js,{document,MutationObserver,setInterval:(fn,ms)=>{timerDelay=ms;},fetch:()=>{throw Error('should not poll immediately');},location:{replace(){}}});
+  assert.equal(button.hidden,false,'main menu shows logout');
+  assert.equal(observerTarget,app);
+  assert.equal(observerOpts.childList,true);
+  assert.equal(observerOpts.subtree,undefined);
+  assert.equal(timerDelay,600000,'access polling retained');
+  for(const screen of ['question','result','plan','followup','import','history-detail']){
+    mode=screen;observer();
+    assert.equal(button.hidden,true,screen+' hides logout');
+  }
+  mode='home';observer();
+  assert.equal(button.hidden,false,'return to main menu restores logout');
   assert.equal((await run('/index.html',c)).status,200);
  }finally{globalThis.HTMLRewriter=old;}
 });
