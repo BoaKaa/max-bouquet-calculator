@@ -8,7 +8,7 @@ ASSETS:{fetch:async()=>new Response('<html><body>DIAGNOSIS</body></html>')}};
 class Rewriter{on(){return this;}transform(r){return r;}}
 globalThis.HTMLRewriter=Rewriter;
 const host='https://preview.invalid';
-let members=[10],requests=[],apiBroken=false,wrongIdentity=false;
+let members=[10],requests=[],apiBroken=false,wrongIdentity=false,memberObjects=false,invalidMember=false;
 globalThis.fetch=async(input,opts)=>{
  const url=new URL(String(input));requests.push({url,opts});
  if(apiBroken)throw Error('unavailable');
@@ -16,17 +16,17 @@ globalThis.fetch=async(input,opts)=>{
  if(url.pathname==='/oauth2/user_info')return Response.json({user:{user_id:wrongIdentity?'11':'10'}});
  if(url.pathname==='/method/groups.getMembers'){
   const offset=Number(url.searchParams.get('offset'));
-  return Response.json({response:{count:members.length,items:members.slice(offset,offset+1000)}});
+  const page=members.slice(offset,offset+1000);return Response.json({response:{count:members.length,items:invalidMember?[{id:'10'}]:memberObjects?page.map(id=>({id})):page}});
  }
  throw Error('unexpected remote');
 };
 const run=(p,c='',extra={})=>gate.fetch(new Request(host+p,{headers:c?{cookie:c}:{}}),{...env,...extra});
 const jar=r=>r.headers.getSetCookie().map(x=>x.split(';')[0]).join('; ');
-async function signIn(){
+async function signIn(extra={}){
  const start=await run('/auth/start');
  const uri=new URL(start.headers.get('location'));
  const path='/auth/callback?state='+encodeURIComponent(uri.searchParams.get('state'))+'&code=abc&device_id=def';
- return {start,uri,flow:jar(start),end:await run(path,jar(start))};
+ return {start,uri,flow:jar(start),end:await run(path,jar(start),extra)};
 }
 test('no session never serves the application',async()=>{
  requests=[];const r=await run('/');assert.doesNotMatch(await r.text(),/DIAGNOSIS/);
@@ -81,4 +81,58 @@ test('unrecognized paths and incorrect configuration are refused',async()=>{
 test('logout expires cookie',async()=>{
  const {end}=await signIn(),r=await run('/auth/logout',jar(end));
  assert.match(r.headers.get('set-cookie'),/Max-Age=0/);
+});
+
+test('official filterResponse supports member objects with integer id',async()=>{
+  members=[10];memberObjects=true;requests=[];
+  try{
+    const {end}=await signIn();
+    assert.equal(end.headers.get('location'),'/');
+    const c=jar(end);
+    assert.equal((await run('/api/access',c)).status,200);
+    assert.equal(requests.some(x=>x.url.pathname==='/method/groups.getMembers'&&x.url.searchParams.get('filter')==='donut'),true);
+  }finally{memberObjects=false;}
+});
+test('unexpected member objects fail closed instead of granting access',async()=>{
+  invalidMember=true;members=[10];
+  try{
+    const {end}=await signIn();
+    assert.equal(end.headers.get('location'),'/?error=vk_unavailable');
+    assert.doesNotMatch(jar(end),/sd_session=/);
+  }finally{invalidMember=false;}
+});
+test('owner bypass only works for matching verified VK identity',async()=>{
+  members=[];requests=[];
+  const {end}=await signIn({VK_OWNER_USER_ID:'10'});
+  assert.equal(end.headers.get('location'),'/');
+  const c=jar(end);
+  assert.equal((await run('/api/access',c,{VK_OWNER_USER_ID:'10'})).status,200);
+  assert.equal(requests.some(x=>x.url.pathname==='/method/groups.getMembers'),false);
+  assert.equal((await run('/api/access',c,{VK_OWNER_USER_ID:'11'})).status,403);
+  wrongIdentity=true;
+  try{
+    const {end:forged}=await signIn({VK_OWNER_USER_ID:'10'});
+    assert.equal(forged.headers.get('location'),'/?error=vk_unavailable');
+  }finally{wrongIdentity=false;members=[10];}
+});
+test('expired signed session cannot bypass gate',async()=>{
+  members=[10];
+  const {end}=await signIn(),c=jar(end);
+  const realNow=Date.now;
+  Date.now=()=>realNow()+13*3600*1000;
+  try{
+    assert.equal((await run('/api/access',c)).status,403);
+    assert.doesNotMatch(await(await run('/index.html',c)).text(),/DIAGNOSIS/);
+  }finally{Date.now=realNow;}
+});
+test('locked origin offers same-origin history JSON download without exposing app',async()=>{
+  const r=await run('/'),h=await r.text();
+  assert.equal(r.status,200);
+  assert.match(h,/download-history/);
+  assert.match(h,/salesDiagnosticHistory:v2/);
+  assert.match(h,/historySchemaVersion:2/);
+  assert.match(h,/sales-diagnostic-history.json/);
+  assert.doesNotMatch(h,/DIAGNOSIS/);
+  assert.match(r.headers.get('content-security-policy'),/script-src 'nonce-/);
+  assert.match(r.headers.get('cache-control'),/no-store/);
 });
