@@ -2298,6 +2298,23 @@ add('OWNER-FAIL-RESULT-PLAIN-CTA','P1','UX',()=>String(
  html.includes('fu_failure_location') &&
  html.includes('Предыдущее действие не улучшило главный результат.')),['true']);
 
+
+add('STAGE14-HEADER-CONFIRMS-UNSAVED-ANSWERS','P1','UX',()=>{
+ const previousConfirm=windowMock.confirm;
+ try {
+   reset('full',{scope_goal:'new_sales'},['scope_goal','scope_name']);s.index=1;
+   const header=nodes.get('resetButton');
+   if(!header?._events?.click?.length)return 'no handler';
+   let asked=0;
+   windowMock.confirm=()=>{asked++;return false;};
+   header._events.click[0]();
+   const preserved=s.mode==='full'&&s.answers.scope_goal==='new_sales'&&s.index===1;
+   windowMock.confirm=()=>true;
+   header._events.click[0]();
+   return String(preserved&&asked===1&&s.mode===null&&Object.keys(s.answers).length===0);
+ }finally{windowMock.confirm=previousConfirm;}
+},['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
