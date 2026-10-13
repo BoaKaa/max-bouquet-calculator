@@ -1,28 +1,44 @@
-# VK Donut access gate — pilot (not deployed)
+# VK Donut access gate — pilot, not deployed
 
-The diagnostic `sales-diagnostic/index.html` is unchanged. Cloudflare Workers handles VK ID login, validates identity via VK ID `/oauth2/user_info`, and checks the community subscriber list with VK API `groups.getMembers?filter=donut`. The community token remains on the Worker server. HTML is only served after a fresh Donut check.
+Frozen diagnostic: `sales-diagnostic/index.html`, v1.13.32-dev. The Worker at a separate access URL authenticates with VK ID, checks an active VK Donut subscription using the VK API and only then serves the original HTML. No main branch changes.
 
-## Owner setup — required before live validation
+## What is verified and what is not (13 October 2026)
 
-1. Create a VK ID **web application**, register the exact HTTPS redirect `https://YOUR-WORKER-DOMAIN/auth/callback`, and copy the numerical App ID.
-2. Find the numerical **VK community ID** and enable VK Donut. Generate a **community access token** with permissions to call `groups.getMembers` with `filter=donut`. The exact availability of this combination must be confirmed against the real community and a real subscriber.
-3. Optionally set `VK_OWNER_USER_ID` to **your numerical personal VK account ID** in Worker vars. This account can enter after verified VK ID login without purchasing a subscription to its own community; other users still require VK Donut.
-4. In `access-gate/wrangler.jsonc`, set numeric `VK_APP_ID` and `VK_GROUP_ID`. From `access-gate/` run `npx wrangler secret put VK_GROUP_TOKEN` and `npx wrangler secret put SESSION_SECRET`; the second must contain at least 32 random characters. **Do not commit tokens or paste secrets into chat.**
-5. Run `npm install`, `npm test`, `npm run build`, then `npx wrangler deploy` from `access-gate/`. The build copies the diagnostic HTML into ignored `dist/index.html`. `assets.run_worker_first=true` protects every served asset.
-6. On a staging Workers URL, verify a paying account, a non-paying account, and the same user after subscription expiry (as VK sees it). Verify forwarding URL to another browser does not grant access. Only distribute the **Worker URL**.
-7. Export history from HTMLPreview as JSON and import it after login on the new Worker origin. `localStorage` does not migrate automatically.
+- Official [VK API schema](https://github.com/VKCOM/vk-api-schema/blob/master/groups/methods.json) lists `groups.getMembers` with `filter=donut` and accepts `group` access-token type; the filtered response schema permits member objects with an integer `id`. The gate handles both integer IDs and objects with integer `id`.
+- The [VK ID SDK](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts) implements PKCE `s256`, code exchange at `/oauth2/auth`, identity lookup at `/oauth2/user_info`. The gate follows the same endpoints.
+- Automated tests use **mocked VK**, not a real community token. Official schema compatibility is not proof of actual token permissions or operation on a real community. Live VK ID, Donut activation/expiry and Cloudflare staging remain **unverified**.
+- Protected origin denies `/`, `/index.html` and every other asset without current membership; `assets.run_worker_first=true`. GitHub source and legacy HTMLPreview URL remain public by deliberate business decision.
 
-## Guarantees and limits
+## Setup for the owner — public parameters first
 
-- **No live OAuth or Donut verification has been performed** without owner-owned VK ID and group credentials. Tests currently mock the VK APIs. Do not call this production ready.
-- PKCE S256 and random OAuth state are stored in an HMAC-signed 10-minute cookie. The returned user ID is validated by VK ID user_info. A signed HttpOnly/Secure/SameSite session lasts up to 12h. Membership is checked server-side on every app load and API probe; open tabs probe every 10 minutes and on focus. This is **not instant revocation**.
-- If VK is unavailable, returns unexpected data, or lacks permission, access fails closed. The prototype paginates up to 30,000 donor IDs.
-- No extra user database; existing diagnostic history stays in browser. When access expires, an inactive subscriber cannot open the application to export history until renewing. Warn to export before cancellation.
-- Public GitHub and legacy HTMLPreview links still reveal an unprotected copy. To fully prevent copying, a later private-source or server-side move would be required; this pilot protects the **new access URL** rather than source code.
-- No automatic deployment, release tag or merge to `main` is configured. Work is isolated in `sales-diagnostic-vk-donut-access`.
+1. Choose or create a **Cloudflare account** at https://dash.cloudflare.com/ and go to **Workers & Pages**. Decide the intended staging hostname (for example, a new `*.workers.dev` name). Do not publish the worker yet. The callback must match its final HTTPS origin exactly.
+2. Open the [official VK ID application setup](https://id.vk.com/business/go/docs/ru/vkid/latest/vk-id/connection/create-application) and create a **Web** app in the VK ID developer/business cabinet. Specify your staging domain as the base domain, and trust the precise redirect: `https://<STAGING-HOST>/auth/callback`. Copy the **numeric App ID** (`VK_APP_ID`). App ID is public.
+3. In the paid VK community, locate the **numeric community ID** (`VK_GROUP_ID`, not the short `vk.com/name` address). Check that VK Donut is enabled and has an actual paying test subscriber. Obtain a community access token through **Управление → Работа с API → Ключи доступа**. Assign only available necessary permissions; do not assume the UI explicitly provides a "donut" checkbox.
+4. Configure `VK_APP_ID`, `VK_GROUP_ID` in `access-gate/wrangler.jsonc`. If needed, configure `VK_OWNER_USER_ID` to the **numeric personal VK account ID** of the owner (not community ID): this bypass is conditional on a valid VK ID login.
+5. Keep the **community access token** (`VK_GROUP_TOKEN`) and a newly generated random `SESSION_SECRET` of at least 32 strong random characters **only in Cloudflare Worker secrets**, not in GitHub, chat, commit messages, screenshots or plaintext Wrangler vars. If deployment is explicitly approved and credentials exist, use `npx wrangler secret put VK_GROUP_TOKEN` and `npx wrangler secret put SESSION_SECRET` from `access-gate/` (or Cloudflare dashboard Worker → Settings → Variables and Secrets). Use actual secret-type bindings, not regular vars.
+6. After explicit staging permission: from `access-gate/`, run `npm install`, `npm test`, `npm run build` and `npx wrangler deploy`. Build copies unchanged source HTML into ignored `dist/index.html`; Worker protects it via `ASSETS`. **Do not run these commands as a public production launch by default.**
 
-## Official references
+## Staging acceptance — do not claim success until witnessed
 
-- VK ID SDK: https://vkcom.github.io/vkid-web-sdk/docs/
-- VK API groups.getMembers filter: https://github.com/VKCOM/vk-api-schema/blob/master/groups/methods.json
+- Account A: live paid subscriber successfully completes VK ID login and sees HTML. API membership response and correct community must be checked server-side without logging access tokens.
+- Account B: non-paying account receives denial both for `/` and `/index.html`, despite forwarding of the URL; check unknown routes and no direct asset bypass.
+- Account A after a real paid-access expiry: check current VK status and deny new loads; an open tab rechecks about every 10 minutes and on return. Billing cancellation **before** expiry may leave current paid time; the authoritative criterion is current Donut status.
+- Owner login: only exact configured numeric personal VK ID bypasses membership after identity verification; a different account must not.
+- VK timeout/API error, malformed response or revoked token: fail closed with an explanatory screen.
+- On the **same protected origin and same browser**, expired or non-paying users can click **Скачать мою историю (JSON)** on the entry screen. No login or payment is needed to export local history; this never opens the diagnostic app. The JSON shape matches the existing app's `exportVersion=1 / historySchemaVersion=2 / cycles`. Data is not sent to server. If data originated on HTMLPreview/GitHub Pages or another device, export there first and import after login on the new origin: `localStorage` does not transfer between domains.
+- Test export/import with a realistic saved cycle, follow-up and linked history. Corrupt/unknown local records are never overwritten by the entry screen; users are told to ask for help.
+
+## Operational notes and limits
+
+- Session: signed Secure, HttpOnly, SameSite=Lax cookie, max 12h. Fresh Donut lookup on each app load and API probe, tab probe every 10 minutes and on visibility return. Revocation is **not instantaneous** in already-open tabs.
+- Denial page can download data stored under `salesDiagnosticHistory:v2` **on that exact origin** only. A legacy-only `salesDiagnosticHistoryV1` record is not silently migrated or falsely labeled as importable; export legacy data using the application on the original origin before switch.
+- The gate currently scans up to **30,000** filtered members, failing closed above the cap. Real-world pagination, rate limits and group-token permissions need staging proof.
+- Never merge to `main`, issue a release tag or publish for end users without separate owner decision.
+
+## Sources
+
+- VK API `groups.getMembers` supported filter and tokens: https://github.com/VKCOM/vk-api-schema/blob/master/groups/methods.json
+- VK API filtered response objects: https://github.com/VKCOM/vk-api-schema/blob/master/groups/responses.json
+- VK API filtered member ID shape: https://github.com/VKCOM/vk-api-schema/blob/master/groups/objects.json
+- VK ID SDK official source: https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts
 - Cloudflare Worker-first assets: https://developers.cloudflare.com/workers/static-assets/routing/worker-script/
