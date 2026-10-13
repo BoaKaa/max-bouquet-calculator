@@ -1,0 +1,40 @@
+name: Freeze Sales Diagnostic RC v2.0.0-rc1 (one-time)
+
+on:
+  push:
+    branches: [rc-lockfile-preparation]
+    paths:
+      - .github/workflows/rc-tag-finalize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  tag-verified-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout isolated preparation branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Guard release candidate against unexpected changes
+        env:
+          EXPECTED_SHA: 321395cc8e00eb9988081a1728b2a3959c089201
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/sales-diagnostic-vk-donut-access
+          ACTUAL_SHA="$(git rev-parse FETCH_HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA" || { echo "Branch moved, refusing to tag"; exit 1; }
+          test -z "$(git ls-remote --tags origin refs/tags/v2.0.0-rc1)" || { echo "RC tag already exists"; exit 1; }
+      - name: Create annotated immutable RC pointer
+        env:
+          EXPECTED_SHA: 321395cc8e00eb9988081a1728b2a3959c089201
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a v2.0.0-rc1 "$EXPECTED_SHA" -m "Sales Diagnostic v2.0.0-rc1: tested VK Donut gate and frozen diagnostic (GitHub Actions 38447766413)"
+          git push origin refs/tags/v2.0.0-rc1
+          test "$(git rev-parse 'v2.0.0-rc1^{}')" = "$EXPECTED_SHA"
