@@ -1,0 +1,13 @@
+{
+  "name": "sales-diagnostic-vk-donut-access",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/prepare.mjs",
+    "test": "node --test test/*.test.mjs",
+    "deploy": "npm run test && npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.0"
+  }
+}
