@@ -249,7 +249,7 @@ async function exportHistory(page) {
       const { page, context, errors } = await newPage(browser, {
         viewport:{width:360,height:740},isMobile:true,hasTouch:true
       });
-      await driveDiagnosis(page,{mode:'FULL',modelIndex:0,name:'UX проверка сохранения'});
+      await driveDiagnosis(page,{mode:'BUILD',modelIndex:0,name:'UX проверка сохранения'});
       const saveDraft=page.getByRole('button',{name:'Сохранить план на потом'});
       const start=page.locator('#startExperimentButton');
       assert.ok(await saveDraft.isVisible(),'Draft save must be visible next to start');
