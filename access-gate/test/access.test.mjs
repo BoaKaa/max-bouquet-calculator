@@ -85,9 +85,75 @@ test('unrecognized paths and incorrect configuration are refused',async()=>{
  assert.equal((await run('/other.html',c)).status,404);
  assert.equal((await run('/',c,{VK_GROUP_ID:'invalid'})).status,503);
 });
-test('logout expires cookie',async()=>{
- const {end}=await signIn(),r=await run('/auth/logout',jar(end));
- assert.match(r.headers.get('set-cookie'),/Max-Age=0/);
+test('logout clears both signed session and pending VK flow without touching history',async()=>{
+ members=[10];const {end}=await signIn(),c=jar(end);
+ assert.equal((await run('/api/access',c)).status,200);
+ requests=[];
+ const r=await run('/auth/logout',c),cookies=r.headers.getSetCookie();
+ assert.equal(r.status,303);
+ assert.equal(r.headers.get('location'),'/?status=signed_out');
+ assert.equal(cookies.length,2);
+ assert.ok(cookies.some(v=>v.startsWith('sd_session=;')&&v.includes('Max-Age=0')&&v.includes('HttpOnly')));
+ assert.ok(cookies.some(v=>v.startsWith('sd_vk_flow=;')&&v.includes('Max-Age=0')&&v.includes('HttpOnly')));
+ assert.equal(r.headers.has('clear-site-data'),false);
+ assert.equal(requests.length,0);
+ assert.equal((await run('/api/access','sd_session=; sd_vk_flow=')).status,403);
+ const locked=await run('/?status=signed_out'),html=await locked.text();
+ assert.doesNotMatch(html,/DIAGNOSIS/);
+ assert.match(html,/Вы вышли из диагностики/);
+ assert.match(html,/история осталась в этом браузере/);
+ assert.match(html,/Скачать мою историю/);
+});
+test('switching VK identity requests account chooser with fresh state and clears app session',async()=>{
+ members=[10];const {end}=await signIn(),c=jar(end);
+ const before=await run('/auth/start'),ordinary=new URL(before.headers.get('location'));
+ assert.equal(ordinary.searchParams.has('prompt'),false);
+ const switched=await run('/auth/switch',c),location=new URL(switched.headers.get('location'));
+ assert.equal(switched.status,303);
+ assert.equal(location.hostname,'id.vk.ru');
+ assert.equal(location.searchParams.get('prompt'),'select_account');
+ assert.equal(location.searchParams.get('code_challenge_method'),'s256');
+ assert.notEqual(location.searchParams.get('state'),ordinary.searchParams.get('state'));
+ const cookies=switched.headers.getSetCookie();
+ assert.ok(cookies.some(v=>v.startsWith('sd_session=;')&&v.includes('Max-Age=0')));
+ assert.ok(cookies.some(v=>v.startsWith('sd_vk_flow=')&&v.includes('Max-Age=600')));
+ assert.equal((await run('/api/access','sd_session=')).status,403);
+ const callback='/auth/callback?state='+encodeURIComponent(location.searchParams.get('state'))+'&code=abc&device_id=def';
+ const result=await run(callback,jar(switched));
+ assert.equal(result.headers.get('location'),'/');
+ assert.match(jar(result),/sd_session=/);
+});
+test('non-subscriber denial is explicit and account switching remains available',async()=>{
+ members=[];try{
+  const {end}=await signIn();
+  assert.equal(end.headers.get('location'),'/?error=no_subscription');
+  const r=await run(end.headers.get('location')),html=await r.text();
+  assert.doesNotMatch(html,/DIAGNOSIS/);
+  assert.match(html,/У этого аккаунта нет действующей подписки VK Donut/);
+  assert.match(html,/href="\/auth\/switch"/);
+  assert.match(html,/href="\/auth\/start"/);
+  assert.match(html,/не завершает сеанс на сайте ВКонтакте/);
+ }finally{members=[10];}
+});
+test('gate injects visible sign-out into topbar without changing frozen diagnostic HTML',async()=>{
+ const old=globalThis.HTMLRewriter,inserted={};
+ globalThis.HTMLRewriter=class{
+  on(selector,handler){
+   handler.element({append:(html,opts)=>{assert.equal(opts.html,true);inserted[selector]=html;}});
+   return this;
+  }
+  transform(r){return r;}
+ };
+ try{
+  members=[10];const {end}=await signIn(),c=jar(end);
+  assert.equal((await run('/',c)).status,200);
+  assert.match(inserted['.topbar'],/href="\/auth\/logout"/);
+  assert.match(inserted['.topbar'],/>Выйти<\/a>/);
+  assert.match(inserted['head'],/flex-wrap:wrap/);
+  assert.match(inserted['head'],/max-width:420px/);
+  assert.match(inserted['body'],/\/api\/access/);
+  assert.equal((await run('/index.html',c)).status,200);
+ }finally{globalThis.HTMLRewriter=old;}
 });
 
 test('official filterResponse supports member objects with integer id',async()=>{
