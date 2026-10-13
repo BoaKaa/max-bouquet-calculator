@@ -2155,6 +2155,40 @@ add('OWNER-HIST-RESET-THEN-IMPORT-BACKUP','P0','HISTORY',()=>isolatedHistory(key
  diag.loadHistoryStore().cycles[0]?.cycleId===c.cycleId);
 }),['true']);
 
+
+/* Stage 13 owner acceptance: plain-language questions must preserve routing and meaning. */
+add('OWNER-LANG-STOPPED-KEEPS-FULL','P0','LANG',()=>{
+ reset('full',{scope_goal:'new_sales',scope_name:'Букеты',scope_model:'PRODUCT',scope_target:'completed_orders',maturity_state:'stopped'},['maturity_state']);
+ diag.goNext();
+ return String(s.mode==='full'&&s.path.includes('scope_period')&&s.path.includes('gate_legal'));
+},['true']);
+add('OWNER-LANG-CHANGED-KEEPS-HYBRID','P0','LANG',()=>{
+ reset('full',{scope_goal:'new_sales',scope_name:'Букеты',scope_model:'PRODUCT',scope_target:'completed_orders',maturity_state:'changed'},['maturity_state']);
+ diag.goNext();
+ return String(s.mode==='hybrid'&&s.path.includes('inheritance_entry'));
+},['true']);
+add('OWNER-LANG-MATURITY-CHOICES','P1','LANG',()=>{
+ const options=diag.questions.maturity_state.optionsFn(s);
+ return String(options.length===5&&
+ options.find(o=>o.value==='repeatable')?.label==='Да, продаю регулярно'&&
+ options.find(o=>o.value==='stopped')?.hint.includes('примерно прежними')&&
+ options.find(o=>o.value==='changed')?.hint.includes('существенного'));
+},['true']);
+add('OWNER-LANG-CORE-PLAIN-RUSSIAN','P1','LANG',()=>{
+ s.answers.scope_name='Букеты';s.answers.scope_model='PRODUCT';
+ return String(diag.questions.maturity_state.title(s).startsWith('Вы уже продаёте')&&
+ diag.questions.gate_legal.title.startsWith('Есть ли у вас сомнения')&&
+ diag.questions.core_access.title(s).startsWith('Как часто к вам приходят новые покупатели')&&
+ diag.questions.gate_capacity.title(s).includes('сможете выполнить')&&
+ diag.questions.deep_c1.title(s).startsWith('Что мешает покупателю'));
+},['true']);
+add('OWNER-LANG-RESULT-PLAIN-INSTRUCTIONS','P1','LANG',()=>{
+ return String(html.includes('Как проверить, поможет ли это действие')&&
+ html.includes('Сколько времени и денег готовы потратить на проверку')&&
+ html.includes('Программа ничего не запускает')&&
+ html.includes('Проблем не замечаю'));
+},['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
