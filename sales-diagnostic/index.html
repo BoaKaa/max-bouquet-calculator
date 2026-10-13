@@ -289,7 +289,7 @@ button:focus-visible, input:focus-visible {
     <main id="app" class="app"></main>
 
     <footer class="footer">
-      <p>Ответы сохраняются только в вашем браузере. Никакой регистрации и отправки данных на сервер.</p>
+      <p>Сохранённая история остаётся в этом браузере. На другом устройстве она автоматически не появится, но её можно перенести через экспорт и импорт файла.</p>
     </footer>
   </div>
 
@@ -378,10 +378,10 @@ button:focus-visible, input:focus-visible {
 
       <article class="card result-card" id="experimentPlanCard" hidden>
         <h2>Как проверить, поможет ли это действие</h2>
-        <p class="microcopy">Сохраните план, попробуйте предложенное действие и вернитесь сюда, чтобы оценить результат. Программа ничего не запускает и не тратит ваши деньги.</p>
+        <p class="microcopy">Сохраните план, выполните предложенное действие и вернитесь, чтобы посмотреть результат. История остаётся в этом браузере и не появляется автоматически на других устройствах. При необходимости перенесите её через экспорт и импорт файла.</p>
         <p class="microcopy" id="experimentPlanType" hidden></p>
-        <div class="metric-box" hidden>
-          <span>Меняем одну вещь</span>
+        <div class="metric-box">
+          <span>Какое действие будем проверять</span>
           <strong id="experimentChange"></strong>
         </div>
         <div hidden>
@@ -401,19 +401,23 @@ button:focus-visible, input:focus-visible {
           <strong id="experimentObservation"></strong>
         </div>
         <div id="experimentNumericPanel" hidden>
-  <p id="experimentNumericDescription" class="microcopy"></p>
-  <label class="microcopy" for="experimentMetricBefore">Число до изменения (необязательно)</label>
-  <input type="number" min="0" step="1" inputmode="numeric" class="text-input" id="experimentMetricBefore" placeholder="Например: 5"/>
-  <div id="experimentDenominatorPanel" hidden><label class="microcopy" for="experimentDenominatorBefore" id="experimentDenominatorLabel"></label>
-<input id="experimentDenominatorBefore" type="number" min="0" step="1" inputmode="numeric" class="text-input" placeholder="Например: 20"/>
-<p class="microcopy">Для доли нужны оба числа: число событий и общее число случаев. Если одного нет, такое сравнение будет неточным.</p></div>
-<label class="microcopy" for="experimentPlannedCount">Сколько заказов или обращений сравните после изменения? (необязательно)</label>
-<input id="experimentPlannedCount" class="text-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 20"/>
-<p class="microcopy">Например, сравните первые 20 похожих обращений. Если их пока нет, поле можно оставить пустым.</p>
-</div>
+          <h3>Исходные цифры (необязательно)</h3>
+          <p id="experimentNumericDescription" class="microcopy"></p>
+          <p id="experimentNumericExample" class="note-box"></p>
+          <label class="microcopy" for="experimentMetricBefore" id="experimentMetricBeforeLabel"></label>
+          <input type="number" min="0" step="1" inputmode="numeric" class="text-input" id="experimentMetricBefore" placeholder="Например: 6"/>
+          <div id="experimentDenominatorPanel" hidden>
+            <label class="microcopy" for="experimentDenominatorBefore" id="experimentDenominatorLabel"></label>
+            <input id="experimentDenominatorBefore" type="number" min="0" step="1" inputmode="numeric" class="text-input" placeholder="Например: 20"/>
+            <p class="microcopy" id="experimentDenominatorHelp"></p>
+          </div>
+          <label class="microcopy" for="experimentPlannedCount" id="experimentPlannedCountLabel"></label>
+          <input id="experimentPlannedCount" class="text-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 20"/>
+          <p class="microcopy" id="experimentPlannedCountHelp"></p>
+        </div>
 <details id="experimentLimitsPanel">
   <summary>Сколько времени и денег готовы потратить на проверку? (необязательно)</summary>
-  <p class="input-note">Можно заранее указать, через сколько дней, после какой суммы расходов или скольких показов предложения людям вы остановитесь и оцените результат. Если достигли выбранного предела, не увеличивайте его ради красивых цифр. Деньги программа не списывает, рекламу не запускает: расходы и количество показов вы контролируете сами.</p>
+  <p class="input-note">Если хотите, заранее укажите, через сколько дней, после какой суммы расходов или после показа предложения скольким людям вы остановитесь и оцените результат. Эти числа нужны только для вашего плана.</p>
   <label class="microcopy" for="experimentTimeCap">Через сколько дней остановиться (необязательно)</label>
   <input class="text-input" id="experimentTimeCap" type="number" min="1" step="1" inputmode="numeric" placeholder="Например: 14"/>
   <label class="microcopy" for="experimentBudgetCap">Сколько рублей готовы потратить (необязательно)</label>
@@ -460,7 +464,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.26-dev';
+  const APP_VERSION = '1.13.27-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -856,13 +860,13 @@ button:focus-visible, input:focus-visible {
     () => COMMON_SCALE),
     core_fit: dynamicQ('core_fit', 'Проверяем обращения',
       s => ({
-        PRODUCT:'Как часто вы можете принять заказ от людей, которые обращаются за «' + (s.answers.scope_name || 'этим товаром') + '»? Их устраивают цена, сроки и доставка?',
-        APPOINTMENT:'Как часто вы можете записать людей, которые обращаются по «' + (s.answers.scope_name || 'этой услуге') + '»? Им подходят цена, время и место?',
+        PRODUCT:'Среди людей, которые спрашивают про «' + (s.answers.scope_name || 'этот товар') + '», многим ли подходят ваши условия: цена, сроки и доставка?',
+        APPOINTMENT:'Среди людей, которые интересуются «' + (s.answers.scope_name || 'этой услугой') + '», многим ли подходят цена, время и место?',
         EXPERT:'У скольких обратившихся по «' + (s.answers.scope_name || 'этой услуге') + '» запрос и бюджет подходят для вашей работы?',
         EDUCATION:'Какой части интересующихся «' + (s.answers.scope_name || 'этим обучением') + '» подходит ваша программа и цена?',
         SUBSCRIPTION:'Какой части интересующихся «' + (s.answers.scope_name || 'этой подпиской') + '» подходит её содержание и цена?'
       }[s.answers.scope_model] || 'Среди обращающихся людей у какой части действительно подходят ваши условия?'),
-      'Речь не обо всех сообщениях подряд, а о тех, чей запрос вы действительно можете выполнить.',
+      'Сейчас проверяем, подходят ли покупателям ваши условия. Хватает ли вам времени и материалов выполнить заказы — отдельный вопрос.',
       () => [
         opt('yes','Почти у всех'),
         opt('mostly','У большинства'),
@@ -6416,6 +6420,27 @@ function finalizePrecision() {
     const x=FOLLOWUP_NUMERIC_SPECS[code];
     return x ? {label:x[0],direction:x[1],denominator:FOLLOWUP_DENOMINATORS[code]||null} : null;
   }
+  function experimentNumericCopy(code, spec) {
+    const base = {
+      description:'Запишите, что происходило ДО того, как вы выполните действие выше. Возьмите один понятный период, например последние две недели. После действия сравните такой же период или похожие обращения. Если цифр не помните, оставьте поля пустыми.',
+      example:'Например, посмотрите прошлые заказы за две недели. Потом выполните действие из плана и посчитайте тот же показатель за сопоставимый период.',
+      before:'ДО действия: сколько было случаев — «'+spec.label+'»?',
+      denominator:'ДО действия: сколько всего было «'+spec.denominator+'» за тот же период?',
+      denominatorHelp:'Это общее число людей или заказов, среди которых вы считаете показатель выше. Нужны оба числа за один период. Не считайте просмотры, если вопрос касается покупателей.',
+      planned:spec.denominator?'ПОСЛЕ действия: сколько «'+spec.denominator+'» планируете проверить?':'ПОСЛЕ действия: сколько похожих заказов или обращений планируете проверить?',
+      plannedHelp:'Сначала выполните действие из плана. Затем собирайте новые обращения или заказы и сравнивайте с числами выше. Поле необязательно.'
+    };
+    if(code==='PURCHASE_FRICTION')return {
+      ...base,
+      example:'Пример: за последние две недели 20 человек явно хотели купить, но только 6 завершили оформление заказа. В первое поле внесите 6, во второе — 20. Потом упростите один шаг оформления и посмотрите, сколько из следующих 20 желающих действительно оформили заказ.',
+      before:'ДО изменения: сколько человек завершили оформление заказа?',
+      denominator:'ДО изменения: сколько человек явно хотели купить?',
+      denominatorHelp:'Считайте тех, кто уже собирался заказать, а не всех подписчиков и зрителей. Например: 20 хотели купить, из них 6 оформили заказ. Эти два числа нужны, чтобы сравнить результат до и после изменения.',
+      planned:'ПОСЛЕ изменения: сколько желающих купить планируете проверить?',
+      plannedHelp:'Изменение — это действие выше (например, упрощение оформления заказа). После того как сделаете его, посмотрите, сколько из следующих 20 желающих оформят заказ. Если не готовы выбрать число, оставьте поле пустым.'
+    };
+    return base;
+  }
   function followupNumericComparison(){
     const {result,plan}=followupPlanContext();
     const spec=followupNumericSpec(result?.primaryCode||result?.code||plan?.primaryCode);
@@ -7010,8 +7035,12 @@ function finalizePrecision() {
       const nSpec=followupNumericSpec(result.primaryCode || result.code);
       if (nSpec && experimentPlan.status!==EXPERIMENT_STATUS.ACTIVE) {
         document.getElementById('experimentNumericPanel').hidden=false;
-        document.getElementById('experimentNumericDescription').textContent=
-          'Если число известно, запишите до изменения: '+nSpec.label+'.';
+        const numericCopy=experimentNumericCopy(result.primaryCode || result.code,nSpec);
+        document.getElementById('experimentNumericDescription').textContent=numericCopy.description;
+        document.getElementById('experimentNumericExample').textContent=numericCopy.example;
+        document.getElementById('experimentMetricBeforeLabel').textContent=numericCopy.before;
+        document.getElementById('experimentPlannedCountLabel').textContent=numericCopy.planned;
+        document.getElementById('experimentPlannedCountHelp').textContent=numericCopy.plannedHelp;
         const nInput=document.getElementById('experimentMetricBefore');
         nInput.value=Number.isInteger(experimentPlan.primaryMetricBefore)?String(experimentPlan.primaryMetricBefore):'';
         const setNumber=(input,key)=>{
@@ -7029,7 +7058,8 @@ function finalizePrecision() {
         });
         if(nSpec.denominator){
           document.getElementById('experimentDenominatorPanel').hidden=false;
-          document.getElementById('experimentDenominatorLabel').textContent='Сколько всего было «'+nSpec.denominator+'» до изменения?';
+          document.getElementById('experimentDenominatorLabel').textContent=numericCopy.denominator;
+          document.getElementById('experimentDenominatorHelp').textContent=numericCopy.denominatorHelp;
           const den=document.getElementById('experimentDenominatorBefore');
           den.value=Number.isInteger(experimentPlan.primaryMetricDenominatorBefore)
             ?String(experimentPlan.primaryMetricDenominatorBefore):'';
