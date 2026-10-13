@@ -342,6 +342,7 @@ async function exportHistory(page) {
       await page.evaluate(() => window.scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'}));
       const choices = page.locator('#answerArea .option-card');
       assert.equal(await choices.count(),9);
+      await page.evaluate(() => { window.__beforeMultiOption = document.querySelector('#answerArea .option-card'); });
       await choices.nth(6).tap(); // capacity near the bottom of a long set
       let selected=await page.evaluate(() => {
         const s=window.__diagTest.state;
@@ -360,8 +361,13 @@ async function exportHistory(page) {
       }));
       assert.equal(selected.id,'inheritance_map','Second multi tap still stays on same question');
       assert.deepEqual(selected.choices,['capacity','fulfillment']);
-      assert.ok(selected.y > 10 && selected.y >= beforeY - 280,
+      // The browser is allowed to scroll an offscreen neighbouring option into
+      // view during .tap(); the APP must not jump to y=0 or recreate the cards.
+      assert.ok(selected.y > 10,
         'Multi tap must not reset scroll to top: before=' + beforeY + ', after=' + selected.y);
+      assert.equal(await page.evaluate(() =>
+        document.querySelector('#answerArea .option-card') === window.__beforeMultiOption
+      ),true,'Multi tap must not rebuild the screen or lose option node identity');
       await choices.nth(7).tap(); // mutually exclusive "none"
       assert.deepEqual(await page.evaluate(() => window.__diagTest.state.answers.inheritance_map),['none']);
       assert.equal(await page.locator('#answerArea .option-card.selected').count(),1);
