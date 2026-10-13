@@ -476,7 +476,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.28-dev';
+  const APP_VERSION = '1.13.29-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -2061,6 +2061,55 @@ button:focus-visible, input:focus-visible {
       opt('same','Критерий успеха не достигнут, существенного улучшения нет'),
       opt('unclear','Не могу понять по имеющимся данным')
     ]),
+
+    fu_failure_location: dynamicQ('fu_failure_location', 'Ищем следующий шаг',
+      s => {
+        const code=s.followupBase?.result?.primaryCode || s.followupBase?.experimentPlan?.primaryCode;
+        const group=followupFailureGroup(code);
+        return ({
+          sales:'После изменения на каком шаге люди по-прежнему терялись?',
+          money:'На каком участке деньги или время не стали лучше?',
+          work:'На каком этапе заказы или работа по-прежнему сталкивались с трудностями?',
+          return:'На каком этапе клиентского опыта улучшения не произошло?',
+          general:'Что именно вы заметили после изменения?'
+        })[group];
+      },
+      'Выберите то, что действительно наблюдали. Если точно не знаете — так и ответьте. Мы не будем менять ваши прежние ответы или повторять неудачное действие.',
+      s => {
+        const code=s.followupBase?.result?.primaryCode || s.followupBase?.experimentPlan?.primaryCode;
+        const group=followupFailureGroup(code);
+        const labels={
+          sales:[
+            'До изменённого шага дошло слишком мало подходящих людей',
+            'Люди доходили до него, но прежнее затруднение осталось',
+            'Этот шаг проходили, но покупок или нужных действий больше не стало'
+          ],
+          money:[
+            'Не удалось улучшить объём продаж или загрузку',
+            'Расходы или затраты времени остались прежними',
+            'Здесь стало лучше, но итоговый заработок не вырос'
+          ],
+          work:[
+            'До изменённого этапа доходило слишком мало реальных случаев',
+            'На этом же этапе продолжались те же сбои',
+            'Этот этап стал лучше, но итог для клиента или бизнеса не улучшился'
+          ],
+          return:[
+            'Подходящих клиентов для повторного шага было мало',
+            'Клиенты доходили до шага, но прежняя проблема оставалась',
+            'Этот шаг срабатывал, но повторной покупки или результата не было'
+          ],
+          general:[
+            'До изменённого шага доходило мало подходящих случаев',
+            'На этом же шаге прежняя проблема сохранилась',
+            'Шаг улучшился, но главного результата по-прежнему нет'
+          ]
+        }[group];
+        return [
+          opt('before',labels[0]),opt('at_step',labels[1]),opt('after',labels[2]),
+          opt('unknown','Не могу уверенно определить, где теряется результат')
+        ];
+      }),
     fu_numeric_after: dynamicNumberQ('fu_numeric_after','Сравнение с записанным числом',
       s => {
         const c=s.followupBase?.result?.primaryCode || s.followupBase?.experimentPlan?.primaryCode;
@@ -3371,6 +3420,7 @@ button:focus-visible, input:focus-visible {
         fu_limit_status:'Не достигнуты ли заранее выбранные пределы',
         fu_measurement_valid:'Можно ли доверять сравнению',
         fu_effect:'Что произошло с главным показателем',
+        fu_failure_location:'Выбираем следующую проверку',
         fu_guardrail:'Проверяем важные побочные эффекты'
       };
       const pct = Math.min(94, 18 + Math.round(((state.index + 1) / Math.max(1,state.path.length)) * 72));
@@ -3839,6 +3889,9 @@ button:focus-visible, input:focus-visible {
           ['BUILD_MARKET_TEST','BUILD_DEMAND'].includes(oldCode);
         if (needPayment)
           state.path = state.path.slice(0, state.index + 1).concat(['fu_market_payment']);
+        else if (['same','worse'].includes(state.answers.fu_effect) &&
+          classifyFollowup().code === FOLLOWUP_CODE.FAILED)
+          state.path = state.path.slice(0, state.index + 1).concat(['fu_failure_location']);
       }
     }
 
@@ -6627,6 +6680,124 @@ function finalizePrecision() {
     } finally {Object.assign(state,old);}
   }
 
+
+  // An unsuccessful intervention is not proof that the original bottleneck
+  // was wrongly diagnosed. Ask where the result was lost, then collect ONE
+  // additional fact before proposing another change.
+  function followupFailureGroup(code) {
+    if (['ECONOMICS','BUILD_ECONOMICS'].includes(code)) return 'money';
+    if (['FULFILLMENT','CAPACITY','BUILD_FULFILLMENT','BUILD_CAPACITY',
+      'VALUE_FAILURE','BUILD_VALUE','START_FAILURE','ACTIVATION_FAILURE',
+      'FIRST_VALUE_GAP','RECOVERY_FAILURE'].includes(code)) return 'work';
+    if (['NEXT_CYCLE','CUSTOMER_MEMORY_GAP','SUB_RENEWAL','REACTIVATION_GAP',
+      'ADVOCACY_GAP'].includes(code)) return 'return';
+    if (['ACCESS','DISTRIBUTION','OFFER','FIT','DECISION_GAP','PURCHASE_FRICTION',
+      'DEMAND_WEAK','DEMAND_UNCLEAR','BUILD_ACCESS','BUILD_OFFER','BUILD_ROUTE',
+      'BUILD_DEMAND','BUILD_MARKET_TEST'].includes(code)) return 'sales';
+    return 'general';
+  }
+
+  function followupFailureAdvice(code, clue) {
+    const group=followupFailureGroup(code);
+    const actions={
+      sales:{
+        before:'Проверьте по пяти ближайшим подходящим обращениям или контактам, сколько людей действительно увидели предложение и дошли до изменённого шага. Запишите, где контакт обрывается.',
+        at_step:'Разберите три–пять реальных обращений, дошедших до изменённого шага. Запишите конкретные вопросы, отказы или затруднения, которые остались. Не меняйте всё предложение сразу.',
+        after:'Проследите по трём–пяти реальным обращениям, что произошло после исправленного шага: был ли запрос, попытка заказа и фактическая оплата. Найдите первую следующую потерю.',
+        unknown:'Для пяти следующих подходящих обращений запишите отдельно: увидел ли человек предложение, обратился ли по делу, пытался ли заказать и была ли оплата. Сначала определите, где теряются люди.'
+      },
+      money:{
+        before:'Проверьте последние три сопоставимые продажи и фактическую загрузку: число заказов, полученные деньги и отработанные часы. Не считайте рост продаж автоматически ростом заработка.',
+        at_step:'По трём сопоставимым заказам отдельно запишите цену, прямые расходы и собственное время. Найдите одну статью, из-за которой ожидаемой экономии не получилось.',
+        after:'Сравните по трём сопоставимым заказам остаток после прямых расходов и часы работы. Проверьте, почему улучшение отдельной статьи не изменило итоговый заработок.',
+        unknown:'Рассчитайте фактические деньги после прямых расходов и затраты времени по трём последним сопоставимым заказам. Пока не меняйте цену и расходы наугад.'
+      },
+      work:{
+        before:'Выберите три–пять сопоставимых заказов или случаев и проверьте, действительно ли они проходили через изменённый этап. Отметьте случаи, где проверить его не удалось.',
+        at_step:'Разберите три–пять случаев, в которых сбой повторился. Запишите точный этап, время, причину и последствия для клиента. Сначала найдите повторяющуюся причину.',
+        after:'Проследите три–пять случаев от изменённого этапа до выполнения обещания клиенту. Запишите, какой следующий этап всё ещё мешает результату.',
+        unknown:'По трём–пяти заказам отметьте ключевые этапы, задержки и результат для клиента. Выделите первый повторяющийся сбой, прежде чем делать ещё одно изменение.'
+      },
+      return:{
+        before:'Проверьте пять прошлых клиентов: у кого действительно появился новый повод купить или продлить и кто получил подходящее предложение. Не считайте всех старых клиентов возможными повторами.',
+        at_step:'По нескольким клиентам с реальным поводом вернуться запишите, что они ответили и какие сомнения повторялись. Не отправляйте новое одинаковое предложение всем подряд.',
+        after:'Проследите путь пяти подходящих клиентов после контакта: кому было нужно продолжение, кто ответил и кто действительно купил или продлил. Найдите точку потери.',
+        unknown:'Возьмите пять прошлых клиентов и отдельно отметьте: был ли новый повод купить, было ли обращение к ним и состоялась ли повторная покупка.'
+      },
+      general:{
+        before:'Проверьте три–пять подходящих случаев: дошли ли они до изменённого шага и почему нет. Не повторяйте прежнее изменение автоматически.',
+        at_step:'Разберите три–пять случаев с прежней проблемой и запишите её конкретное проявление на изменённом шаге. Выберите один проверяемый факт.',
+        after:'Проследите три–пять случаев после изменённого шага и найдите, на каком следующем этапе не достигается нужный результат.',
+        unknown:'Запишите этапы и фактический результат по трём–пяти сопоставимым случаям. Сначала найдите, где именно не происходит ожидаемого изменения.'
+      }
+    };
+    const safe=actions[group];
+    const key=Object.prototype.hasOwnProperty.call(safe,clue)?clue:'unknown';
+    return {
+      action:safe[key],
+      metric:({
+        sales:'Сколько людей дошло до каждого шага и сколько оплатило.',
+        money:'Деньги после прямых расходов и затраченное рабочее время.',
+        work:'Сколько случаев дошло до этапа, сколько сбоев и на каком шаге.',
+        return:'Число клиентов с реальным поводом вернуться, обращений и покупок.',
+        general:'Число случаев с подтверждённой потерей на конкретном этапе.'
+      })[group],
+      clue:key
+    };
+  }
+
+  function failedFollowupNextResult(previousCode, clue) {
+    const {result:previousResult}=followupPlanContext();
+    if (!previousCode || !resultLibrary[previousCode]) return null;
+    const advice=followupFailureAdvice(previousCode,clue);
+    const next=withOriginalDiagnosticContext(()=>makeResult(previousCode));
+    if (!next) return null;
+    const stepTitle='Следующая проверка после неудачного изменения';
+    next.userTitle=stepTitle;
+    next.title=stepTitle;
+    next.userSummary='Предыдущее действие не улучшило главный результат. Это не доказывает, что исходный диагноз неверен. Сначала уточним другую возможную причину по реальным случаям.';
+    next.summary=next.userSummary;
+    next.action=advice.action;
+    next.metrics=[advice.metric];
+    next.metric=advice.metric;
+    next.holdConstant=['Не меняйте одновременно цену, рекламу и способ выполнения. Не принимайте небезопасных или неразрешённых обязательств ради проверки.'];
+    next.dont=next.holdConstant[0];
+    next.observationRule='После разбора указанного числа реальных случаев сформулируйте один подтверждённый факт.';
+    next.successRule='Понятно, на каком этапе теряется результат и какое одно изменение следует проверить дальше.';
+    next.failureRule='Если нельзя установить этап по реальным данным, не выдумывайте причину; уточните способ наблюдения.';
+    next.nextIfSuccess='Сохраните наблюдение и отдельно проверьте одно действие, которое следует из него.';
+    next.nextIfFailure='Не повторяйте прежнее изменение; сначала соберите недостающие факты.';
+    next.precisionAvailable=false;
+    next.optionalOpportunity=null;
+    next.confidence=CONFIDENCE.PRELIMINARY;
+    next.confidenceLabel=confidenceLabel(next.confidence);
+    next.why=[
+      'Предыдущее действие не дало запланированного улучшения.',
+      'Сохранённый исходный вывод: '+(previousResult?.userTitle||previousResult?.title||'первоначальное ограничение')+'.',
+      'Следующая проверка выбрана по ответу о том, где результат не появился; причина ещё не доказана.'
+    ];
+    next.evidence=[{type:'USER_ESTIMATE',questionId:'fu_failure_location',
+      value:advice.clue,label:'Где не появился результат после изменения'}];
+    const plan=experimentPlanFor(next);
+    if(plan){
+      plan.planType=EXPERIMENT_PLAN_TYPE.EVIDENCE_COLLECTION;
+      plan.hypothesis='Наблюдение на конкретном этапе поможет выбрать следующую проверяемую причину; сам по себе неудачный эксперимент её не доказывает.';
+      plan.changeOneThing=advice.action;
+      plan.executionSteps=[advice.action,'Запишите только наблюдаемые факты, не меняя другие существенные условия.'];
+      plan.primaryMetric=advice.metric;
+      plan.secondaryMetrics=[];
+      plan.holdConstant=next.holdConstant;
+      plan.observationRule=next.observationRule;
+      plan.successRule=next.successRule;
+      plan.failureRule=next.failureRule;
+      plan.nextIfSuccess=next.nextIfSuccess;
+      plan.nextIfFailure=next.nextIfFailure;
+      plan.nonCommercialOnly=true;
+      next.experimentPlan=plan;
+    }
+    return next;
+  }
+
   function buildStateTransition(followupClass) {
     const { result: previousResult, plan } = followupPlanContext();
     const previousCode = previousResult?.primaryCode || previousResult?.code || plan?.primaryCode || null;
@@ -6722,11 +6893,13 @@ function finalizePrecision() {
     }
 
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_MINUS) {
+      const nextResult=followupClass.code === FOLLOWUP_CODE.FAILED
+        ? failedFollowupNextResult(previousCode,state.answers.fu_failure_location) : null;
       return {
         type:'SAME_CONSTRAINT_NEW_INTERVENTION',
         fromPrimaryCode:previousCode,
         toPrimaryCode:previousCode,
-        nextResult:null
+        nextResult
       };
     }
     if (followupClass.outcome === FOLLOWUP_OUTCOME.R_ZERO) {
@@ -6804,10 +6977,12 @@ function finalizePrecision() {
       summary:followupClass.reason,
       action:followupClass.decision === 'ROLLBACK'
         ? 'Остановите или отмените изменение, если это безопасно и возможно. Саму исходную идею пока нельзя ни подтвердить, ни опровергнуть.'
-        : 'Не повторяйте то же действие автоматически. Перепроверьте прежний вывод или выберите другой способ решения проблемы.',
+        : (transition?.nextResult?.action || 'Не повторяйте то же действие автоматически. Сначала найдите по реальным случаям, где сохраняется проблема.'),
       metric:primaryMetric,
       dont:'Не масштабируйте это изменение только потому, что уже вложили в него время или деньги.',
-      next:'Следующий шаг выбирайте заново, а не повторяйте прошлое действие автоматически.'
+      next:transition?.nextResult
+        ? 'Откройте следующую проверку: её задача — найти конкретную причину, а не повторить неудачное изменение.'
+        : 'Сначала устраните риск. К новым проверкам возвращайтесь только после этого.'
     };
 
     const moved = transition?.toPrimaryCode && transition.toPrimaryCode !== transition.fromPrimaryCode;
@@ -7004,7 +7179,8 @@ function finalizePrecision() {
       const nextCycleButton=document.createElement('button');
       nextCycleButton.type='button';
       nextCycleButton.className='primary-btn';
-      nextCycleButton.textContent='Перейти к следующему циклу';
+      nextCycleButton.textContent=result.followupCode===FOLLOWUP_CODE.FAILED
+        ? 'Открыть следующий шаг' : 'Перейти к следующему циклу';
       const fromCycleId=state.activeCycleId;
       const transitionMessage=document.createElement('p');
       transitionMessage.className='note-box';
@@ -7261,7 +7437,7 @@ function finalizePrecision() {
   }
   function formatDate(iso) { try { return new Intl.DateTimeFormat('ru-RU', { day:'numeric', month:'long', year:'numeric' }).format(new Date(iso)); } catch { return ''; } }
 
-  window.__diagTest = { experimentNumericCopy, reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, clearAllHistory, historyScopeName, historyDateTime, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
+  window.__diagTest = { followupFailureGroup, followupFailureAdvice, failedFollowupNextResult, experimentNumericCopy, reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, clearAllHistory, historyScopeName, historyDateTime, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
   resetButton.addEventListener('click', showHome);
   brandButton.addEventListener('click', showHome);
