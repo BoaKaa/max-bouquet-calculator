@@ -242,6 +242,65 @@ async function exportHistory(page) {
       log('checkout baseline: readable 6-of-20 example, visible action, saved inputs, local browser explanation');
     }
 
+
+    // Stage 14: saving a draft must not start a test; edited values can be saved
+    // again. Starting freezes the baseline and offers direct Follow-up.
+    {
+      const { page, context, errors } = await newPage(browser, {
+        viewport:{width:360,height:740},isMobile:true,hasTouch:true
+      });
+      await driveDiagnosis(page,{mode:'FULL',modelIndex:0,name:'UX проверка сохранения'});
+      const saveDraft=page.getByRole('button',{name:'Сохранить план на потом'});
+      const start=page.locator('#startExperimentButton');
+      assert.ok(await saveDraft.isVisible(),'Draft save must be visible next to start');
+      assert.ok(await start.isVisible(),'Start must stay available');
+      assert.match(await page.locator('#experimentGuide').innerText(),/не начиная проверку/i);
+      await page.locator('#experimentLimitsPanel').evaluate(e=>{e.open=true;});
+      await page.locator('#experimentBudgetCap').fill('1200');
+      await saveDraft.click();
+      assert.match(await page.locator('#saveMessage').innerText(),/проверка ещё не начата/i);
+      const first=await page.evaluate(()=>{
+        const cycles=window.__diagTest.loadHistoryStore().cycles;
+        return {count:cycles.length,status:cycles[0].status,budget:cycles[0].experimentPlan.budgetCap,
+          start:cycles[0].experimentPlan.startedAt};
+      });
+      assert.deepEqual(first,{count:1,status:'PLANNED',budget:1200,start:null},
+        'Draft save cannot start experiment or create duplicate');
+      await page.locator('#experimentBudgetCap').fill('1600');
+      assert.equal(await saveDraft.isEnabled(),true,'Editing stored draft must allow save again');
+      assert.match(await page.locator('#saveMessage').innerText(),/Вы изменили план/i);
+      await saveDraft.click();
+      assert.equal(await page.evaluate(() =>
+        window.__diagTest.loadHistoryStore().cycles[0].experimentPlan.budgetCap
+      ),1600,'Second save must persist changed budget');
+      await start.click();
+      const afterStart=await page.evaluate(()=>{
+        const cycles=window.__diagTest.loadHistoryStore().cycles;
+        return {count:cycles.length,status:cycles[0].status,budget:cycles[0].experimentPlan.budgetCap,
+          started:!!cycles[0].experimentPlan.startedAt,
+          inputs:Array.from(document.querySelectorAll('#experimentPlanCard input'))
+            .every(el=>el.disabled)};
+      });
+      assert.deepEqual(afterStart,{count:1,status:'ACTIVE',budget:1600,started:true,inputs:true},
+        'Start must freeze inputs and preserve latest saved baseline');
+      assert.equal(await saveDraft.isVisible(),false,'No draft-save after start');
+      const direct=page.locator('#planActionGrid').getByRole('button',{name:'Проверить результат'});
+      assert.ok(await direct.isVisible(),'Started plan must expose Follow-up without home navigation');
+      await page.locator('#brandButton').click();
+      await page.locator('.history-row').first().getByRole('button',{name:'Продолжить'}).click();
+      assert.equal(await page.locator('#startExperimentButton').isVisible(),false,
+        'Resumed started plan should not offer start again');
+      assert.ok(await page.locator('#planActionGrid').getByRole('button',{name:'Проверить результат'}).isVisible(),
+        'Resumed started plan retains direct Follow-up');
+      await page.locator('#planActionGrid').getByRole('button',{name:'Проверить результат'}).click();
+      assert.equal(await page.evaluate(()=>{
+        const d=window.__diagTest;return d.state.path[d.state.index];
+      }),'fu_done','Direct shortcut starts the original Follow-up questions');
+      checkNoError(page,errors,'stage 14 draft/save/start/follow-up shortcut on mobile');
+      await context.close();
+      log('stage 14 mobile: draft save, edited draft resave, frozen start, direct Follow-up and Resume');
+    }
+
     // Actual Follow-up: cap reached, sample insufficient, original cycle must be preserved.
     {
       const { page, context, errors } = await newPage(browser);
