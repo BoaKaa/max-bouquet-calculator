@@ -9,10 +9,15 @@ ASSETS:{fetch:async()=>new Response('<html><body>DIAGNOSIS</body></html>')}};
 class Rewriter{on(){return this;}transform(r){return r;}}
 globalThis.HTMLRewriter=Rewriter;
 const host='https://preview.invalid';
-let members=[10],requests=[],apiBroken=false,wrongIdentity=false,memberObjects=false,invalidMember=false,remoteError='';
+let members=[10],requests=[],apiBroken=false,wrongIdentity=false,memberObjects=false,invalidMember=false,remoteError='',transportFault='';
 globalThis.fetch=async(input,opts)=>{
  const url=new URL(String(input));requests.push({url,opts});
  if(apiBroken)throw Error('unavailable');
+ if(transportFault&&url.pathname==='/oauth2/auth'){
+  if(transportFault==='redirect')return new Response(null,{status:302,headers:{location:'https://example.invalid/?code=DO_NOT_LEAK'}});
+  const message={timeout:'request aborted secret=DO_NOT_LEAK',dns:'DNS ENOTFOUND secret=DO_NOT_LEAK',tls:'TLS handshake secret=DO_NOT_LEAK',connection:'ECONNRESET secret=DO_NOT_LEAK',network:'unknown secret=DO_NOT_LEAK'}[transportFault];
+  const error=new Error(message);if(transportFault==='timeout')error.name='AbortError';throw error;
+ }
  if(url.pathname==='/oauth2/auth')return remoteError==='exchange'?Response.json({error:'invalid_grant'}):Response.json({access_token:'test',user_id:10,state:url.searchParams.get('state')});
  if(url.pathname==='/oauth2/user_info')return remoteError==='userinfo'?Response.json({error:'user_info_failed'}):Response.json({user:{user_id:wrongIdentity?'11':'10'}});
  if(url.pathname==='/method/groups.getMembers'){
@@ -190,4 +195,27 @@ test('live troubleshooting distinguishes VK ID code exchange, identity, Donut AP
       if(scenario==='userinfo')assert.equal(requests.some(x=>x.url.pathname==='/method/groups.getMembers'),false);
     }
   }finally{remoteError='';console.warn=warn;members=[10];}
+});
+
+test('token transport failures are separated safely without exposing request data',async()=>{
+ const warn=console.warn,diagnostics=[];
+ console.warn=(...parts)=>diagnostics.push(parts);
+ const cases=['redirect','timeout','dns','tls','connection','network'];
+ try{
+  for(const name of cases){
+   transportFault=name;requests=[];
+   const {end}=await signIn();const stage='vkid_exchange_'+name;
+   assert.equal(end.headers.get('location'),'/?error='+stage);
+   assert.doesNotMatch(jar(end),/sd_session=/);
+   assert.equal(diagnostics.at(-1)[0],'sd_vk_gate_failure');
+   assert.equal(diagnostics.at(-1)[1],stage);
+   assert.equal(diagnostics.at(-1)[2],name==='redirect'?'302':'');
+   assert.ok(requests.some(x=>x.url.pathname==='/oauth2/auth'&&x.opts.redirect==='manual'));
+   assert.equal(requests.some(x=>x.url.pathname==='/oauth2/user_info'),false);
+   const screenHtml=await(await run('/?error='+stage)).text();
+   assert.match(screenHtml,new RegExp('Код: '+stage+'\\.'));
+   assert.doesNotMatch(screenHtml,/DO_NOT_LEAK|access_token|code_verifier/);
+   assert.doesNotMatch(JSON.stringify(diagnostics),/DO_NOT_LEAK|code_verifier|access_token/);
+  }
+ }finally{transportFault='';console.warn=warn;}
 });
