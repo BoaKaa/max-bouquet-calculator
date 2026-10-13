@@ -104,36 +104,33 @@ test('logout clears both signed session and pending VK flow without touching his
  assert.match(html,/история осталась в этом браузере/);
  assert.match(html,/Скачать мою историю/);
 });
-test('switching VK identity requests account chooser with fresh state and clears app session',async()=>{
+test('repeat VK login starts fresh PKCE and expires previous diagnostic session',async()=>{
  members=[10];const {end}=await signIn(),c=jar(end);
- const before=await run('/auth/start'),ordinary=new URL(before.headers.get('location'));
- assert.equal(ordinary.searchParams.has('prompt'),false);
- assert.ok(before.headers.getSetCookie().some(v=>v.startsWith('sd_session=;')&&v.includes('Max-Age=0')));
- const switched=await run('/auth/switch',c),location=new URL(switched.headers.get('location'));
- assert.equal(switched.status,303);
+ assert.equal((await run('/api/access',c)).status,200);
+ const started=await run('/auth/start',c),location=new URL(started.headers.get('location'));
+ assert.equal(started.status,303);
  assert.equal(location.hostname,'id.vk.ru');
- assert.equal(location.searchParams.get('prompt'),'select_account');
  assert.equal(location.searchParams.get('code_challenge_method'),'s256');
- assert.notEqual(location.searchParams.get('state'),ordinary.searchParams.get('state'));
- const cookies=switched.headers.getSetCookie();
+ assert.equal(location.searchParams.has('prompt'),false);
+ const cookies=started.headers.getSetCookie();
  assert.ok(cookies.some(v=>v.startsWith('sd_session=;')&&v.includes('Max-Age=0')));
  assert.ok(cookies.some(v=>v.startsWith('sd_vk_flow=')&&v.includes('Max-Age=600')));
- assert.equal((await run('/api/access','sd_session=')).status,403);
+ assert.equal((await run('/auth/switch',c)).status,404);
  const callback='/auth/callback?state='+encodeURIComponent(location.searchParams.get('state'))+'&code=abc&device_id=def';
- const result=await run(callback,jar(switched));
+ const result=await run(callback,jar(started));
  assert.equal(result.headers.get('location'),'/');
  assert.match(jar(result),/sd_session=/);
 });
-test('non-subscriber denial is explicit and account switching remains available',async()=>{
+test('non-subscriber denial is explicit and standard VK login remains available',async()=>{
  members=[];try{
   const {end}=await signIn();
   assert.equal(end.headers.get('location'),'/?error=no_subscription');
   const r=await run(end.headers.get('location')),html=await r.text();
   assert.doesNotMatch(html,/DIAGNOSIS/);
   assert.match(html,/У этого аккаунта нет действующей подписки VK Donut/);
-  assert.match(html,/href="\/auth\/switch"/);
+  assert.doesNotMatch(html,/href="\/auth\/switch"/);
   assert.match(html,/href="\/auth\/start"/);
-  assert.match(html,/не завершает сеанс на сайте ВКонтакте/);
+  assert.doesNotMatch(html,/Войти под другим аккаунтом VK/);
  }finally{members=[10];}
 });
 test('gate injects visible sign-out into topbar without changing frozen diagnostic HTML',async()=>{
