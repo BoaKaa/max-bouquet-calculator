@@ -1,0 +1,10 @@
+import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {resolve,dirname,join} from 'node:path';
+const base=resolve(import.meta.dirname,'../..');
+const source=join(base,'sales-diagnostic/index.html');
+const target=join(base,'access-gate/dist/index.html');
+const html=await readFile(source,'utf8');
+if(!html.includes('<!doctype html>')||!html.includes('APP_VERSION'))throw Error('Diagnostic source missing or invalid');
+await mkdir(dirname(target),{recursive:true});
+await writeFile(target,html);
+console.log('Prepared unchanged diagnostic HTML for gated static assets');
