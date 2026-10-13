@@ -7478,6 +7478,31 @@ function finalizePrecision() {
   function resultText(r) {
   const precision = r.precisionSummary ? '\n\nЧто показывают цифры:\n' + r.precisionSummary : '';
   const opportunity = r.optionalOpportunity ? '\n\nДополнительная возможность:\n' + r.optionalOpportunity.title : '';
+  // A copied result must remain a usable backup if local storage is blocked.
+  // Do not lose the chosen limits, baseline and actual execution steps.
+  const plan=!r.followup && r.experimentPlan;
+  const number=v=>Number.isInteger(v)&&v>=0;
+  const planText=plan ? [
+    '\n\nПлан проверки:',
+    plan.changeOneThing ? 'Проверяем одно изменение: '+plan.changeOneThing : '',
+    ...(Array.isArray(plan.executionSteps)?plan.executionSteps.map((step,i)=>
+      (i+1)+'. '+step):[]),
+    plan.primaryMetric ? 'Главный показатель: '+plan.primaryMetric : '',
+    number(plan.primaryMetricBefore)
+      ? 'До изменения: '+plan.primaryMetricBefore+
+        (number(plan.primaryMetricDenominatorBefore) ? ' из '+plan.primaryMetricDenominatorBefore+' случаев' : '')
+      : '',
+    number(plan.plannedObservationCount)&&plan.plannedObservationCount>0
+      ? 'Запланировано наблюдений после изменения: '+plan.plannedObservationCount : '',
+    Number.isInteger(plan.timeCap)&&plan.timeCap>0
+      ? 'Предел времени: '+plan.timeCap+' дней' : '',
+    Number.isInteger(plan.budgetCap)&&plan.budgetCap>0
+      ? 'Предел расходов: '+plan.budgetCap+' ₽' : '',
+    Number.isInteger(plan.exposureCap)&&plan.exposureCap>0
+      ? 'Предел показов: '+plan.exposureCap+' человек' : '',
+    plan.nonCommercialOnly ? 'Только исследование без приёма оплат и заказов.' : '',
+    plan.status===EXPERIMENT_STATUS.ACTIVE ? 'Статус: проверка начата.' : 'Статус: план ещё не запущен.'
+  ].filter(Boolean).join('\n') : '';
   return (r.userTitle || r.title) +
     '\n\nПочему:\n' + (r.why||[]).filter(x=>!r.followup||
       !/^\s*Что делать дальше\s*:/i.test(x)).map(x=>'• '+x).join('\n') +
@@ -7490,7 +7515,7 @@ function finalizePrecision() {
     '\nЕсли не стало: ' + (r.failureRule || '')) +
     '\n\nЧто дальше:\n' + (r.followup ? (r.next||r.nextIfSuccess||'') :
       (r.nextIfSuccess||r.next||'') +
-      '\nЕсли результата нет: ' + (r.nextIfFailure||'')) + precision + opportunity;
+      '\nЕсли результата нет: ' + (r.nextIfFailure||'')) + precision + opportunity + planText;
 }
 
   function isAnswered(id) {
