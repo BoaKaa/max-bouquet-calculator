@@ -336,6 +336,7 @@ async function exportHistory(page) {
       await page.locator('#answerArea .option-card').nth(1).tap(); // existing transferable foundation => HYBRID
       assert.equal(await qid(),'inheritance_map');
       assert.equal(await page.locator('#nextButton').isVisible(),true,'Multi-choice must show Next');
+      assert.equal((await page.locator('#nextButton').innerText()).trim(),'Далее','Button label must match multi-choice instruction');
       assert.match(await page.locator('#multiSelectHint').innerText(),/один или несколько вариантов ответа/i);
       assert.equal(await page.locator('#multiSelectHint').isVisible(),true,'Multi-choice hint is prominent');
 
