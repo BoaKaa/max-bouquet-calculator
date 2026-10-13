@@ -2,12 +2,13 @@ name: Sales Diagnostic Browser E2E
 
 on:
   push:
-    branches: [sales-diagnostic-v2, main]
+    branches: [sales-diagnostic-v2, sales-diagnostic-vk-donut-access, main]
     paths:
       - "sales-diagnostic/index.html"
       - "sales-diagnostic/browser-e2e.cjs"
       - "sales-diagnostic/regression-tests.js"
       - ".github/workflows/sales-diagnostic-browser.yml"
+      - "access-gate/**"
   pull_request:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - "sales-diagnostic/browser-e2e.cjs"
       - "sales-diagnostic/regression-tests.js"
       - ".github/workflows/sales-diagnostic-browser.yml"
+      - "access-gate/**"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +49,12 @@ jobs:
           NODE
           node --check sales-diagnostic/regression-tests.js
           node --check sales-diagnostic/browser-e2e.cjs
+      - name: Run VK Donut access gate tests and static build
+        run: |
+          node --check access-gate/src/worker.mjs
+          node --test access-gate/test/access.test.mjs
+          node access-gate/scripts/prepare.mjs
+          cmp sales-diagnostic/index.html access-gate/dist/index.html
       - name: Run full regression suite
         run: node sales-diagnostic/regression-tests.js
       - name: Install Playwright and Chromium
