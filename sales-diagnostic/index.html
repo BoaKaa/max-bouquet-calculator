@@ -6483,7 +6483,7 @@ function finalizePrecision() {
       return { outcome:FOLLOWUP_OUTCOME.R_ZERO, code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
         decision:limits.hit||limits.unknown ? 'REDESIGN' : 'CONTINUE',
         reason:limits.hit
-          ? 'Заранее установленный предел проверки достигнут, а нужных наблюдений ещё нет. Не увеличивайте срок, расходы или число показов задним числом.'
+          ? 'Вы достигли выбранного предела, но данных пока мало. Не добавляйте дни, расходы или новых людей для показа предложения только ради нужного результата.'
           : limits.unknown
             ? 'Недостаточно наблюдений и неизвестно, достигнут ли установленный предел. Сначала проверьте срок, расходы и показы, прежде чем продолжать.'
             : 'Условие наблюдения ещё не выполнено.' };
@@ -6530,7 +6530,7 @@ function finalizePrecision() {
           reason:'Запланировано '+plan.plannedObservationCount+
           ' сопоставимых случаев. Пока учтено '+(Number.isInteger(actual)?actual:'неизвестное количество')+
           '. Вывод об улучшении делать рано.'+
-          (limits.hit ? ' Предел времени, расходов или показов достигнут: не продолжайте эту же проверку сверх плана.'
+          (limits.hit ? ' Вы достигли установленного предела времени, расходов или числа людей: не продолжайте прежнюю проверку сверх плана.'
             : limits.unknown ? ' Пока не выяснен статус ранее установленного предела, не продолжайте проверку автоматически.' : '')};
       }
     }
@@ -6984,7 +6984,7 @@ function finalizePrecision() {
       const capConfig=[
         ['timeCap','experimentTimeCap','дней'],
         ['budgetCap','experimentBudgetCap','₽'],
-        ['exposureCap','experimentExposureCap','показов']
+        ['exposureCap','experimentExposureCap','человек']
       ];
       const limitsPanel=document.getElementById('experimentLimitsPanel');
       if (experimentPlan.status===EXPERIMENT_STATUS.ACTIVE) {
@@ -6993,7 +6993,7 @@ function finalizePrecision() {
         if (existingLimits.length) {
           const readout=document.getElementById('experimentLimitsReadout');
           readout.hidden=false;
-          readout.textContent='Вы решили остановиться не позже, чем через: '+existingLimits.map(([key,,unit])=>experimentPlan[key]+' '+unit).join(' · ')+'.';
+          readout.textContent='Ваши пределы проверки: '+existingLimits.map(([key,,unit])=>experimentPlan[key]+' '+unit).join(' · ')+'.';
         }
       } else {
         capConfig.forEach(([key,inputId])=>{
