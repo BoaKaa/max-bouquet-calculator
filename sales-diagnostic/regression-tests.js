@@ -1872,8 +1872,14 @@ add('A11Y-OPTION-FOCUS-PRESERVED','P1','ACCESSIBILITY',async()=>{
  const area=documentMock.getElementById('answerArea');
  const pick=area.children.at(-1);
  await uiFire(pick,'click');
+ const advanced=s.index===1&&s.path[s.index]==='scope_name'&&
+   documentMock.getElementById('nextButton').hidden===false;
+ const back=documentMock.getElementById('backButton');
+ await uiFire(back,'click');
  const latest=area.children.slice(-diag.questions.scope_goal.options.length);
- return String(latest.some(x=>x.focused===true&&x['aria-pressed']==='true')&&s.index===0);
+ return String(advanced&&s.index===0&&
+   latest.some(x=>x['aria-pressed']==='true')&&
+   documentMock.getElementById('nextButton').hidden===true);
 },['true']);
 add('A11Y-NEXT-TEXT-INPUT-FOCUS','P1','ACCESSIBILITY',()=>{
  diag.startMode('full');s.answers.scope_goal=diag.questions.scope_goal.options[0].value;
