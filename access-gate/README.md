@@ -31,6 +31,9 @@ The dashboard shows runtime `VK_APP_ID=54820831`, `VK_GROUP_ID=50026534`, encryp
 - Live-tested negative: an administrative personal VK account without a paid subscription is denied. This is correct default behavior. Administration in the VK community does **not** automatically grant access.
 - For a single authorized owner, configure optional Cloudflare runtime variable `VK_OWNER_USER_ID` with the **numeric personal VK user ID**. The Worker compares it to an identity verified by VK ID and permits only that matching user without Donut membership. It does not permit all admins. The variable is not required for public subscribers. The user must configure their own account ID; never enter a VK access token in this field.
 - Owner bypass still requires a live test after configuration; do not mark it tested based solely on mocks.
+- A verified non-subscriber who tries VK ID login is redirected to a locked screen offering **any paid VK Donut level**, with the specific owner-provided external checkout link: `https://vk.ru/shedevreda?analytics_screen=group&source=donut_banner&w=donut_payment-50026534`. After paying, they return and click **«Проверить подписку и войти»**. An eligible Donut membership must still be confirmed server-side; payment redirection does not grant access.
+- The subscribe offer also appears when a valid session loses active Donut membership or when redirected with `error=expired`. On normal login and VK API errors, no subscribe CTA is shown; history export remains available on the denial screen.
+- This change is committed only to the access-gate staging branch until Cloudflare build succeeds and live behavior is witnessed. No public release yet.
 - Next remaining security tests: direct `/index.html` denial without subscription, expired Donut membership including already-open tabs, and export while access denied.
 
 ## Staging acceptance — do not claim success until witnessed
