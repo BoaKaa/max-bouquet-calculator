@@ -531,6 +531,94 @@ async function exportHistory(page) {
       log('stage 14 mobile: accidental exit rejected, answers preserved, confirmed exit resets');
     }
 
+
+    // Stage 14: unsaved final result and edited draft must resist accidental
+    // navigation; copying must retain the complete measurement plan.
+    {
+      const {page,context,errors}=await newPage(browser,{
+        viewport:{width:360,height:740},isMobile:true,hasTouch:true
+      });
+      await driveDiagnosis(page,{mode:'BUILD',modelIndex:0,name:'Защита результата'});
+      assert.ok(await page.locator('#resultTitle').isVisible());
+      const originalId=await page.evaluate(()=>window.__diagTest.state.result.resultId);
+      page.once('dialog',async d=>{
+        assert.equal(d.type(),'confirm');
+        assert.match(d.message(),/результат или изменения плана/i);
+        await d.dismiss();
+      });
+      await page.locator('#restartResultButton').tap();
+      assert.equal(await page.evaluate(()=>window.__diagTest.state.result.resultId),originalId,
+        'Cancelled exit must preserve an unsaved conclusion');
+      await page.locator('#experimentLimitsPanel').evaluate(e=>{e.open=true;});
+      await page.locator('#experimentBudgetCap').fill('1700');
+      const copied=await page.evaluate(()=>
+        window.__diagTest.resultText(window.__diagTest.state.result));
+      assert.match(copied,/План проверки:/);
+      assert.match(copied,/Предел расходов: 1700 ₽/);
+      await page.getByRole('button',{name:'Сохранить план на потом'}).tap();
+      await page.locator('#experimentBudgetCap').fill('1900');
+      page.once('dialog',async d=>{
+        assert.equal(d.type(),'confirm');
+        await d.dismiss();
+      });
+      await page.locator('#brandButton').tap();
+      assert.ok(await page.locator('#resultTitle').isVisible(),
+        'Edited plan must remain visible after cancelling exit');
+      assert.equal(await page.evaluate(() =>
+        window.__diagTest.loadHistoryStore().cycles[0].experimentPlan.budgetCap),1700,
+        'Unsaved edited value must not overwrite saved plan');
+      await page.getByRole('button',{name:'Сохранить план на потом'}).tap();
+      let dialogs=0;
+      page.on('dialog',async d=>{dialogs++;await d.dismiss();});
+      await page.locator('#restartResultButton').tap();
+      assert.ok(await page.locator('#homeTitle').isVisible(),'Saved plan permits normal return home');
+      assert.equal(dialogs,0,'No warning when plan and changes are safely stored');
+      assert.equal(await page.evaluate(() =>
+        window.__diagTest.loadHistoryStore().cycles[0].experimentPlan.budgetCap),1900);
+      checkNoError(page,errors,'stage 14 unsaved conclusion and draft guard');
+      await context.close();
+      log('stage 14 mobile: unsaved result warning, changed plan warning, copy backup, saved exit');
+    }
+
+    // Stage 14: the visible history must not hide valid older saved cycles.
+    {
+      const {page,context,errors}=await newPage(browser,{
+        viewport:{width:320,height:640},isMobile:true,hasTouch:true
+      });
+      await page.evaluate(()=>{
+        const d=window.__diagTest;
+        for(let i=0;i<9;i++){
+          d.state.activeCycleId=null;
+          d.state.scopeId='scope_closed_'+i;
+          d.state.mode='full';
+          d.state.answers={scope_name:'История '+i,scope_goal:'new_sales',
+            scope_model:'PRODUCT'};
+          const result=d.makeResult('ACCESS');
+          if(!d.saveHistory({mode:'full',scope:'История '+i,
+              answers:{...d.state.answers},result,cycleStatus:'COMPLETED'}))
+            throw new Error('Cannot seed closed cycle '+i);
+        }
+        d.showHome();
+      });
+      const row=page.locator('.history-row');
+      assert.equal(await row.count(),9,'All nine saved closed cycles must remain in DOM');
+      assert.equal(await row.filter({visible:true}).count(),6,
+        'Initially show only six closed cycles');
+      const more=page.getByRole('button',{name:/Показать остальные завершённые/});
+      assert.ok(await more.isVisible(),'Show more must appear for the extra cycles');
+      assert.equal(await more.getAttribute('aria-expanded'),'false');
+      await more.tap();
+      assert.equal(await row.filter({visible:true}).count(),9,
+        'User must be able to see all older cycles');
+      assert.equal(await more.getAttribute('aria-expanded'),'true');
+      await page.getByRole('button',{name:/Скрыть старые завершённые проверки/}).tap();
+      assert.equal(await row.filter({visible:true}).count(),6,
+        'Hide action must collapse older cycles');
+      checkNoError(page,errors,'stage 14 older history rows on mobile');
+      await context.close();
+      log('stage 14 mobile: all older closed history cycles expand and collapse');
+    }
+
     // 4. Narrow viewport and keyboard navigation, without horizontal scrolling.
     {
       const { page, context, errors } = await newPage(browser, { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
