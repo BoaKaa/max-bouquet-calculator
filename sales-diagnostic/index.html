@@ -6645,7 +6645,7 @@ function finalizePrecision() {
       }
     }
     if (numeric && ((a.fu_effect==='better' && numeric.movement!=='better') ||
-        (a.fu_effect==='worse' && numeric.movement==='better'))) {
+        (['same','worse'].includes(a.fu_effect) && numeric.movement==='better'))) {
       return {outcome:FOLLOWUP_OUTCOME.R_ZERO,code:FOLLOWUP_CODE.INSUFFICIENT_EVIDENCE,
         decision:'REDESIGN',reason:'Оценка улучшения расходится с записанными числами до и после изменения. Не называйте проверку успешной, пока причина расхождения не выяснена.'};
     }
