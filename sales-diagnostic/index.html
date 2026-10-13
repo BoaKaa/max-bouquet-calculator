@@ -141,6 +141,7 @@ button:focus-visible, input:focus-visible {
 .resume-row span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 800; }
 .history-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid #eeeae2; }
 .history-row:last-child { border-bottom: 0; }
+.history-row[hidden] { display: none; }
 .history-row .history-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .history-meta { color: var(--muted); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
 .status-pill { display: inline-flex; align-items: center; width: fit-content; margin-top: 7px; padding: 5px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 750; }
@@ -481,7 +482,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.30-dev';
+  const APP_VERSION = '1.13.31-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3090,7 +3091,9 @@ button:focus-visible, input:focus-visible {
       grid.appendChild(b);
     });
 
-    const recent = store.cycles.filter(c => isOpenCycleStatus(c.status)).concat(store.cycles.filter(c => !isOpenCycleStatus(c.status)).slice(0,6));
+    const openCycles = store.cycles.filter(c => isOpenCycleStatus(c.status));
+    const closedCycles = store.cycles.filter(c => !isOpenCycleStatus(c.status));
+    const recent = openCycles.concat(closedCycles);
     { // Import must also be accessible on a fresh browser with no history.
       const historyCard=document.createElement('article');
       historyCard.className='card result-card';
@@ -3115,8 +3118,13 @@ button:focus-visible, input:focus-visible {
         warning.textContent=storageWarning+' Не удаляйте данные браузера, пока не сделаете резервную копию.';
         list.appendChild(warning);
       }
-      recent.forEach(cycle => {
+      const extraClosedRows=[];
+      recent.forEach((cycle,index) => {
         const row=document.createElement('div');
+        if(index>=openCycles.length+6){
+          row.hidden=true;
+          extraClosedRows.push(row);
+        }
         row.className='history-row';
         const title=cycle.result?.userTitle || cycle.result?.title || (cycle.legacyReadonly ? 'Старый сохранённый результат' : 'Незавершённая диагностика');
         const info=document.createElement('div');
@@ -3185,6 +3193,25 @@ button:focus-visible, input:focus-visible {
         if (actions.children.length) row.appendChild(actions);
         list.appendChild(row);
       });
+      if(extraClosedRows.length){
+        let expanded=false;
+        const more=document.createElement('button');
+        more.type='button';more.className='ghost-btn';
+        more.setAttribute('aria-expanded','false');
+        const updateMoreLabel=()=>{
+          more.textContent=expanded
+            ? 'Скрыть старые завершённые проверки'
+            : 'Показать остальные завершённые ('+extraClosedRows.length+')';
+        };
+        updateMoreLabel();
+        more.addEventListener('click',()=>{
+          expanded=!expanded;
+          extraClosedRows.forEach(row=>{row.hidden=!expanded;});
+          more.setAttribute('aria-expanded',expanded?'true':'false');
+          updateMoreLabel();
+        });
+        list.appendChild(more);
+      }
       historyCard.appendChild(list);
 
       const historyActions=document.createElement('div');
@@ -7433,7 +7460,7 @@ function finalizePrecision() {
     });
     const restartButton=document.getElementById('restartResultButton');
     restartButton.textContent='На главную';
-    restartButton.addEventListener('click', showHome);
+    restartButton.addEventListener('click', requestHomeFromHeader);
     document.getElementById('copyResultButton').addEventListener('click', async () => {
       const text = resultText(result);
       try {
@@ -7488,13 +7515,27 @@ function finalizePrecision() {
 
   window.__diagTest = { followupFailureGroup, followupFailureAdvice, failedFollowupNextResult, experimentNumericCopy, reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, clearAllHistory, historyScopeName, historyDateTime, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
-  // Leaving an unfinished questionnaire from the header previously erased
-  // all answers immediately. On touchscreens one accidental tap is enough.
+  // An unsaved conclusion must be protected just like an unfinished questionnaire.
+  function hasUnsavedResult() {
+    if(!state.result) return false;
+    const current=state.result;
+    if(!current.resultId) return true;
+    const stored=loadHistoryStore().cycles.find(c=>c.result?.resultId===current.resultId);
+    if(!stored) return true;
+    if(current.experimentPlan){
+      const storedPlan=stored.experimentPlan || stored.result?.experimentPlan || null;
+      if(JSON.stringify(storedPlan)!==JSON.stringify(current.experimentPlan)) return true;
+    }
+    return false;
+  }
   function requestHomeFromHeader() {
     const unfinished=!!(state.mode && !state.result && state.path.length &&
       Object.keys(state.answers).length);
     if(unfinished && !window.confirm(
       'Выйти из диагностики? Ответы в этой анкете ещё не сохранены и будут потеряны.'
+    ))return;
+    if(hasUnsavedResult() && !window.confirm(
+      'Выйти на главную? Результат или изменения плана ещё не сохранены и будут потеряны.'
     ))return;
     showHome();
   }
