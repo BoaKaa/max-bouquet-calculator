@@ -1875,7 +1875,8 @@ add('A11Y-OPTION-FOCUS-PRESERVED','P1','ACCESSIBILITY',async()=>{
  const advanced=s.index===1&&s.path[s.index]==='scope_name'&&
    documentMock.getElementById('nextButton').hidden===false;
  const back=documentMock.getElementById('backButton');
- await uiFire(back,'click');
+ // DOM mock retains superseded listeners; click only the handler on the visible page.
+ back._events.click.at(-1)();
  const latest=area.children.slice(-diag.questions.scope_goal.options.length);
  return String(advanced&&s.index===0&&
    latest.some(x=>x['aria-pressed']==='true')&&
