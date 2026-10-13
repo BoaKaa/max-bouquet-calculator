@@ -66,7 +66,8 @@ async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Т�
       let ix = 0;
       if (step === 2) ix = Math.min(modelIndex, n - 1); // Scope business model
       if (step === 4) ix = mode === 'BUILD' ? Math.min(2, n - 1)
-        : mode === 'HYBRID' ? Math.min(3, n - 1) : 0; // Real business maturity
+        : mode === 'HYBRID' ? Math.min(4, n - 1)
+        : mode === 'STOPPED' ? Math.min(3, n - 1) : 0; // Real business maturity
       if (legalRisk && /вопрос по безопасности или обязательным требованиям|сомнения.*обязательные правила/i.test(title)) ix = 1;
       // In BUILD, never invent paid transactions in the browser smoke.
       const eyebrow = (await page.locator('#questionEyebrow').innerText()).trim();
@@ -120,6 +121,18 @@ async function exportHistory(page) {
         await context.close();
         log(mode + ' model ' + (modelIndex + 1) + ': result after ' + result.questions.length + ' questions');
       }
+    }
+
+    // Stopped sales are an existing business problem, not a new-product BUILD.
+    {
+      const { page, context, errors } = await newPage(browser);
+      const result = await driveDiagnosis(page, { mode: 'STOPPED', modelIndex: 0 });
+      const actualMode = await page.evaluate(() => window.__diagTest.state.mode);
+      assert.equal(actualMode, 'full', 'Existing offer with stopped sales must use FULL');
+      assert.ok(result.questions.some(q => /период/i.test(q)), 'FULL must ask period after stopped sales');
+      checkNoError(page, errors, 'Stopped sales route');
+      await context.close();
+      log('existing product stopped selling -> FULL instead of BUILD');
     }
 
     // Safety blocker: no sales-growth recommendation when mandatory requirements remain uncertain.
