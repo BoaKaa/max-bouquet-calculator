@@ -108,6 +108,7 @@ test('switching VK identity requests account chooser with fresh state and clears
  members=[10];const {end}=await signIn(),c=jar(end);
  const before=await run('/auth/start'),ordinary=new URL(before.headers.get('location'));
  assert.equal(ordinary.searchParams.has('prompt'),false);
+ assert.ok(before.headers.getSetCookie().some(v=>v.startsWith('sd_session=;')&&v.includes('Max-Age=0')));
  const switched=await run('/auth/switch',c),location=new URL(switched.headers.get('location'));
  assert.equal(switched.status,303);
  assert.equal(location.hostname,'id.vk.ru');
