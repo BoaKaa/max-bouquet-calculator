@@ -9,6 +9,12 @@ Frozen diagnostic: `sales-diagnostic/index.html`, v1.13.32-dev. The Worker at a 
 - Automated tests use **mocked VK**, not a real community token. Official schema compatibility is not proof of actual token permissions or operation on a real community. Live VK ID, Donut activation/expiry and Cloudflare staging remain **unverified**.
 - Protected origin denies `/`, `/index.html` and every other asset without current membership; `assets.run_worker_first=true`. GitHub source and legacy HTMLPreview URL remain public by deliberate business decision.
 
+## Staging deployment through Cloudflare Builds (owner-approved, 13 October 2026)
+
+Cloudflare dashboard now has a GitHub connection for the **existing** Worker `sales-diagnostic-vk-donut` at `https://sales-diagnostic-vk-donut.kaaster.workers.dev` (previously Hello World). The owner selected `BoaKaa/max-bouquet-calculator`, production branch `sales-diagnostic-vk-donut-access`, repository root `/`, build command `cd access-gate && npm install && npm test && npm run build`, deploy command `cd access-gate && npx wrangler deploy`, and disabled preview builds. This README-only commit is intended to trigger the **first staging build** after connection; its outcome must be verified in Cloudflare Deployments, not inferred from GitHub CI.
+
+The dashboard shows runtime `VK_APP_ID=54820831`, `VK_GROUP_ID=50026534`, encrypted `VK_GROUP_TOKEN` and encrypted `SESSION_SECRET`. Their values remain in Cloudflare. Wrangler has `keep_vars: true` so subsequent CLI deployments preserve dashboard-defined secrets. The Cloudflare Builds *build-time* variables panel may be empty: runtime secrets are not build variables and must not be copied there. Check logs for Worker name, asset upload, secret preservation, errors and API access. Never interpret a successful build as successful live VK Donut authorization.
+
 ## Setup for the owner — public parameters first
 
 1. Choose or create a **Cloudflare account** at https://dash.cloudflare.com/ and go to **Workers & Pages**. Decide the intended staging hostname (for example, a new `*.workers.dev` name). Do not publish the worker yet. The callback must match its final HTTPS origin exactly.
