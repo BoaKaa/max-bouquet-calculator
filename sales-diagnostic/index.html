@@ -223,7 +223,9 @@ button:focus-visible, input:focus-visible {
 .primary-btn:disabled { opacity: .38; cursor: not-allowed; }
 .ghost-btn { border: 1px solid var(--line); background: transparent; color: var(--text); }
 
-.result-stack { display: grid; gap: 14px; }
+.result-stack { display: grid; gap: 14px; min-width: 0; overflow-wrap: anywhere; }
+.result-stack > .card, .result-stack .metric-box { min-width: 0; }
+.result-stack button, .result-stack summary { overflow-wrap: anywhere; white-space: normal; }
 .result-hero { padding: clamp(25px, 6vw, 44px); background: var(--accent); color: white; }
 .result-hero .eyebrow { color: #c9d8d0; }
 .result-hero h1 { font-size: clamp(30px, 7vw, 46px); margin-bottom: 12px; }
