@@ -49,6 +49,8 @@ jobs:
           NODE
           node --check sales-diagnostic/regression-tests.js
           node --check sales-diagnostic/browser-e2e.cjs
+      - name: Install locked Worker dependencies (npm ci)
+        run: npm ci --prefix access-gate --no-audit --no-fund
       - name: Run VK Donut access gate tests and static build
         run: |
           node --check access-gate/src/worker.mjs
