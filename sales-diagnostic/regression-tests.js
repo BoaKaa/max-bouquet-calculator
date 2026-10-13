@@ -2172,7 +2172,7 @@ add('OWNER-LANG-MATURITY-CHOICES','P1','LANG',()=>{
  return String(options.length===5&&
  options.find(o=>o.value==='repeatable')?.label==='Да, продаю регулярно'&&
  options.find(o=>o.value==='stopped')?.hint.includes('примерно прежними')&&
- options.find(o=>o.value==='changed')?.hint.includes('существенного'));
+ options.find(o=>o.value==='changed')?.hint.includes('только число заказов'));
 },['true']);
 add('OWNER-LANG-CORE-PLAIN-RUSSIAN','P1','LANG',()=>{
  s.answers.scope_name='Букеты';s.answers.scope_model='PRODUCT';
