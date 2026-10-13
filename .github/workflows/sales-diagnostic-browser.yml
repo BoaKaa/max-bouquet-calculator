@@ -6,6 +6,7 @@ on:
     paths:
       - "sales-diagnostic/index.html"
       - "sales-diagnostic/browser-e2e.cjs"
+      - "sales-diagnostic/regression-tests.js"
       - ".github/workflows/sales-diagnostic-browser.yml"
   workflow_dispatch:
 
