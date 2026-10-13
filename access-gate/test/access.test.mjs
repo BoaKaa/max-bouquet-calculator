@@ -121,17 +121,50 @@ test('repeat VK login starts fresh PKCE and expires previous diagnostic session'
  assert.equal(result.headers.get('location'),'/');
  assert.match(jar(result),/sd_session=/);
 });
-test('non-subscriber denial is explicit and standard VK login remains available',async()=>{
+test('live no-subscription denial offers any VK Donut level with exact owner checkout URL',async()=>{
  members=[];try{
   const {end}=await signIn();
   assert.equal(end.headers.get('location'),'/?error=no_subscription');
+  assert.doesNotMatch(jar(end),/sd_session=/);
   const r=await run(end.headers.get('location')),html=await r.text();
+  assert.equal(r.status,200);
   assert.doesNotMatch(html,/DIAGNOSIS/);
   assert.match(html,/У этого аккаунта нет действующей подписки VK Donut/);
-  assert.doesNotMatch(html,/href="\/auth\/switch"/);
-  assert.match(html,/href="\/auth\/start"/);
-  assert.doesNotMatch(html,/Войти под другим аккаунтом VK/);
+  assert.match(html,/на любом уровне VK Donut/);
+  assert.match(html,/Подписаться через VK Donut/);
+  assert.match(html,/href="https:\/\/vk\.ru\/shedevreda\?analytics_screen=group&amp;source=donut_banner&amp;w=donut_payment-50026534"/);
+  assert.match(html,/target="_blank" rel="noopener noreferrer"/);
+  assert.match(html,/После оплаты вернитесь сюда/);
+  assert.match(html,/href="\/auth\/start">Проверить подписку и войти/);
+  assert.doesNotMatch(html,/href="\/auth\/switch"|Войти под другим аккаунтом VK/);
+  assert.match(html,/Скачать мою историю \(JSON\)/);
+  const direct=await run('/index.html'),directHtml=await direct.text();
+  assert.doesNotMatch(directHtml,/DIAGNOSIS/);
  }finally{members=[10];}
+});
+test('subscription offer appears for lost membership or expired return, not for login or VK errors',async()=>{
+ let html=await(await run('/')).text();
+ assert.match(html,/Войти через ВКонтакте/);
+ assert.doesNotMatch(html,/Подписаться через VK Donut/);
+ assert.doesNotMatch(html,/donut_payment-50026534/);
+ html=await(await run('/?error=vkid_exchange_network')).text();
+ assert.doesNotMatch(html,/Подписаться через VK Donut/);
+ html=await(await run('/?error=expired')).text();
+ assert.match(html,/Подписаться через VK Donut/);
+ members=[10];
+ const {end}=await signIn(),cookie=jar(end);
+ assert.match(await(await run('/',cookie)).text(),/DIAGNOSIS/);
+ members=[];
+ try{
+  const blocked=await run('/',cookie),blockedHtml=await blocked.text();
+  assert.doesNotMatch(blockedHtml,/DIAGNOSIS/);
+  assert.match(blockedHtml,/Подписаться через VK Donut/);
+  assert.equal((await run('/api/access',cookie)).status,403);
+  apiBroken=true;
+  const unavailable=await run('/',cookie),unavailableHtml=await unavailable.text();
+  assert.equal(unavailable.status,503);
+  assert.doesNotMatch(unavailableHtml,/Подписаться через VK Donut/);
+ }finally{members=[10];apiBroken=false;}
 });
 test('gate injects visible sign-out into topbar without changing frozen diagnostic HTML',async()=>{
  const old=globalThis.HTMLRewriter,inserted={};
