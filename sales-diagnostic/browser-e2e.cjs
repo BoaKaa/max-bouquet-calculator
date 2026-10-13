@@ -191,6 +191,45 @@ async function exportHistory(page) {
       log('history numbering, export, cancel, full clear, confirmed import, resume');
     }
 
+    // Owner's exact checkout scenario: 6 completed purchases among 20 ready-to-buy buyers.
+    {
+      const { page, context, errors } = await newPage(browser);
+      await page.evaluate(() => {
+        const d = window.__diagTest;
+        const answers = { scope_goal:'new_sales',scope_name:'Букеты',scope_model:'PRODUCT',scope_target:'completed_orders',
+          gate_legal:'no',gate_economics:'good',gate_capacity:'reserve',core_access:'regular',core_conversion:'hard' };
+        d.state.mode='full'; d.state.diagnosticMode='full'; d.state.answers=answers;
+        const result=d.makeResult('PURCHASE_FRICTION');
+        if(!d.saveHistory({ mode:'full',scope:'Букеты',answers,result,cycleStatus:'PLANNED' }))
+          throw new Error('Could not seed isolated checkout diagnosis');
+        d.showHome();
+      });
+      await page.locator('.history-row').first().getByRole('button',{name:/Продолжить|Открыть/}).click();
+      assert.ok(await page.locator('#experimentNumericPanel').isVisible(), 'Checkout baseline must be offered');
+      assert.ok(await page.locator('#experimentChange').isVisible(), 'Change must be visible above before/after numbers');
+      assert.match(await page.locator('#experimentMetricBeforeLabel').innerText(), /сколько человек завершили оформление/i);
+      assert.match(await page.locator('#experimentDenominatorLabel').innerText(), /сколько человек явно хотели купить/i);
+      assert.match(await page.locator('#experimentNumericExample').innerText(), /20 человек.*6 завершили/i);
+      assert.match(await page.locator('#experimentPlannedCountLabel').innerText(), /ПОСЛЕ изменения/i);
+      assert.match(await page.locator('#experimentPlannedCountHelp').innerText(), /После того как сделаете/i);
+      assert.ok(!(await page.locator('#experimentNumericPanel').innerText()).includes('число событий'));
+      assert.match(await page.locator('#experimentPlanCard').innerText(), /не появляется автоматически на других устройствах/i);
+      await page.locator('#experimentMetricBefore').fill('6');
+      await page.locator('#experimentDenominatorBefore').fill('20');
+      await page.locator('#experimentPlannedCount').fill('20');
+      await page.locator('#startExperimentButton').click();
+      await page.locator('#brandButton').click();
+      const saved = await page.evaluate(() => {
+        const c=window.__diagTest.loadHistoryStore().cycles[0];
+        return c && {before:c.experimentPlan.primaryMetricBefore,den:c.experimentPlan.primaryMetricDenominatorBefore,
+          target:c.experimentPlan.plannedObservationCount};
+      });
+      assert.deepEqual(saved,{before:6,den:20,target:20}, 'Real input values must be stored with the experiment');
+      checkNoError(page, errors, 'Plain-language numeric baseline');
+      await context.close();
+      log('checkout baseline: readable 6-of-20 example, visible action, saved inputs, local browser explanation');
+    }
+
     // Actual Follow-up: cap reached, sample insufficient, original cycle must be preserved.
     {
       const { page, context, errors } = await newPage(browser);
