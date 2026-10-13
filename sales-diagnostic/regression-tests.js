@@ -2178,7 +2178,7 @@ add('OWNER-LANG-CORE-PLAIN-RUSSIAN','P1','LANG',()=>{
  s.answers.scope_name='Букеты';s.answers.scope_model='PRODUCT';
  return String(diag.questions.maturity_state.title(s).startsWith('Вы уже продаёте')&&
  diag.questions.gate_legal.title.startsWith('Есть ли у вас сомнения')&&
- diag.questions.core_access.title(s).startsWith('Как часто к вам приходят новые покупатели')&&
+ diag.questions.core_access.title(s).startsWith('Как часто новые люди спрашивают')&&
  diag.questions.gate_capacity.title(s).includes('сможете выполнить')&&
  diag.questions.deep_c1.title(s).startsWith('Что мешает покупателю'));
 },['true']);
