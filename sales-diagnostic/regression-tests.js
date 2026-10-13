@@ -2185,8 +2185,40 @@ add('OWNER-LANG-CORE-PLAIN-RUSSIAN','P1','LANG',()=>{
 add('OWNER-LANG-RESULT-PLAIN-INSTRUCTIONS','P1','LANG',()=>{
  return String(html.includes('Как проверить, поможет ли это действие')&&
  html.includes('Сколько времени и денег готовы потратить на проверку')&&
- html.includes('Программа ничего не запускает')&&
+ html.includes('История остаётся в этом браузере')&&
  html.includes('Проблем не замечаю'));
+},['true']);
+
+
+add('OWNER-COUNTS-CHECKOUT-CLEAR-BASELINE','P1','LANG',()=>{
+ const x=diag.experimentNumericCopy('PURCHASE_FRICTION',{label:'завершённых оформлений',denominator:'людей, решивших купить'});
+ return String(
+   x.before.includes('завершили оформление заказа')&&
+   x.denominator.includes('явно хотели купить')&&
+   x.example.includes('20 человек')&&x.example.includes('6 завершили')&&
+   x.planned.includes('ПОСЛЕ изменения')&&x.plannedHelp.includes('упрощение оформления')&&
+   x.description.includes('ДО того')&&x.description.includes('поля пустыми')
+ );
+},['true']);
+add('OWNER-COUNTS-OTHER-BUSINESS-DYNAMIC','P1','LANG',()=>{
+ const x=diag.experimentNumericCopy('SUB_RENEWAL',{label:'состоявшихся продлений',denominator:'участников с наступившим сроком продления'});
+ return String(x.before.includes('состоявшихся продлений')&&
+ x.denominator.includes('участников с наступившим сроком')&&
+ x.planned.includes('участников с наступившим сроком')&&
+ !x.example.includes('оформление заказа'));
+},['true']);
+add('OWNER-COUNTS-BROWSER-PRIVACY-CAVEAT','P1','LANG',()=>{
+ return String(html.includes('не появляется автоматически на других устройствах')&&
+ html.includes('перенести через экспорт и импорт файла')&&
+ !html.includes('Все данные хранятся только на вашем устройстве и недоступны'));
+},['true']);
+add('OWNER-COUNTS-INTERFACE-LABELS','P1','LANG',()=>{
+ return String(html.includes('id="experimentMetricBeforeLabel"')&&
+ html.includes('id="experimentNumericExample"')&&
+ html.includes('id="experimentPlannedCountLabel"')&&
+ html.includes('id="experimentDenominatorHelp"')&&
+ html.includes('Какое действие будем проверять')&&
+ !html.includes('Для доли нужны оба числа: число событий'));
 },['true']);
 
 const regressionRun=(async()=>{
