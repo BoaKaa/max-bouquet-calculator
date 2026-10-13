@@ -460,7 +460,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.25-dev';
+  const APP_VERSION = '1.13.26-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -476,6 +476,7 @@ button:focus-visible, input:focus-visible {
     FEW: 'few',
     NONE: 'none',
     CHANGED: 'changed',
+    STOPPED: 'stopped',
   });
   const CONFIDENCE = Object.freeze({
     HIGH: 'HIGH',
@@ -772,6 +773,7 @@ button:focus-visible, input:focus-visible {
         opt('repeatable', 'Да, продаю регулярно'),
         opt('few', 'Пока продал(а) всего несколько раз'),
         opt('none', 'Нет, продаж ещё не было'),
+        opt('stopped', 'Раньше продавал(а), но сейчас заказов нет', 'Товар и способ продажи остались примерно прежними. Если вы их существенно изменили, выберите следующий вариант.'),
         opt('changed', 'Раньше продавал(а), но теперь изменил(а) товар или способ продажи — проверяю заново', 'Например, новый состав, формат или условия. Если изменилось только число заказов, выбирайте другой вариант.'),
       ]),
 
@@ -3266,7 +3268,7 @@ button:focus-visible, input:focus-visible {
   }
 
   function resolveDiagnosticMode(maturityState) {
-    if (maturityState === MATURITY_STATE.REPEATABLE) return DIAGNOSTIC_MODE.FULL;
+    if ([MATURITY_STATE.REPEATABLE, MATURITY_STATE.STOPPED].includes(maturityState)) return DIAGNOSTIC_MODE.FULL;
     if (maturityState === MATURITY_STATE.CHANGED) return DIAGNOSTIC_MODE.HYBRID;
     return DIAGNOSTIC_MODE.BUILD;
   }
