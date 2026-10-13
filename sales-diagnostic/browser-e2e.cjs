@@ -302,6 +302,66 @@ async function exportHistory(page) {
       log('Follow-up with budget cap + insufficient observations + saved result (' + seen.length + ' questions)');
     }
 
+
+    // Completed and properly measured failure: one clarifier, an actionable
+    // independent evidence plan, and a linked new cycle in real Chromium.
+    {
+      const { page, context, errors } = await newPage(browser);
+      await driveDiagnosis(page, {mode:'BUILD', modelIndex:0, name:'Повторная проверка без улучшения'});
+      assert.ok(await page.locator('#startExperimentButton').isVisible());
+      await page.locator('#startExperimentButton').click();
+      await page.locator('#brandButton').click();
+      await page.locator('.history-row').first().getByRole('button',{name:'Проверить результат'}).click();
+      const ids = [];
+      for(let step=0; step<18; step++){
+        if(await page.locator('#resultTitle').count()) break;
+        const id=await page.evaluate(()=>{
+          const d=window.__diagTest;
+          return d.state.path[d.state.index];
+        });
+        ids.push(id);
+        const type=await page.evaluate(()=>{
+          const d=window.__diagTest;
+          return d.questions[d.state.path[d.state.index]].type;
+        });
+        const options=page.locator('#answerArea .option-card');
+        const count=await options.count();
+        assert.ok(count>0,'Follow-up failure question had no options: '+id);
+        let ix=0;
+        if(id==='fu_guardrail') ix=count-1;
+        if(id==='fu_effect') ix=2; // no change
+        if(id==='fu_failure_location') ix=1; // same barrier at altered step
+        await options.nth(ix).click();
+        if(type!=='single') await page.locator('#nextButton').click();
+      }
+      assert.ok(ids.includes('fu_failure_location'),'Failed intervention should ask one follow-up clarifier');
+      assert.match(await page.locator('#resultTitle').innerText(),/не прошло проверку/i);
+      assert.match(await page.locator('#resultAction').innerText(),/обращени/i);
+      const button=page.getByRole('button',{name:'Открыть следующий шаг'});
+      assert.ok(await button.isVisible(),'Failed intervention must offer real next-cycle action');
+      const parent=await page.evaluate(()=>window.__diagTest.state.activeCycleId);
+      await button.click();
+      assert.match(await page.locator('#resultTitle').innerText(),/Следующая проверка/i);
+      assert.match(await page.locator('#experimentChange').innerText(),/обращени/i);
+      const chain=await page.evaluate((parentId)=>{
+        const d=window.__diagTest,cycles=d.loadHistoryStore().cycles;
+        const old=cycles.find(c=>c.cycleId===parentId);
+        const child=cycles.find(c=>c.parentCycleId===parentId);
+        return {oldStatus:old?.status, followups:old?.followups?.length,
+          linked:old?.nextCycleId===child?.cycleId,
+          changed:old?.experimentPlan?.changeOneThing!==child?.experimentPlan?.changeOneThing,
+          childStatus:child?.status,
+          evidenceOnly:child?.experimentPlan?.nonCommercialOnly};
+      },parent);
+      assert.deepEqual(chain,{oldStatus:'COMPLETED',followups:1,linked:true,
+        changed:true,childStatus:'PLANNED',evidenceOnly:true});
+      await page.locator('#brandButton').click();
+      assert.ok(await page.locator('.history-row').count()>=2,'Linked new cycle must persist');
+      checkNoError(page,errors,'Failed Follow-up → actionable linked cycle');
+      await context.close();
+      log('failed Follow-up: real clarifier, next action, immutable parent and linked child');
+    }
+
     // Owner mobile UX: singles advance immediately + Back corrects taps;
     // multi-select keeps screen position, accumulates selections and uses "Next".
     {
