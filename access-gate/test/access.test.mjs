@@ -9,13 +9,14 @@ ASSETS:{fetch:async()=>new Response('<html><body>DIAGNOSIS</body></html>')}};
 class Rewriter{on(){return this;}transform(r){return r;}}
 globalThis.HTMLRewriter=Rewriter;
 const host='https://preview.invalid';
-let members=[10],requests=[],apiBroken=false,wrongIdentity=false,memberObjects=false,invalidMember=false;
+let members=[10],requests=[],apiBroken=false,wrongIdentity=false,memberObjects=false,invalidMember=false,remoteError='';
 globalThis.fetch=async(input,opts)=>{
  const url=new URL(String(input));requests.push({url,opts});
  if(apiBroken)throw Error('unavailable');
- if(url.pathname==='/oauth2/auth')return Response.json({access_token:'test',user_id:10,state:url.searchParams.get('state')});
- if(url.pathname==='/oauth2/user_info')return Response.json({user:{user_id:wrongIdentity?'11':'10'}});
+ if(url.pathname==='/oauth2/auth')return remoteError==='exchange'?Response.json({error:'invalid_grant'}):Response.json({access_token:'test',user_id:10,state:url.searchParams.get('state')});
+ if(url.pathname==='/oauth2/user_info')return remoteError==='userinfo'?Response.json({error:'user_info_failed'}):Response.json({user:{user_id:wrongIdentity?'11':'10'}});
  if(url.pathname==='/method/groups.getMembers'){
+  if(remoteError==='donut')return Response.json({error:{error_code:15,error_msg:'Access denied'}});
   const offset=Number(url.searchParams.get('offset'));
   const page=members.slice(offset,offset+1000);return Response.json({response:{count:members.length,items:invalidMember?[{id:'10'}]:memberObjects?page.map(id=>({id})):page}});
  }
@@ -60,7 +61,7 @@ test('non paying user never obtains a session',async()=>{
 test('OAuth callback rejects missing or forged state and user',async()=>{
  assert.equal((await run('/auth/callback?code=abc&state=x&device_id=y')).headers.get('location'),'/?error=auth');
  wrongIdentity=true;const {end}=await signIn();
- assert.equal(end.headers.get('location'),'/?error=vk_unavailable');wrongIdentity=false;
+ assert.equal(end.headers.get('location'),'/?error=vkid_userinfo_shape');wrongIdentity=false;
 });
 test('VK outages and tampered session fail closed',async()=>{
  members=[10];const {end}=await signIn(),c=jar(end);
@@ -98,7 +99,7 @@ test('unexpected member objects fail closed instead of granting access',async()=
   invalidMember=true;members=[10];
   try{
     const {end}=await signIn();
-    assert.equal(end.headers.get('location'),'/?error=vk_unavailable');
+    assert.equal(end.headers.get('location'),'/?error=donut_shape');
     assert.doesNotMatch(jar(end),/sd_session=/);
   }finally{invalidMember=false;}
 });
@@ -113,7 +114,7 @@ test('owner bypass only works for matching verified VK identity',async()=>{
   wrongIdentity=true;
   try{
     const {end:forged}=await signIn({VK_OWNER_USER_ID:'10'});
-    assert.equal(forged.headers.get('location'),'/?error=vk_unavailable');
+    assert.equal(forged.headers.get('location'),'/?error=vkid_userinfo_shape');
   }finally{wrongIdentity=false;members=[10];}
 });
 test('expired signed session cannot bypass gate',async()=>{
@@ -160,4 +161,33 @@ test('locked-screen history export JSON matches diagnostic import contract',asyn
   assert.equal(exported.historySchemaVersion,2);
   assert.deepEqual(exported.cycles,saved.cycles);
   assert.ok(Number.isFinite(Date.parse(exported.exportedAt)));
+});
+
+test('live troubleshooting distinguishes VK ID code exchange, identity, Donut API without leaking secrets',async()=>{
+  const baselineMembers=[10];members=baselineMembers;
+  const scenes=[
+    ['exchange','vkid_exchange_api','Сбой VK ID на этапе получения токена.'],
+    ['userinfo','vkid_userinfo_api','Сбой VK ID на этапе подтверждения аккаунта.'],
+    ['donut','donut_api','Сбой проверки подписки VK Donut.']
+  ];
+  const warn=console.warn,diagnostics=[];
+  console.warn=(...values)=>diagnostics.push(values);
+  try{
+    for(const [scenario,stage,description] of scenes){
+      remoteError=scenario;requests=[];
+      const {end}=await signIn();
+      assert.equal(end.headers.get('location'),'/?error='+stage);
+      assert.doesNotMatch(jar(end),/sd_session=/);
+      const locked=await run('/?error='+stage),html=await locked.text();
+      assert.equal(locked.status,200);
+      assert.match(html,new RegExp(description.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+      assert.match(html,new RegExp('Код: '+stage+'\\.'));
+      assert.doesNotMatch(html,/mock-group-credential|SESSION_SECRET|access_token|code_verifier/);
+      assert.equal(diagnostics.at(-1)[0],'sd_vk_gate_failure');
+      assert.equal(diagnostics.at(-1)[1],stage);
+      assert.equal(diagnostics.at(-1)[2],scenario==='donut'?'15':'');
+      if(scenario==='exchange')assert.equal(requests.some(x=>x.url.pathname==='/method/groups.getMembers'),false);
+      if(scenario==='userinfo')assert.equal(requests.some(x=>x.url.pathname==='/method/groups.getMembers'),false);
+    }
+  }finally{remoteError='';console.warn=warn;members=[10];}
 });
