@@ -2,7 +2,14 @@ name: Sales Diagnostic Browser E2E
 
 on:
   push:
-    branches: [sales-diagnostic-v2]
+    branches: [sales-diagnostic-v2, main]
+    paths:
+      - "sales-diagnostic/index.html"
+      - "sales-diagnostic/browser-e2e.cjs"
+      - "sales-diagnostic/regression-tests.js"
+      - ".github/workflows/sales-diagnostic-browser.yml"
+  pull_request:
+    branches: [main]
     paths:
       - "sales-diagnostic/index.html"
       - "sales-diagnostic/browser-e2e.cjs"
@@ -24,7 +31,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Run 399+ regression assertions
+      - name: Validate frozen static entry point
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const assert=require('node:assert/strict');
+          const html=fs.readFileSync('sales-diagnostic/index.html','utf8');
+          assert.match(html,/<!doctype html>/i);
+          assert.match(html,/<html lang="ru">/i);
+          assert.equal((html.match(/<script\b/gi)||[]).length,1,'Expected one bundled inline JavaScript');
+          assert.doesNotMatch(html,/<script\b[^>]*\bsrc\s*=/i,'No external runtime script allowed');
+          assert.doesNotMatch(html,/<link\b[^>]*\brel\s*=\s*["']stylesheet/i,'No external stylesheet allowed');
+          assert.doesNotMatch(html,/\b(?:fetch\s*\(|XMLHttpRequest|WebSocket\s*\()/,'No unexpected network calls in static release');
+          console.log('STATIC ENTRY POINT PASS');
+          NODE
+          node --check sales-diagnostic/regression-tests.js
+          node --check sales-diagnostic/browser-e2e.cjs
+      - name: Run full regression suite
         run: node sales-diagnostic/regression-tests.js
       - name: Install Playwright and Chromium
         run: |
@@ -32,3 +55,11 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Run actual Chromium browser tests
         run: node sales-diagnostic/browser-e2e.cjs
+      # This is a tested candidate file, not an automatic deployment.
+      - name: Preserve tested HTML as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sales-diagnostic-tested-${{ github.sha }}
+          path: sales-diagnostic/index.html
+          if-no-files-found: error
+          retention-days: 30
