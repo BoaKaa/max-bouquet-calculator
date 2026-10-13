@@ -1,4 +1,4 @@
-# VK Donut access gate — pilot, not deployed
+# VK Donut access gate — closed staging, not public release
 
 Frozen diagnostic: `sales-diagnostic/index.html`, v1.13.32-dev. The Worker at a separate access URL authenticates with VK ID, checks an active VK Donut subscription using the VK API and only then serves the original HTML. No main branch changes.
 
@@ -6,12 +6,12 @@ Frozen diagnostic: `sales-diagnostic/index.html`, v1.13.32-dev. The Worker at a 
 
 - Official [VK API schema](https://github.com/VKCOM/vk-api-schema/blob/master/groups/methods.json) lists `groups.getMembers` with `filter=donut` and accepts `group` access-token type; the filtered response schema permits member objects with an integer `id`. The gate handles both integer IDs and objects with integer `id`.
 - The [VK ID SDK](https://github.com/VKCOM/vkid-web-sdk/blob/master/src/auth/auth.ts) implements PKCE `s256`, code exchange at `/oauth2/auth`, identity lookup at `/oauth2/user_info`. The gate follows the same endpoints.
-- Automated tests use **mocked VK**, not a real community token. Official schema compatibility is not proof of actual token permissions or operation on a real community. Live VK ID, Donut activation/expiry and Cloudflare staging remain **unverified**.
+- Mock tests do not replace live VK tests. Owner-confirmed LIVE positive: a paid test account entered the diagnostic on this Worker. LIVE negative: an unsubscribed administrator was redirected to `/?error=no_subscription` and saw only the locked screen. Subscription expiry/revocation and the new logout/account selection remain to be tested live.
 - Protected origin denies `/`, `/index.html` and every other asset without current membership; `assets.run_worker_first=true`. GitHub source and legacy HTMLPreview URL remain public by deliberate business decision.
 
 ## Staging deployment through Cloudflare Builds (owner-approved, 13 October 2026)
 
-Cloudflare dashboard now has a GitHub connection for the **existing** Worker `sales-diagnostic-vk-donut` at `https://sales-diagnostic-vk-donut.kaaster.workers.dev` (previously Hello World). The owner selected `BoaKaa/max-bouquet-calculator`, production branch `sales-diagnostic-vk-donut-access`, repository root `/`, build command `cd access-gate && npm install && npm test && npm run build`, deploy command `cd access-gate && npx wrangler deploy`, and disabled preview builds. This README-only commit is intended to trigger the **first staging build** after connection; its outcome must be verified in Cloudflare Deployments, not inferred from GitHub CI.
+Cloudflare dashboard now has a GitHub connection for the **existing** Worker `sales-diagnostic-vk-donut` at `https://sales-diagnostic-vk-donut.kaaster.workers.dev` (previously Hello World). The owner selected `BoaKaa/max-bouquet-calculator`, production branch `sales-diagnostic-vk-donut-access`, repository root `/`, build command `cd access-gate && npm install && npm test && npm run build`, deploy command `cd access-gate && npx wrangler deploy`, and disabled preview builds. Cloudflare staging already deployed the gate. New pushes trigger staging builds. Verify `Ready` and 100% traffic in Cloudflare Deployments / rollout history; GitHub CI alone does not confirm deployed traffic.
 
 The dashboard shows runtime `VK_APP_ID=54820831`, `VK_GROUP_ID=50026534`, encrypted `VK_GROUP_TOKEN` and encrypted `SESSION_SECRET`. Their values remain in Cloudflare. Wrangler has `keep_vars: true` so subsequent CLI deployments preserve dashboard-defined secrets. The Cloudflare Builds *build-time* variables panel may be empty: runtime secrets are not build variables and must not be copied there. Check logs for Worker name, asset upload, secret preservation, errors and API access. Never interpret a successful build as successful live VK Donut authorization.
 
@@ -23,6 +23,15 @@ The dashboard shows runtime `VK_APP_ID=54820831`, `VK_GROUP_ID=50026534`, encryp
 4. Configure `VK_APP_ID`, `VK_GROUP_ID` in `access-gate/wrangler.jsonc`. If needed, configure `VK_OWNER_USER_ID` to the **numeric personal VK account ID** of the owner (not community ID): this bypass is conditional on a valid VK ID login.
 5. Keep the **community access token** (`VK_GROUP_TOKEN`) and a newly generated random `SESSION_SECRET` of at least 32 strong random characters **only in Cloudflare Worker secrets**, not in GitHub, chat, commit messages, screenshots or plaintext Wrangler vars. If deployment is explicitly approved and credentials exist, use `npx wrangler secret put VK_GROUP_TOKEN` and `npx wrangler secret put SESSION_SECRET` from `access-gate/` (or Cloudflare dashboard Worker → Settings → Variables and Secrets). Use actual secret-type bindings, not regular vars.
 6. After explicit staging permission: from `access-gate/`, run `npm install`, `npm test`, `npm run build` and `npx wrangler deploy`. Build copies unchanged source HTML into ignored `dist/index.html`; Worker protects it via `ASSETS`. **Do not run these commands as a public production launch by default.**
+
+## Local logout and account switching (pending live acceptance)
+
+- Authenticated diagnostic: a small **«Выйти»** link is injected into the top bar by the Worker HTMLRewriter, without changing the frozen diagnostic HTML. It invokes `GET /auth/logout`, expires both `sd_session` and `sd_vk_flow` cookies, and redirects to `/?status=signed_out`.
+- Locked screen: **«Войти под другим аккаунтом VK»** invokes `GET /auth/switch`, creates a fresh PKCE/state flow, requests official VK ID `prompt=select_account`, and expires an old app session. Ordinary `/auth/start` also expires an old app session.
+- This is logout from the diagnostic website, not a global VK ID / VK logout. VK ID controls its own identity-provider cookies and may require selecting an alternate profile or using a separate browser profile.
+- Logout does not clear localStorage; same-origin history remains available for export.
+- Denied non-subscriber screen explicitly explains why access was refused.
+- Next: verify automated tests, Cloudflare Ready/traffic, and live sign-out/account selection.
 
 ## Staging acceptance — do not claim success until witnessed
 
