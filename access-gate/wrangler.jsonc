@@ -11,5 +11,6 @@
   "vars": {
     "VK_APP_ID": "54820831",
     "VK_GROUP_ID": "50026534"
-  }
+  },
+  "keep_vars": true
 }
