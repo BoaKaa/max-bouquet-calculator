@@ -56,6 +56,10 @@ async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Т�
     const title = (await heading.innerText()).trim();
     seen.push(title);
     const input = page.locator('#answerArea input.text-input');
+    const questionType = await page.evaluate(() => {
+      const d = window.__diagTest;
+      return d.questions[d.state.path[d.state.index]].type;
+    });
     if (await input.count()) {
       const type = await input.getAttribute('inputmode');
       await input.fill(type === 'decimal' ? '10' : name);
@@ -74,9 +78,17 @@ async function driveDiagnosis(page, { modelIndex = 0, mode = 'FULL', name = 'Т�
       if (mode === 'BUILD' && (/после того, как.*показали/i.test(title) || /что произошло.*показали/i.test(eyebrow))) ix = n - 1;
       await options.nth(ix).click();
     }
-    const next = page.locator('#nextButton');
-    assert.equal(await next.isDisabled(), false, 'Cannot advance: ' + title);
-    await next.click();
+    if (questionType === 'single') {
+      // Selecting a radio-like answer immediately moves to the next question
+      // or concludes the diagnosis. The Back button must stay available.
+      assert.ok((await page.locator('#questionTitle').count() && 
+        (await page.locator('#questionTitle').innerText()).trim() !== title) ||
+        await page.locator('#resultTitle').count(), 'Single choice failed to advance: ' + title);
+    } else {
+      const next = page.locator('#nextButton');
+      assert.equal(await next.isDisabled(), false, 'Cannot advance: ' + title);
+      await next.click();
+    }
   }
   throw new Error('Question flow did not finish within 65 steps: ' + mode + ', model=' + modelIndex + ' (' + seen.slice(-8).join(' > ') + ')');
 }
@@ -249,6 +261,10 @@ async function exportHistory(page) {
         const title = (await page.locator('#questionTitle').innerText()).trim();
         seen.push(title);
         const input = page.locator('#answerArea input.text-input');
+        const questionType = await page.evaluate(() => {
+          const d = window.__diagTest;
+          return d.questions[d.state.path[d.state.index]].type;
+        });
         if (await input.count()) await input.fill('0');
         else {
           const opts = page.locator('#answerArea .option-card');
@@ -261,9 +277,15 @@ async function exportHistory(page) {
           else if (questionId === 'fu_sample_ready') ix = 1;
           await opts.nth(ix).click();
         }
-        const next = page.locator('#nextButton');
-        assert.equal(await next.isDisabled(), false, 'Follow-up blocked: ' + title);
-        await next.click();
+        if (questionType !== 'single') {
+          const next = page.locator('#nextButton');
+          assert.equal(await next.isDisabled(), false, 'Follow-up blocked: ' + title);
+          await next.click();
+        } else {
+          assert.ok((await page.locator('#questionTitle').count() &&
+            (await page.locator('#questionTitle').innerText()).trim() !== title) ||
+            await page.locator('#resultTitle').count(), 'Follow-up single choice failed to advance');
+        }
       }
       assert.ok(await page.locator('#resultTitle').count(), 'Follow-up result must finish');
       const conclusion = await page.locator('#resultTitle').innerText();
