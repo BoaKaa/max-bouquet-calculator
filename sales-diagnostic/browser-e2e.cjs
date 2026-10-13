@@ -216,9 +216,10 @@ async function exportHistory(page) {
           const n = await opts.count();
           assert.ok(n > 0, 'Follow-up question has no answers: ' + title);
           let ix = 0;
-          if (/ухудшилось что-то важное/i.test(title)) ix = n - 1;
-          else if (/достигли предела/i.test(title)) ix = 1;
-          else if (/собрали столько/i.test(title)) ix = 1;
+          const questionId = await page.evaluate(() => { const s = window.__diagTest.state; return s.path[s.index]; });
+          if (questionId === 'fu_guardrail') ix = n - 1;
+          else if (questionId === 'fu_limit_status') ix = 1;
+          else if (questionId === 'fu_sample_ready') ix = 1;
           await opts.nth(ix).click();
         }
         const next = page.locator('#nextButton');
