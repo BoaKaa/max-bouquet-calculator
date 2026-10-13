@@ -333,7 +333,7 @@ async function exportHistory(page) {
       assert.equal(await qid(),'maturity_state');
       await page.locator('#answerArea .option-card').last().tap(); // changed existing offer
       assert.equal(await qid(),'inheritance_entry');
-      await page.locator('#answerArea .option-card').first().tap();
+      await page.locator('#answerArea .option-card').nth(1).tap(); // existing transferable foundation => HYBRID
       assert.equal(await qid(),'inheritance_map');
       assert.equal(await page.locator('#nextButton').isVisible(),true,'Multi-choice must show Next');
       assert.match(await page.locator('#multiSelectHint').innerText(),/один или несколько вариантов ответа/i);
