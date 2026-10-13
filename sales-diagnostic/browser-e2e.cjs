@@ -302,6 +302,79 @@ async function exportHistory(page) {
       log('Follow-up with budget cap + insufficient observations + saved result (' + seen.length + ' questions)');
     }
 
+    // Owner mobile UX: singles advance immediately + Back corrects taps;
+    // multi-select keeps screen position, accumulates selections and uses "Next".
+    {
+      const { page, context, errors } = await newPage(browser, {
+        viewport:{width:320,height:640}, isMobile:true, hasTouch:true
+      });
+      const qid = () => page.evaluate(() => {
+        const s=window.__diagTest.state;
+        return s.path[s.index];
+      });
+      await page.getByRole('button',{name:/Проверить текущие продажи/}).click();
+      assert.equal(await qid(),'scope_goal');
+      assert.equal(await page.locator('#nextButton').isVisible(),false,'Next hidden for single choices');
+      await page.locator('#answerArea .option-card').first().tap();
+      assert.equal(await qid(),'scope_name','Tapping one choice must advance immediately');
+      assert.equal(await page.locator('#backButton').isEnabled(),true,'Back remains enabled');
+      await page.locator('#backButton').tap();
+      assert.equal(await qid(),'scope_goal','Back returns to previous single-choice question');
+      assert.equal(await page.locator('#answerArea .option-card.selected').count(),1,'Back keeps the old selection');
+      await page.locator('#answerArea .option-card').first().tap();
+      assert.equal(await qid(),'scope_name','Changing / confirming after Back can advance');
+      await page.locator('#answerArea input.text-input').fill('Букеты');
+      assert.equal(await page.locator('#nextButton').isVisible(),true,'Text entry still needs Next');
+      await page.locator('#nextButton').tap();
+      assert.equal(await qid(),'scope_model');
+      await page.locator('#answerArea .option-card').first().tap();
+      assert.equal(await qid(),'scope_target');
+      await page.locator('#answerArea .option-card').first().tap();
+      assert.equal(await qid(),'maturity_state');
+      await page.locator('#answerArea .option-card').last().tap(); // changed existing offer
+      assert.equal(await qid(),'inheritance_entry');
+      await page.locator('#answerArea .option-card').first().tap();
+      assert.equal(await qid(),'inheritance_map');
+      assert.equal(await page.locator('#nextButton').isVisible(),true,'Multi-choice must show Next');
+      assert.match(await page.locator('#multiSelectHint').innerText(),/один или несколько вариантов ответа/i);
+      assert.equal(await page.locator('#multiSelectHint').isVisible(),true,'Multi-choice hint is prominent');
+
+      await page.evaluate(() => window.scrollTo({top:document.documentElement.scrollHeight,behavior:'instant'}));
+      const choices = page.locator('#answerArea .option-card');
+      assert.equal(await choices.count(),9);
+      await choices.nth(6).tap(); // capacity near the bottom of a long set
+      let selected=await page.evaluate(() => {
+        const s=window.__diagTest.state;
+        return {id:s.path[s.index],answers:s.answers.inheritance_map,y:scrollY,
+          active:document.activeElement?.textContent?.trim()};
+      });
+      assert.equal(selected.id,'inheritance_map','First multi tap must not navigate');
+      assert.deepEqual(selected.answers,['capacity']);
+      assert.ok(selected.y>10,'Scrolled mobile screen must stay scrolled');
+      assert.match(selected.active,/заказ/i,'Tapped option retains keyboard focus');
+      const beforeY=selected.y;
+      await choices.nth(5).tap();
+      selected=await page.evaluate(() => ({
+        y:scrollY,choices:window.__diagTest.state.answers.inheritance_map,
+        id:window.__diagTest.state.path[window.__diagTest.state.index]
+      }));
+      assert.equal(selected.id,'inheritance_map','Second multi tap still stays on same question');
+      assert.deepEqual(selected.choices,['capacity','fulfillment']);
+      assert.ok(Math.abs(selected.y-beforeY)<=3,'Multi tap must not reset scroll to top');
+      await choices.nth(7).tap(); // mutually exclusive "none"
+      assert.deepEqual(await page.evaluate(() => window.__diagTest.state.answers.inheritance_map),['none']);
+      assert.equal(await page.locator('#answerArea .option-card.selected').count(),1);
+      assert.equal(await page.locator('#nextButton').isEnabled(),true);
+      await page.locator('#nextButton').tap();
+      assert.equal(await qid(),'build_test_type','Only pressing Next advances multi-choice');
+      await page.locator('#backButton').tap();
+      assert.equal(await qid(),'inheritance_map','Back must work after multi-choice');
+      assert.equal(await page.locator('#answerArea .option-card.selected').count(),1,'Back keeps multi selection');
+      checkNoError(page,errors,'320px touchscreen auto-next / multi-scroll / Back');
+      await context.close();
+      log('320px touch: single auto-advance + Back, multi no-scroll + multiple selection + explicit Next');
+    }
+
     // 4. Narrow viewport and keyboard navigation, without horizontal scrolling.
     {
       const { page, context, errors } = await newPage(browser, { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
