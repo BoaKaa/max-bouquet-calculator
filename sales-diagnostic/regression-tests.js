@@ -2345,6 +2345,27 @@ add('STAGE14-COPIED-PLAN-INCLUDES-NUMBERS-LIMITS','P1','UX',()=>{
   '25','14 дней','1500 ₽','50 человек'].every(w=>copied.includes(w)));
 },['true']);
 
+
+add('STAGE14-CORRUPT-HISTORY-DOES-NOT-CLAIM-EMPTY','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+  memory[key]='{not json';
+  diag.showHome();
+  const warning=uiFind(n=>n.textContent?.includes('Не считайте эту историю пустой'));
+  const empty=uiFind(n=>n.textContent?.includes('Пока нет сохранённых проверок'));
+  const exp=uiFind(n=>n.textContent==='Экспортировать историю');
+  const importer=uiCheckButton();
+  const picker=uiPicker();
+  return String(!!warning&&!empty&&exp?.disabled===true&&
+    importer?.disabled===true&&picker?.disabled===true&&memory[key]==='{not json');
+}),['true']);
+add('STAGE14-EMPTY-HISTORY-KEEPS-IMPORT-AVAILABLE','P1','HISTORY-UI',()=>isolatedHistory(key=>{
+  delete memory[key];
+  diag.showHome();
+  const empty=uiFind(n=>n.textContent?.includes('Пока нет сохранённых проверок'));
+  const exp=uiFind(n=>n.textContent==='Экспортировать историю');
+  return String(!!empty&&exp?.disabled!==true&&uiCheckButton()?.disabled!==true&&
+    uiPicker()?.disabled!==true);
+}),['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
