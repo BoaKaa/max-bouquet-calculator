@@ -2315,6 +2315,36 @@ add('STAGE14-HEADER-CONFIRMS-UNSAVED-ANSWERS','P1','UX',()=>{
  }finally{windowMock.confirm=previousConfirm;}
 },['true']);
 
+
+add('STAGE14-CONFIRM-UNSAVED-RESULT','P1','UX',()=>{
+ const previousConfirm=windowMock.confirm;
+ try {
+   reset('full',{scope_name:'Несохранённый результат',scope_goal:'new_sales',scope_model:'PRODUCT'});
+   s.path=[]; s.result=diag.makeResult('ACCESS');
+   const originalId=s.result.resultId;
+   const goHome=nodes.get('resetButton')._events.click[0];
+   let asked=0;
+   windowMock.confirm=()=>{asked++;return false;};
+   goHome();
+   const kept=s.result?.resultId===originalId;
+   windowMock.confirm=()=>true;
+   goHome();
+   return String(kept&&asked===1&&s.result===null&&s.mode===null);
+ }finally{windowMock.confirm=previousConfirm;}
+},['true']);
+add('STAGE14-COPIED-PLAN-INCLUDES-NUMBERS-LIMITS','P1','UX',()=>{
+ const r={title:'Проверка заказа',why:['Факт из заказов'],action:'Исправить оформление',
+   confidence:'PRELIMINARY',metrics:['Сколько купили'],holdConstant:['Цена'],
+   observationRule:'После 20 обращений',next:'Вернитесь к проверке',
+   experimentPlan:{changeOneThing:'Один шаг оформления',executionSteps:['Изменить кнопку заказа','Посчитать заявки'],
+     primaryMetric:'Оформленные покупки',primaryMetricBefore:6,
+     primaryMetricDenominatorBefore:20,plannedObservationCount:25,
+     timeCap:14,budgetCap:1500,exposureCap:50,nonCommercialOnly:false,status:'PLANNED'}};
+ const copied=diag.resultText(r);
+ return String(['План проверки:','Изменить кнопку заказа','6 из 20 случаев',
+  '25','14 дней','1500 ₽','50 человек'].every(w=>copied.includes(w)));
+},['true']);
+
 const regressionRun=(async()=>{
  const failures=[];
  for (const t of tests) {
