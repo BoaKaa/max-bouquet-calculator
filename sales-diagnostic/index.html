@@ -67,7 +67,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   text-align: left;
 }
 .brand-logo { width: 42px; height: 42px; object-fit: contain; }
-.brand-text { display: grid; gap: 0; }
+.brand-text { display: grid; gap: 0; min-width: 0; overflow-wrap: anywhere; }
 .brand-text strong { font-size: 14px; }
 .brand-text small { font-size: 12px; color: var(--muted); }
 
@@ -120,7 +120,7 @@ h2 { font-size: 20px; line-height: 1.2; margin-bottom: 14px; }
   padding: 18px;
   text-align: left;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 16px;
   align-items: center;
   transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
@@ -144,6 +144,8 @@ button:focus-visible, input:focus-visible {
 .history-row[hidden] { display: none; }
 .history-row .history-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .history-meta { color: var(--muted); font-size: 13px; margin-top: 4px; overflow-wrap: anywhere; }
+.history-row strong, .status-pill { overflow-wrap: anywhere; }
+.status-pill { max-width: 100%; white-space: normal; }
 .status-pill { display: inline-flex; align-items: center; width: fit-content; margin-top: 7px; padding: 5px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 750; }
 
 .wizard-card { overflow: hidden; }
@@ -188,6 +190,7 @@ button:focus-visible, input:focus-visible {
 }
 .option-card.selected .option-dot { border-color: var(--accent); }
 .option-card.selected .option-dot::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.option-text { min-width: 0; overflow-wrap: anywhere; }
 .option-text strong { display: block; font-size: 16px; }
 .option-text small { display: block; color: var(--muted); margin-top: 2px; }
 
@@ -261,7 +264,9 @@ button:focus-visible, input:focus-visible {
 .footer p { margin: 0; }
 
 @media (max-width: 640px) {
-  .topbar { padding: 12px 14px 6px; }
+  .topbar { padding: 12px 14px 6px; flex-wrap: wrap; }
+  .brand { min-width: 0; max-width: 100%; }
+  .top-reset { white-space: normal; max-width: 100%; }
   .app { padding: 8px 12px 24px; }
   .footer { padding: 0 14px 22px; }
   .brand-text small { display: none; }
@@ -271,7 +276,7 @@ button:focus-visible, input:focus-visible {
   .question-wrap { min-height: 420px; }
   .wizard-actions { position: sticky; bottom: 0; background: rgba(255,253,249,.96); backdrop-filter: blur(10px); }
   .primary-btn, .ghost-btn { flex: 1; }
-  .result-actions .primary-btn, .result-actions .ghost-btn { flex: 1 1 100%; }
+  .result-actions .primary-btn, .result-actions .ghost-btn { flex: 1 1 100%; min-width: 0; white-space: normal; }
   .history-row { grid-template-columns: 1fr; }
   .history-row .history-actions { justify-content: stretch; }
   .history-row .history-actions button { flex: 1 1 100%; }
@@ -482,7 +487,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.31-dev';
+  const APP_VERSION = '1.13.32-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -3105,17 +3110,18 @@ button:focus-visible, input:focus-visible {
       }
       const list=document.createElement('div');
       list.className='reason-list';
-      if (!recent.length) {
+      const storageWarning=historyStorageProblem();
+      if (!recent.length && !storageWarning) {
         const empty=document.createElement('p');
         empty.className='microcopy';
         empty.textContent='Пока нет сохранённых проверок. Можно восстановить ранее экспортированную историю.';
         list.appendChild(empty);
       }
-      const storageWarning=historyStorageProblem();
       if(storageWarning){
         const warning=document.createElement('p');
         warning.className='note-box';
-        warning.textContent=storageWarning+' Не удаляйте данные браузера, пока не сделаете резервную копию.';
+        warning.setAttribute('role','alert');
+        warning.textContent=storageWarning+' Не удаляйте данные браузера: сохранённые записи могут ещё находиться там. Экспорт и импорт временно недоступны. Не считайте эту историю пустой.';
         list.appendChild(warning);
       }
       const extraClosedRows=[];
@@ -3218,6 +3224,7 @@ button:focus-visible, input:focus-visible {
       historyActions.className='result-actions';
       const exportButton=document.createElement('button');
       exportButton.type='button'; exportButton.className='ghost-btn'; exportButton.textContent='Экспортировать историю';
+      if(storageWarning) exportButton.disabled=true;
       exportButton.addEventListener('click',()=>{
         if (!exportHistory()) window.alert('Не удалось подготовить файл экспорта в этом браузере.');
       });
@@ -3233,6 +3240,7 @@ button:focus-visible, input:focus-visible {
       const importButton=document.createElement('button');
       importButton.type='button'; importButton.className='ghost-btn';
       importButton.textContent='Проверить выбранный файл';
+      if(storageWarning) importButton.disabled=true;
       const commitButton=document.createElement('button');
       commitButton.type='button'; commitButton.className='primary-btn';
       commitButton.hidden=true; commitButton.disabled=true;
@@ -3300,6 +3308,7 @@ button:focus-visible, input:focus-visible {
           importMessage.textContent='Импорт остановлен. История не изменена. Проверьте файл повторно.';
         }
       });
+      if(storageWarning) importFile.disabled=true;
       historyActions.appendChild(importFile);
       historyActions.appendChild(importButton);
       historyActions.appendChild(commitButton);
