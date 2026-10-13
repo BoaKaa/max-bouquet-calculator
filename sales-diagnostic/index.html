@@ -7488,8 +7488,18 @@ function finalizePrecision() {
 
   window.__diagTest = { followupFailureGroup, followupFailureAdvice, failedFollowupNextResult, experimentNumericCopy, reassessAfterPrecisionContradiction, startFollowupForCycle, saveHistory, invalidateDownstreamAnswers, state, questions, resultLibrary, startMode, showHome, goNext, collectCandidates, diagnoseFull, diagnoseBuild, diagnoseDemand, diagnoseAccess, diagnoseStart, diagnoseFulfillment, diagnoseValue, diagnoseRepeat, decisionCriticalUnknown, dataGapBranchesFor, dataGapBranchOptions, selectedDataGapBranch, makeResult, concretizeResult, resultKindCodeFor, buildEvidenceObjects, resultPlanFor, optionalOpportunityFor, PRECISION_CONFIG, precisionEvaluate, EXPERIMENT_PLAN_TYPE, EXPERIMENT_STATUS, experimentPlanFor, FOLLOWUP_OUTCOME, FOLLOWUP_CODE, classifyFollowup, followupNumericComparison, finalizeFollowup, buildStateTransition, loadHistoryStore, writeHistoryStore, cycleStatusLabel, resumeCycle, startLinkedCycle, clearClosedHistory, deleteCycle, exportHistory, clearAllHistory, historyScopeName, historyDateTime, historyStorageProblem, reviewHistoryImport, commitHistoryImport, adaptResultToModel, chooseDiscriminatorQuestions, legalBlocksCurrentAction, shouldAskSharedResources, shouldAskSharedMateriality, shouldAskSharedImpact, hardGateResult, buildEarlyResult, meaningful, sectionName, resultText, precisionQuestionsFor, finalizePrecision };
 
-  resetButton.addEventListener('click', showHome);
-  brandButton.addEventListener('click', showHome);
+  // Leaving an unfinished questionnaire from the header previously erased
+  // all answers immediately. On touchscreens one accidental tap is enough.
+  function requestHomeFromHeader() {
+    const unfinished=!!(state.mode && !state.result && state.path.length &&
+      Object.keys(state.answers).length);
+    if(unfinished && !window.confirm(
+      'Выйти из диагностики? Ответы в этой анкете ещё не сохранены и будут потеряны.'
+    ))return;
+    showHome();
+  }
+  resetButton.addEventListener('click', requestHomeFromHeader);
+  brandButton.addEventListener('click', requestHomeFromHeader);
   showHome();
 })();
 
