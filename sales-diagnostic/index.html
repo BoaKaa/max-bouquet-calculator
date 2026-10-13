@@ -240,6 +240,9 @@ button:focus-visible, input:focus-visible {
 .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag { border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; background: #fff; font-size: 13px; }
 .result-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.plan-action-grid { display: grid; gap: 10px; margin-top: 16px; }
+.plan-action-grid .primary-btn, .plan-action-grid .ghost-btn { width: 100%; }
+.plan-action-grid .microcopy { margin: 2px 0 0; }
 .microcopy { margin: 10px 0 0; color: var(--ok); font-size: 13px; }
 
 .status-card { padding: 18px; border-radius: 16px; margin-top: 12px; }
@@ -390,7 +393,7 @@ button:focus-visible, input:focus-visible {
 
       <article class="card result-card" id="experimentPlanCard" hidden>
         <h2>Как проверить, поможет ли это действие</h2>
-        <p class="microcopy">Сохраните план, выполните предложенное действие и вернитесь, чтобы посмотреть результат. История остаётся в этом браузере и не появляется автоматически на других устройствах. При необходимости перенесите её через экспорт и импорт файла.</p>
+        <p class="microcopy" id="experimentGuide">План можно сохранить на потом, не начиная проверку. Если готовы действовать, начните проверку: тогда мы зафиксируем исходные числа и выбранные пределы. История хранится в этом браузере; на другое устройство её можно перенести через экспорт и импорт файла.</p>
         <p class="microcopy" id="experimentPlanType" hidden></p>
         <div class="metric-box">
           <span>Какое действие будем проверять</span>
@@ -440,8 +443,10 @@ button:focus-visible, input:focus-visible {
 <p class="microcopy" id="experimentLimitsReadout" hidden></p>
 <p id="experimentBranches" hidden></p>
         <p class="microcopy" id="experimentEarlyStop" hidden></p>
-        <button class="primary-btn" id="startExperimentButton" type="button">Сохранить план и начать проверку</button>
-        <p class="microcopy" id="experimentStartMessage" hidden></p>
+        <div class="plan-action-grid" id="planActionGrid">
+          <button class="primary-btn" id="startExperimentButton" type="button">Начать проверку</button>
+        </div>
+        <p class="microcopy" id="experimentStartMessage" role="status" hidden></p>
       </article>
 
       <article class="card result-card" id="dontCard">
@@ -463,7 +468,7 @@ button:focus-visible, input:focus-visible {
           <button class="ghost-btn" id="copyResultButton" type="button">Скопировать</button>
           <button class="ghost-btn" id="restartResultButton" type="button">Проверить заново</button>
         </div>
-        <p class="microcopy" id="saveMessage" hidden>Результат сохранён в этом браузере.</p>
+        <p class="microcopy" id="saveMessage" role="status" hidden>Результат сохранён в этом браузере.</p>
       </article>
     </section>
   </template>
@@ -476,7 +481,7 @@ button:focus-visible, input:focus-visible {
   const HISTORY_STORAGE_KEY = 'salesDiagnosticHistory:v2';
   const HISTORY_SCHEMA_VERSION = 2;
   const HISTORY_MAX_CYCLES = 20;
-  const APP_VERSION = '1.13.29-dev';
+  const APP_VERSION = '1.13.30-dev';
 
   // v2 semantic state. Keep legacy string values where practical so the
   // existing diagnosis layer can continue working while the router is migrated.
@@ -7214,6 +7219,13 @@ function finalizePrecision() {
       document.getElementById('experimentHold').textContent =
         experimentPlan.holdConstant.length ? experimentPlan.holdConstant.join(' ') : 'Не добавляйте второе независимое изменение во время этой проверки.';
       document.getElementById('experimentObservation').textContent = experimentPlan.observationRule || '';
+      const markPlanDraftEdited=()=>{
+        if(experimentPlan.status===EXPERIMENT_STATUS.ACTIVE) return;
+        const save=document.getElementById('saveResultButton');
+        if(save) save.disabled=false;
+        const note=document.getElementById('saveMessage');
+        if(note && !note.hidden) note.textContent='Вы изменили план. Чтобы новые значения сохранились в истории, нажмите «Сохранить план на потом» или «Начать проверку».';
+      };
       const capConfig=[
         ['timeCap','experimentTimeCap','дней'],
         ['budgetCap','experimentBudgetCap','₽'],
@@ -7237,6 +7249,7 @@ function finalizePrecision() {
             const raw=input.value.trim(),n=raw===''?null:Number(raw);
             experimentPlan[key]=Number.isInteger(n)&&n>0?n:null;
             result.experimentPlan=experimentPlan;
+            markPlanDraftEdited();
           });
         });
       }
@@ -7255,6 +7268,7 @@ function finalizePrecision() {
           const raw=input.value.trim(),n=raw===''?null:Number(raw);
           experimentPlan[key]=Number.isInteger(n)&&n>=0?n:null;
           result.experimentPlan=experimentPlan;
+          markPlanDraftEdited();
         };
         nInput.addEventListener('input',()=>setNumber(nInput,'primaryMetricBefore'));
         const target=document.getElementById('experimentPlannedCount');
@@ -7263,6 +7277,7 @@ function finalizePrecision() {
           const raw=target.value.trim(),num=raw===''?null:Number(raw);
           experimentPlan.plannedObservationCount=Number.isInteger(num)&&num>0?num:null;
           result.experimentPlan=experimentPlan;
+          markPlanDraftEdited();
         });
         if(nSpec.denominator){
           document.getElementById('experimentDenominatorPanel').hidden=false;
@@ -7279,9 +7294,27 @@ function finalizePrecision() {
       document.getElementById('experimentEarlyStop').textContent = '';
 
       const startExperimentButton = document.getElementById('startExperimentButton');
+      const guide=document.getElementById('experimentGuide');
+      const shortcutToFollowup=()=>{
+        if(!state.activeCycleId) return;
+        const button=document.createElement('button');
+        button.type='button';
+        button.className='primary-btn';
+        button.textContent='Проверить результат';
+        const fromCycleId=state.activeCycleId;
+        button.addEventListener('click',()=>{
+          if(!startFollowupForCycle(fromCycleId)){
+            const msg=document.getElementById('experimentStartMessage');
+            msg.hidden=false;
+            msg.textContent='Не удалось открыть проверку. Вернитесь на главную и выберите активный план в истории.';
+          }
+        });
+        startExperimentButton.after(button);
+      };
       if (experimentPlan.status === EXPERIMENT_STATUS.ACTIVE) {
-        startExperimentButton.disabled = true;
-        startExperimentButton.textContent = 'Проверка уже начата';
+        startExperimentButton.hidden=true;
+        guide.textContent='Проверка уже начата, её исходные условия сохранены в истории. Когда соберёте наблюдения или достигнете предела, нажмите «Проверить результат».';
+        shortcutToFollowup();
       } else {
         startExperimentButton.addEventListener('click', () => {
           const activePlan = {
@@ -7289,8 +7322,6 @@ function finalizePrecision() {
             status:EXPERIMENT_STATUS.ACTIVE,
             startedAt:new Date().toISOString()
           };
-          result.experimentPlan = activePlan;
-          state.activeExperiment = activePlan;
           const item = {
             cycleId:state.activeCycleId,
             appVersion:APP_VERSION,
@@ -7298,7 +7329,7 @@ function finalizePrecision() {
             mode:state.mode,
             scope:state.answers.scope_name || '',
             answers:state.answers,
-            result,
+            result:{...result,experimentPlan:activePlan},
             experimentPlan:activePlan,
             cycleStatus:CYCLE_STATUS.ACTIVE
           };
@@ -7306,13 +7337,18 @@ function finalizePrecision() {
           const message=document.getElementById('experimentStartMessage');
           message.hidden=false;
           message.textContent=saved
-            ? 'План сохранён. Сделайте намеченное и вернитесь, когда появится результат. Если достигли выбранного предела или появились серьёзные проблемы, остановитесь раньше.'
-            : 'Не удалось сохранить план в браузере. Скопируйте результат и план, чтобы не потерять условие проверки.';
+            ? 'Проверка начата и сохранена. Выполните выбранное действие. Когда появится результат, вернитесь сюда.'
+            : 'Не удалось сохранить план в браузере. Проверка не начата. Скопируйте результат, чтобы не потерять условие проверки.';
           if (saved) {
-            startExperimentButton.disabled=true;
-            startExperimentButton.textContent='Проверка начата';
+            result.experimentPlan=activePlan;
+            state.activeExperiment=activePlan;
+            startExperimentButton.hidden=true;
             const saveButton=document.getElementById('saveResultButton');
-            if (saveButton) saveButton.disabled=true;
+            if(saveButton) saveButton.hidden=true;
+            const inputs=experimentCard.querySelectorAll('input');
+            inputs.forEach(input=>{input.disabled=true;});
+            guide.textContent='Проверка уже начата. Исходные условия сохранены и больше не редактируются в этом цикле.';
+            shortcutToFollowup();
           }
         });
       }
@@ -7346,11 +7382,17 @@ function finalizePrecision() {
       saveButton.textContent = 'Сохранить результат проверки';
       saveButton.className = 'primary-btn';
     } else if (result.experimentPlan) {
-      saveButton.textContent = 'Сохранить и вернуться позже';
+      saveButton.textContent = 'Сохранить план на потом';
       saveButton.className = 'ghost-btn';
     } else {
       saveButton.textContent = 'Сохранить результат';
       saveButton.className = 'primary-btn';
+    }
+    if (result.experimentPlan && !result.followup) {
+      const planGrid=document.getElementById('planActionGrid');
+      planGrid.appendChild(saveButton);
+      planGrid.appendChild(document.getElementById('saveMessage'));
+      if (result.experimentPlan.status===EXPERIMENT_STATUS.ACTIVE) saveButton.hidden=true;
     }
     saveButton.addEventListener('click', () => {
       const item = {
@@ -7376,7 +7418,11 @@ function finalizePrecision() {
       const msg = document.getElementById('saveMessage');
       msg.hidden = false;
       if (saved) {
-        msg.textContent = 'Результат сохранён в этом браузере.';
+        msg.textContent = result.followup
+          ? 'Результат повторной проверки сохранён в истории.'
+          : result.experimentPlan
+            ? 'План сохранён на потом. Проверка ещё не начата. Чтобы начать, нажмите «Начать проверку».'
+            : 'Результат сохранён в этом браузере.';
         saveButton.disabled = true;
       } else {
         msg.textContent = 'Браузер не разрешил сохранить историю. Скопируйте результат, чтобы не потерять его.';
